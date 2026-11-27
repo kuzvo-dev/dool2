@@ -1,5 +1,6 @@
 // Choosing new file names (shared by the PC file tools)
 import { existsSync } from 'node:fs'
+import { mkdir, writeFile } from 'node:fs/promises'
 import { basename, extname, join } from 'node:path'
 
 /** If the name exists: "name (1).ext", "(2)"... (never overwrites) */
@@ -26,3 +27,28 @@ export const cleanName = (s: string) =>
     .trim()
     .replace(/^\.+/, '')
     .slice(0, 120)
+
+/**
+ * Writes a new file into the first folder that takes it, never overwriting; returns its full path and name. A file
+ * made from a page (browser_save_pdf, browser_cdp) joined the folder to freeName's full path again and wrote to a
+ * folder that does not exist, so no PDF was ever saved (test PC 11-27)
+ */
+export async function writeNewFile(
+  dirs: string[],
+  name: string,
+  ext: string,
+  data: Buffer,
+): Promise<{ path: string; file: string }> {
+  let last: unknown
+  for (const dir of dirs) {
+    try {
+      await mkdir(dir, { recursive: true })
+      const path = freeName(dir, `${cleanName(name).slice(0, 80) || 'document'}.${ext}`)
+      await writeFile(path, data, { flag: 'wx' })
+      return { path, file: basename(path) }
+    } catch (e) {
+      last = e
+    }
+  }
+  throw new Error(`Could not write the file (${(last as Error)?.message ?? 'no folder'})`)
+}
