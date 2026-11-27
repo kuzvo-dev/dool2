@@ -28,6 +28,7 @@ import {
   type ScreenFit,
 } from '@dool2/protocol'
 import { type ConnectionItem, type SocialProvider, SocialProviderSchema } from '@dool2/protocol/connect'
+import { type DooriLook, DooriLookSchema } from '@dool2/protocol/doori-look'
 import {
   b64u,
   type DeviceKeys,
@@ -154,6 +155,8 @@ export interface LinkHost {
   reset?(phone: string, o: { services: boolean }): Promise<{ ok: boolean; message: string }>
   /** Auto-approve on or off, from a phone whose signature checked out (ADR 0030) */
   setAutoApprove?(on: boolean, phone: string): void
+  /** Dress Doori from the phone (no signature: it changes only how Doori looks) */
+  setDooriLook?(look: DooriLook): void
   /** Remote screen: one frame of the tab Dool2 handed off, and the person's input on that tab */
   screen(tabId: number, fit?: ScreenFit): Promise<{ shot: string; url: string; title: string } & RemoteInfo>
   /** Remote screen 'needed fields only' */
@@ -793,6 +796,11 @@ export class PhoneLink {
         const r = await this.host.reset(phone.name, { services })
         await this.send(phone, { kind: 'reset-done', ...r })
         if (r.ok) for (const p of this.phones) await this.send(p, await this.stateFor(p)).catch(() => {})
+        return
+      }
+      case 'doori-look': {
+        const look = DooriLookSchema.safeParse(msg.look)
+        if (look.success) this.host.setDooriLook?.(look.data)
         return
       }
       case 'auto-approve': {

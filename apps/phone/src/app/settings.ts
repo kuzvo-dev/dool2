@@ -2,8 +2,9 @@
 import { LANG_NAMES, LANGS } from '@dool2/i18n'
 import { AUTH_APPS, agentLabel, CARRIERS } from '@dool2/protocol'
 import { payMethodLabel } from '@dool2/protocol/pay-methods'
-import { h, type IconName, icon, segBtn } from '../dom.js'
+import { doori, h, type IconName, icon, segBtn } from '../dom.js'
 import { lang, setLang } from '../lang.js'
+import { tDoori } from '../locales/doori-maker.js'
 import { confirmDevice, isNative } from '../native.js'
 import { mSet, send, st } from './core.js'
 import { setPayConfirm } from './decide.js'
@@ -59,6 +60,22 @@ export function settingsView() {
       h('div', { class: 'set-list' }, ...rows.filter((x): x is Node => Boolean(x))),
     )
   const chev = () => icon('chevron')
+
+  // ── My Doori: dress it up (doori-maker.ts) ──
+  box.append(
+    h(
+      'button',
+      { class: 'set-row my-doori', onclick: () => openOverlay({ kind: 'doori' }) },
+      doori('', 44),
+      h(
+        'span',
+        { class: 'row-text' },
+        h('span', { class: 'row-t', text: tDoori.myDoori }),
+        h('span', { class: 'row-d', text: tDoori.myDooriSub }),
+      ),
+      chev(),
+    ),
+  )
 
   // ── General (PC: general) ──
   // Auto-approve (ADR 0030): everything except payments without a card. Turned on with the phone lock and a signed request

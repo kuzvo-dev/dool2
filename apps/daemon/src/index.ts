@@ -2322,6 +2322,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
           ...(browserTools.lastTabId !== undefined ? { activeTab: browserTools.lastTabId } : {}),
           ...(devReset ? { dev: true } : {}),
           ...(readSettings().autoApprove ? { autoApprove: true } : {}),
+          ...(readSettings().dooriLook ? { dooriLook: readSettings().dooriLook } : {}),
         }
       },
       thread: async (id) => {
@@ -2487,6 +2488,11 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
           payMethods: loadPayMethods(store),
           ...(message ? { message } : {}),
         }
+      },
+      setDooriLook: (look) => {
+        store.setSetting('dooriLook', look)
+        events.emit('settings', readSettings())
+        void link.resync()
       },
       setAutoApprove: (on, phone) => {
         store.setSetting('autoApprove', on)

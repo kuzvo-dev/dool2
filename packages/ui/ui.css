@@ -200,8 +200,7 @@ svg.i.md {
 }
 
 /* ── Dool2 ─────────────────────────────────────────── */
-/* Character: <span class="doori working"></span>. Size with --s (22-56 uses images, 64 and up uses .live for 3D)
-   Images are pre-rendered per mood from the 3D Dool2 (doori3d.js). Body in the exact center, prop at the top right of the head */
+/* Character: <span class="doori working"></span>, one SVG drawn in the user's look (protocol/doori-look.ts). Size with --s */
 .doori {
   --s: 32px;
   position: relative;
@@ -209,34 +208,12 @@ svg.i.md {
   display: inline-block;
   width: var(--s);
   height: var(--s);
-  background: url("doori/idle.webp") center / contain no-repeat;
 }
-.doori.thinking {
-  background-image: url("doori/thinking.webp");
-}
-.doori.working {
-  background-image: url("doori/working.webp");
-}
-.doori.asking {
-  background-image: url("doori/asking.webp");
-}
-.doori.done {
-  background-image: url("doori/done.webp");
-}
-.doori.sleeping {
-  background-image: url("doori/sleeping.webp");
-}
-/* Animated 3D: a canvas over the image; the image hides once the canvas draws */
-.doori .doori-canvas {
-  position: absolute;
-  inset: 0;
+.doori > svg {
+  display: block;
   width: 100%;
   height: 100%;
-  cursor: pointer;
-  touch-action: manipulation;
-}
-.doori.live-ready {
-  background-image: none;
+  overflow: visible;
 }
 /* Slow floating motion while working (only for one large character) */
 .doori.bob {

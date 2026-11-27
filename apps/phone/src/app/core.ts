@@ -62,6 +62,8 @@ export type Overlay =
   | { kind: 'work'; src: import('./work-line.js').SheetSrc }
   /** Report a problem: leaves what just happened in the PC's log */
   | { kind: 'report' }
+  /** Settings > My Doori: dressing Doori (doori-maker.ts) */
+  | { kind: 'doori' }
   /** Settings > My info: view masked values, edit, delete */
   | { kind: 'profile' }
   /** Settings > Vault: view saved logins (after phone lock check), edit, delete (ADR 0026) */

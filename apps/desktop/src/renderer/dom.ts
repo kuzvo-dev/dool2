@@ -1,4 +1,5 @@
 // Drawing helpers: elements, line icons, the Dool2 character, Dool2's answers (shared by renderer.ts and life-views.ts)
+import { type DooriLook, drawDoori } from './doori-draw.js'
 import { lang } from './lang.js'
 import { domText } from './locales/dom.js'
 import { type Inline, richBlocks } from './rich.js'
@@ -147,81 +148,49 @@ export function tile(name: IconName, tone = '', size?: number): HTMLElement {
   return t
 }
 
-/** Dool2 character image (moods: thinking, working, asking, done, sleeping) */
+/** The look the user dressed Doori in (PC settings). Every Doori on screen is redrawn when it changes */
+let lookNow: DooriLook = {}
+export function setDooriLook(look: DooriLook | undefined) {
+  const next = look ?? {}
+  if (JSON.stringify(next) === JSON.stringify(lookNow)) return
+  lookNow = next
+  for (const d of document.querySelectorAll<HTMLElement>('span.doori')) drawInto(d)
+}
+const MOODS = ['thinking', 'working', 'asking', 'done', 'sleeping'] as const
+function drawInto(d: HTMLElement) {
+  const mood = MOODS.find((m) => d.classList.contains(m)) ?? 'idle'
+  const dark = matchMedia('(prefers-color-scheme: dark)').matches
+  d.innerHTML = drawDoori({ ...lookNow, mood, ...(dark ? { dotColor: '#eef4f0' } : {}) })
+}
+
+/** The Dool2 character (moods: thinking, working, asking, done, sleeping), one SVG in the user's look */
 export function doori(mood = '', size?: number): HTMLElement {
   const d = el('span', `doori ${mood}`.trim())
   d.setAttribute('aria-hidden', 'true')
   if (size) d.style.setProperty('--s', `${size}px`)
+  drawInto(d)
   return d
 }
 
-/** Animated 3D Dool2 (packages/ui/doori3d.js, bundled separately by the build) */
-interface LiveDoori {
-  setMood(mood: string): void
-  destroy(): void
-}
-type Doori3d = { mountDoori(host: HTMLElement, opts: { mood?: string }): LiveDoori }
-const DOORI3D = './doori3d.js' // Passed as a string so it loads separately from the window code
-let doori3dModule: Promise<Doori3d> | undefined
-type Slot = {
-  el: HTMLElement
-  mood: string
-  live?: LiveDoori
-  drop?: ReturnType<typeof setTimeout>
-  want?: boolean
-}
-const liveSlots = new Map<string, Slot>()
-const slotOf = new WeakMap<Element, Slot>()
-
-/** 3D runs only in spots visible on screen. After 20 s out of view it is torn down to free GPU memory (one WebGL context per spot) */
-const seen = new IntersectionObserver((entries) => {
-  for (const e of entries) {
-    const rec = slotOf.get(e.target)
-    if (!rec) continue
-    clearTimeout(rec.drop)
-    if (e.isIntersecting) mountLive(rec)
-    else rec.drop = setTimeout(() => unmountLive(rec), 20_000)
-  }
-})
-function mountLive(rec: Slot) {
-  rec.want = true
-  if (rec.live) return
-  doori3dModule ??= import(DOORI3D) as Promise<Doori3d>
-  doori3dModule
-    .then((m) => {
-      if (rec.live || !rec.want) return
-      rec.live = m.mountDoori(rec.el, { mood: rec.mood || 'idle' })
-      rec.el.classList.add('live-ready')
-    })
-    .catch(() => {
-      // Without 3D, keep the still image
-    })
-}
-function unmountLive(rec: Slot) {
-  rec.want = false
-  rec.live?.destroy()
-  rec.live = undefined
-  rec.el.classList.remove('live-ready')
-}
-
-/** Large Dool2: shows the still image first and animates once 3D is ready. One canvas is moved between spots */
+const liveSlots = new Map<string, { el: HTMLElement; mood: string }>()
+/** Large Dool2: one element per slot, only its mood changes on redraw; it floats gently while working */
 export function liveDoori(slot: string, mood: string, size: number): HTMLElement {
   const hit = liveSlots.get(slot)
   if (hit) {
     if (hit.mood !== mood) {
       hit.mood = mood
-      hit.el.classList.remove('thinking', 'working', 'asking', 'done', 'sleeping')
+      hit.el.classList.remove(...MOODS)
       if (mood) hit.el.classList.add(mood)
-      hit.live?.setMood(mood || 'idle')
+      hit.el.classList.toggle('bob', mood === 'working')
+      drawInto(hit.el)
     }
     hit.el.style.setProperty('--s', `${size}px`)
     return hit.el
   }
   const d = doori(mood, size)
-  const rec: Slot = { el: d, mood }
-  liveSlots.set(slot, rec)
-  slotOf.set(d, rec)
-  seen.observe(d)
+  d.classList.toggle('bob', mood === 'working')
+  d.dataset.liveSlot = slot
+  liveSlots.set(slot, { el: d, mood })
   return d
 }
 
