@@ -444,7 +444,7 @@ export const PDF_EXTENSION = '0.3.3'
 /** The extension version with side-effect-free page scripts and the read-only DevTools list (ADR 0045) */
 export const EVAL_EXTENSION = '0.3.4'
 /** The newest extension in this repo: an older store copy is asked to update itself (command update, from 0.3.5) */
-export const EXTENSION_LATEST = '0.3.6'
+export const EXTENSION_LATEST = '0.3.7'
 
 export { READ_CDP_METHODS } from './cdp.js'
 

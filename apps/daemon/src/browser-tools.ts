@@ -114,6 +114,7 @@ import {
   tabTag,
   WORD_CHARS,
 } from './region/kr/browser.js'
+import { PRINT_BUTTON } from './region/kr/print.js'
 import {
   MAX_STEPS as ROUTE_MAX_STEPS,
   type RouteBook,
@@ -1151,6 +1152,11 @@ export class BrowserTools {
   savePdf?: (name: string, pdf: Buffer, preview?: string) => Promise<string>
   /** Keeps a file Dool2 produced from a page (browser_cdp) in the Dool2 folder and the library; returns where */
   saveFile?: (name: string, ext: string, data: Buffer) => Promise<string>
+  /**
+   * Saves Chrome's open print window as a PDF in the Dool2 folder (the daemon drives that one window through the PC
+   * helper). opened false: no print window came
+   */
+  printViaChrome?: (name: string) => Promise<{ opened: boolean; path?: string; error?: string }>
   /** browser_save_pdf met an extension too old to print a PDF: the daemon says so in the conversation once it updates */
   pdfTooOld?: (tabId: number) => void
   requestTap?: (
@@ -1448,6 +1454,13 @@ export class BrowserTools {
           false,
         )
       case 'click': {
+        // A site's own print button: pressed plainly it opened Chrome's print window, which froze the tab and nobody
+        // was at the PC to close it (test PC 11-27, a resident certificate). Pressed through the print path, the file
+        // the site prints is kept as a PDF and no print window opens
+        if (a.__printing !== true && this.savePdf) {
+          const name = this.pages.get(tabId)?.refs.get(String(a.ref ?? ''))?.name ?? ''
+          if (PRINT_BUTTON.test(name)) return this.saveSitePrint(tabId, String(a.ref), '')
+        }
         // Buttons inside a frame on the page (a small window from another address): frames change late. If unchanged right after the click, wait briefly and read again
         // (measured 11-20 Gmarket adding an address: the form appeared, but reading right away concluded 'no input window' and handed off to the person)
         const inFrame = frameRef(String(a.ref ?? ''))
@@ -1539,6 +1552,10 @@ export class BrowserTools {
       }
       case 'save_pdf': {
         if (!this.savePdf) throw new Error('Saving a PDF is not available on this PC')
+        // The site's own print button: press it and keep what the site prints, the way a person presses print and
+        // picks "Save as PDF". A viewer page printed as it is shows only a picture of the screen (test PC 11-27)
+        if (typeof a.print === 'string' && a.print)
+          return this.saveSitePrint(tabId, a.print, String(a.name ?? ''))
         const r = (await this.browser
           .call(
             'pdf',
@@ -3622,6 +3639,41 @@ export class BrowserTools {
   paySession(tabId: number): PaySession | undefined {
     return this.liveSessions().find((x) => x.tabs.has(tabId))
   }
+  /**
+   * The site's own print button, pressed the way a person does it: press it, and when Chrome's print window opens,
+   * Dool2 (the daemon through the PC helper, never the AI) picks Save as PDF and saves the file into the Dool2
+   * folder. That is the file print → Save as PDF gives, whatever the viewer does inside (a frame printing itself,
+   * a print PDF in a hidden frame). Without the PC helper the print window is left for the person
+   */
+  private async saveSitePrint(tabId: number, ref: string, name: string): Promise<ToolResult> {
+    // The title is read first: once the print window is open the page answers nothing until it closes
+    const page = this.printViaChrome
+      ? ((await this.browser.call('snapshot', { tabId, maxChars: 200 }).catch(() => undefined)) as
+          | { title?: string }
+          | undefined)
+      : undefined
+    const click = this.runCall('click', { tabId, ref, __printing: true })
+    if (!this.printViaChrome) return click
+    // The click itself does not come back while the print window is open (window.print holds the page), so the
+    // print window is handled alongside it. A click that fails at once (a stale ref) is said as it is
+    const early = await Promise.race([
+      click,
+      new Promise<undefined>((res) => setTimeout(() => res(undefined), 2_500)),
+    ])
+    if (early?.isError) return early
+    const r = await this.printViaChrome(name.trim() || page?.title || 'document').catch((e: Error) => ({
+      error: e.message,
+    }))
+    await Promise.race([click.catch(() => undefined), new Promise<void>((res) => setTimeout(res, 5_000))])
+    const text =
+      'path' in r && r.path
+        ? `Pressed the site's print button and saved its print as a PDF, the way print → Save as PDF does (no paper, nothing sent to a printer): ${r.path}. It is in the library too. Tell the user where it is.`
+        : 'error' in r && r.error
+          ? `Pressed the site's print button, but saving Chrome's print window as a PDF did not finish: ${r.error}. The print window may still be open on the PC.`
+          : "Pressed the site's print button, but no Chrome print window opened within 40 s: the site may print through its own program or need a step first (print options, a count, a confirm on the page). Read the page and continue there."
+    return { ...('path' in r && r.path ? {} : { isError: true }), content: [{ type: 'text', text }] }
+  }
+
   /** browser_cdp results that are files (a PDF, an archive, a picture, a loaded resource): saved, and where is said */
   private async saveCdp(
     method: string,
