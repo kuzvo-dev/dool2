@@ -25,6 +25,7 @@ import {
   sameFinal,
   scopeLines,
   siteKey,
+  siteName,
 } from './browser-tools.js'
 import { waitsForPerson } from './hand-back.js'
 import { ProfileStore } from './profile.js'
@@ -2192,6 +2193,39 @@ describe('간편인증 기다리기 (폰 [인증 완료했어요])', () => {
     const t = r.content[0]?.type === 'text' ? r.content[0].text : ''
     expect(t).toContain('Judge from the screen below yourself')
     expect(t).toContain('로그아웃')
+  }, 40_000)
+
+  it('one plain notification per verification: the app, the site by name, and what happens next', async () => {
+    const b = {
+      call: async (cmd: string) =>
+        cmd === 'snapshot'
+          ? {
+              tabId: 3,
+              url: 'https://efamily.scourt.go.kr/pt/apply',
+              title: '신청인 정보 조회 | 증명서발급 | 전자가족관계등록시스템',
+              text: '# 간편인증\n[e9 버튼 "인증 완료"]',
+            }
+          : { tabId: 3 },
+    }
+    const tools = new BrowserTools(b as never)
+    const pushed: [string, string][] = []
+    tools.notifyUser = (title, body) => pushed.push([title, body])
+    let card: unknown[] = []
+    tools.askAuthDone = (...args) => {
+      card = args
+      return { answer: Promise.resolve('인증 완료했어요'), cancel: () => {} }
+    }
+    await tools.run('read', { tabId: 3 })
+    await tools.run('wait_auth', {
+      tabId: 3,
+      message: '카카오톡에서 가족관계증명서 간편인증을 승인해 주세요',
+    })
+    expect(pushed).toEqual([
+      ['카카오톡에서 승인해 주세요', '전자가족관계등록시스템 본인 확인이에요. 승인하면 바로 이어서 할게요.'],
+    ])
+    expect(card[2]).toBe('카카오톡에 온 알림에서 승인한 다음, 아래 버튼을 눌러 주세요.')
+    expect(card[3]).toBe('전자가족관계등록시스템')
+    expect(siteName({ url: 'https://www.shop.example/a', title: '' })).toBe('shop.example')
   }, 40_000)
 
   it('two approvals that come back to the same page: says the site refused an input, and does not ask a third time', async () => {

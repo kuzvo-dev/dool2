@@ -21,6 +21,7 @@ import type {
   RemoteInfo,
   StepDetail,
 } from '@dool2/protocol'
+import { AUTH_APPS } from '@dool2/protocol'
 import { READ_CDP_METHODS } from '@dool2/protocol/cdp'
 import {
   PAY_KINDS,
@@ -882,6 +883,24 @@ export const SEEN_TTL_MS = 10 * 60_000
 
 /** How much of a script's or DevTools result the AI gets back (more is cut, with a note) */
 const EVAL_MAX = 8_000
+/**
+ * A site as people call it: the last part of the page title ("Apply | Certificates | Family Registry"), else the
+ * host without www. Notifications showed "efamily.scourt.go.kr"
+ */
+export function siteName(page?: { url?: string; title?: string }): string {
+  const parts = String(page?.title ?? '')
+    .split(/\s+[|·–—-]\s+/)
+    .map((x) => x.trim())
+    .filter(Boolean)
+  const last = parts.at(-1)
+  if (last && last.length <= 24) return last
+  try {
+    return new URL(page?.url ?? '').hostname.replace(/^www\./, '')
+  } catch {
+    return last?.slice(0, 24) ?? ''
+  }
+}
+
 /** browser_wait_auth after two approvals that came back to the same page */
 const AUTH_REFUSED =
   "Not asked again: the person approved twice and the page came back to the same screen both times. The site most likely refused something sent with the request: a name, a birth date, a phone number or a family member's name it checks against its records (one typed on a phone card may be wrong). Another request only sends the person another approval. Read the whole page and any message the site showed, tell the person which values went in, and ask them to correct the one that is wrong (browser_request_code for that field) before requesting again."
@@ -1109,6 +1128,8 @@ export class BrowserTools {
     host: string,
     label: string,
     hint: string,
+    /** The site as people call it (the end of the page title), for the card */
+    site?: string,
   ) => { answer: Promise<string | undefined>; cancel: () => void }
   /** Shows the verification code card (phone). The daemon puts the received code in that field and tells the chat to carry on */
   requestCode?: (
@@ -2574,7 +2595,12 @@ export class BrowserTools {
           String(a.message ?? '')
             .trim()
             .slice(0, 120) || am.authBody
-        this.notifyUser?.(am.authTitle, msg)
+        // One notification per request, in words a person uses: which app, for what, and what happens next. It was
+        // two or three per request (a push plus the card's own), titled with the site's address and "input needed",
+        // listing four apps and asking to press a button the notification does not have (test PC 11-27)
+        const app = AUTH_APPS.find((x) => msg.includes(x))
+        const site = siteName(this.pages.get(tabId))
+        this.notifyUser?.(app ? am.authTitleApp(app) : am.authTitle, am.authBodySite(site))
         // Only keep the tab open. No phone remote screen prep (holdForPerson) — the screen changed and closed the verification window (measured)
         this.hold(tabId, 200_000)
         // Done or not yet is not decided by text rules (guidance like "…please proceed" was read as not yet and only showed the card again and again, measured K-Pass).
@@ -2609,7 +2635,8 @@ export class BrowserTools {
         } catch {}
         // Some sites close the verification window when [verification done] is pressed before approval (measured Hometax: the window vanished 6 seconds after the request).
         // So while waiting, nothing is pressed; it only watches
-        const card = (label: string) => this.askAuthDone?.(host, label, am.authHint)
+        const card = (label: string) =>
+          this.askAuthDone?.(host, label, app ? am.authHintApp(app) : am.authHint, site)
         const waiting = card(msg)
         let pressedByUser = false
         if (waiting)

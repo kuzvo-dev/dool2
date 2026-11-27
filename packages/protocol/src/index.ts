@@ -670,6 +670,8 @@ export interface InfoRequestView {
   hint?: string
   /** Captcha picture (jpeg base64). If present, the card shows the picture and receives its text */
   image?: string
+  /** No notification of its own: the caller already sent one (a verification wait) */
+  quiet?: boolean
   status: 'pending' | 'answered' | 'cancelled' | 'expired'
   expiresAt: string
 }
