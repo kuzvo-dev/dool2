@@ -1539,6 +1539,10 @@ export class BrowserTools {
       }
       case 'save_pdf': {
         if (!this.savePdf) throw new Error('Saving a PDF is not available on this PC')
+        // The site's own print button: press it and keep what the site prints, the way a person presses print and
+        // picks "Save as PDF". A viewer page printed as it is shows only a picture of the screen (test PC 11-27)
+        if (typeof a.print === 'string' && a.print)
+          return this.saveSitePrint(tabId, a.print, String(a.name ?? ''))
         const r = (await this.browser
           .call(
             'pdf',
@@ -3622,6 +3626,57 @@ export class BrowserTools {
   paySession(tabId: number): PaySession | undefined {
     return this.liveSessions().find((x) => x.tabs.has(tabId))
   }
+  /** browser_save_pdf with print: press the site's print button and keep the file it prints */
+  private async saveSitePrint(tabId: number, ref: string, name: string): Promise<ToolResult> {
+    const fail = (text: string): ToolResult => ({ isError: true, content: [{ type: 'text', text }] })
+    await this.browser.call('printhook', { tabId }).catch((e: Error) => {
+      if (/Unknown command/.test(e.message))
+        throw new Error(
+          "This PC's Dool2 Chrome extension is older than 0.3.7 and cannot catch what a site prints yet (it updates by itself). Meanwhile browser_save_pdf without print keeps the document the viewer shows.",
+        )
+      throw e
+    })
+    // The same click as browser_click: the gate judges the button like any other
+    const pressed = await this.runCall('click', { tabId, ref })
+    if (pressed.isError) {
+      await this.browser.call('printtake', { tabId, waitMs: 1_000 }).catch(() => undefined)
+      return pressed
+    }
+    const got = (await this.browser
+      .call('printtake', { tabId, waitMs: 40_000 }, 70_000)
+      .catch(() => undefined)) as
+      | { calls?: number; via?: string; data?: string; type?: string; error?: string }
+      | undefined
+    if (!got?.calls)
+      return fail(
+        "Pressed the site's print button, but within 40 s the site did not ask the browser to print. It may print through its own program, or need a step first (print options, a count, a confirm on the page): read the page and continue there, then call again with print.",
+      )
+    if (got.error) return fail(`The site asked to print, but its print copy could not be read: ${got.error}`)
+    if (got.via === 'frame-page')
+      return fail(
+        'The site printed a frame whose content is not a file. browser_save_pdf without print keeps the document the viewer shows.',
+      )
+    const pdf = Buffer.from(got.data ?? '', 'base64')
+    if (pdf.subarray(0, 5).toString('latin1') !== '%PDF-')
+      return fail(
+        `The site's print copy is not a PDF (${got.type || 'unknown type'}). browser_save_pdf without print keeps the document the viewer shows.`,
+      )
+    const page = (await this.browser.call('snapshot', { tabId, maxChars: 200 }).catch(() => undefined)) as
+      | { title?: string }
+      | undefined
+    const save = this.savePdf
+    if (!save) return fail('Saving a PDF is not available on this PC')
+    const path = await save(name.trim() || page?.title || 'document', pdf)
+    return {
+      content: [
+        {
+          type: 'text',
+          text: `Saved what the site prints, the file its print button makes (${Math.round(pdf.length / 1024)} KB, ${got.via === 'page' ? "the page with the site's print layout" : 'its own print copy'}; no print window opened and nothing went to a printer): ${path}. It is in the library too. Tell the user where it is.`,
+        },
+      ],
+    }
+  }
+
   /** browser_cdp results that are files (a PDF, an archive, a picture, a loaded resource): saved, and where is said */
   private async saveCdp(
     method: string,

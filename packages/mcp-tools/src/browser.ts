@@ -262,6 +262,12 @@ export function registerBrowserTools(server: McpServer, client: BrowserClient) {
           "The element that is the document, when it is not found by itself (a viewer's page area). By default the document's pages are found and printed one per A4 sheet without the viewer's toolbar",
         ),
       whole: z.boolean().optional().describe('Print the whole tab as it is, viewer and all'),
+      print: z
+        .string()
+        .optional()
+        .describe(
+          "Ref of the site's own print button (a printer icon in a viewer). Dool2 presses it and keeps exactly the file the site prints, like pressing print and choosing Save as PDF, without a print window. Use it first whenever the page has a print button",
+        ),
     },
     true,
   )
