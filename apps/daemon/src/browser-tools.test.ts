@@ -2194,6 +2194,38 @@ describe('간편인증 기다리기 (폰 [인증 완료했어요])', () => {
     expect(t).toContain('로그아웃')
   }, 40_000)
 
+  it('two approvals that come back to the same page: says the site refused an input, and does not ask a third time', async () => {
+    // Test PC 11-27: a family member's name typed wrong, three KakaoTalk approvals, the page never moved
+    const b = {
+      call: async (cmd: string) => {
+        if (cmd === 'snapshot')
+          return {
+            tabId: 3,
+            url: 'https://gov.example/apply?step=1',
+            title: '신청인 정보',
+            text: '# 신청인 정보\n[e9 버튼 "인증 완료"]',
+          }
+        return { tabId: 3, url: 'https://gov.example/apply?step=1', title: '' }
+      },
+    }
+    const tools = new BrowserTools(b as never)
+    let asked = 0
+    tools.askAuthDone = () => {
+      asked++
+      return { answer: Promise.resolve('인증 완료했어요'), cancel: () => {} }
+    }
+    const text = (r: { content: { type: string; text?: string }[] }) =>
+      r.content.map((c) => c.text ?? '').join('\n')
+    await tools.run('read', { tabId: 3 })
+    const first = text(await tools.run('wait_auth', { tabId: 3, ref: 'e9' }))
+    expect(first).toContain('the one the request was sent from')
+    const second = text(await tools.run('wait_auth', { tabId: 3, ref: 'e9' }))
+    expect(second).toContain('refused something sent with the request')
+    const third = await tools.run('wait_auth', { tabId: 3, ref: 'e9' })
+    expect(third.isError).toBe(true)
+    expect(asked).toBe(2)
+  }, 40_000)
+
   it('누르지 않아도 화면이 바뀌면(확인 창·인증 창 닫힘) 바로 AI에게 넘기고, 아무 변화가 없어도 카드를 누르면 3분 기다리지 않는다', async () => {
     // ① 승인 뒤 사이트가 확인 창을 띄운다 (내보험찾아줌: "최근 접수건이 있어요. 재신청할까요?") ② 인증 팝업이 닫힌다 ③ 그대로
     for (const kind of ['dialog', 'popup', 'same'] as const) {

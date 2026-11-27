@@ -882,6 +882,9 @@ export const SEEN_TTL_MS = 10 * 60_000
 
 /** How much of a script's or DevTools result the AI gets back (more is cut, with a note) */
 const EVAL_MAX = 8_000
+/** browser_wait_auth after two approvals that came back to the same page */
+const AUTH_REFUSED =
+  "Not asked again: the person approved twice and the page came back to the same screen both times. The site most likely refused something sent with the request: a name, a birth date, a phone number or a family member's name it checks against its records (one typed on a phone card may be wrong). Another request only sends the person another approval. Read the whole page and any message the site showed, tell the person which values went in, and ask them to correct the one that is wrong (browser_request_code for that field) before requesting again."
 const SCRIPT_ON_PAYING =
   'Scripts and DevTools do not run on a payment step: what happens there goes through the approval gate. Read it with browser_read.'
 const OLD_EXTENSION_EVAL =
@@ -889,6 +892,8 @@ const OLD_EXTENSION_EVAL =
 
 export class BrowserTools {
   private pages = new Map<number, PageInfo>()
+  /** Approvals that came back to the page they were sent from (host+path), for browser_wait_auth */
+  private authStalls = new Map<string, { n: number; at: number }>()
   /**
    * Per AI session (the chat whose tool server called, '' when unknown), per tab: the last whole page that AI saw.
    * Actions on a page it saw give only what changed since. Each chat keeps its own: a page one task read is not in
@@ -2550,6 +2555,21 @@ export class BrowserTools {
         // Notify the phone and press [verification done] every few seconds to see whether it was approved. Text like "not signed" means not yet.
         // Some sites (Hometax) open the verification window as a popup (new tab), so tabs Dool2 opened recently are checked too
         const am = browserText(this.userLang())
+        // Approved twice and back on the same page both times: the site refused something sent with the request.
+        // A third request only sent the person another approval (test PC 11-27: a family member's name typed wrong on
+        // the phone card, three KakaoTalk approvals, and Dool2 never saw why)
+        const placeOf = (u?: string) => {
+          try {
+            const x = new URL(u ?? '')
+            return `${x.hostname}${x.pathname}`
+          } catch {
+            return ''
+          }
+        }
+        const before = placeOf(this.pages.get(tabId)?.url)
+        const stalled = this.authStalls.get(before)
+        if (before && stalled && stalled.n >= 2 && Date.now() - stalled.at < 15 * 60_000)
+          return { isError: true, content: [{ type: 'text', text: AUTH_REFUSED }] }
         const msg =
           String(a.message ?? '')
             .trim()
@@ -2634,7 +2654,19 @@ export class BrowserTools {
         const backFrom = (main: Snapshot, why: string) => {
           waiting?.cancel()
           this.pages.set(tabId, pageInfo(main.url, main.text))
-          return this.read(tabId, undefined, `${why}. ${judge}`)
+          // Back on the page the request was sent from: say so, and after the second time, what that means
+          let same = ''
+          let refused = false
+          if (before && placeOf(main.url) === before && /approved|window closed/.test(why)) {
+            const was = this.authStalls.get(before)
+            const n = was && Date.now() - was.at < 15 * 60_000 ? was.n + 1 : 1
+            this.authStalls.set(before, { n, at: Date.now() })
+            refused = n >= 2
+            same = refused
+              ? ` ${AUTH_REFUSED}`
+              : ' The page is the one the request was sent from (no next step yet): read it once more for a message from the site before anything else.'
+          } else if (before) this.authStalls.delete(before)
+          return this.read(tabId, undefined, `${why}.${same}${refused ? '' : ` ${judge}`}`)
         }
         const watch = async (signal?: AbortSignal): Promise<ToolResult> => {
           while (Date.now() - started < 180_000) {
