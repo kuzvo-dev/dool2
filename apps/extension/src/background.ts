@@ -2610,19 +2610,22 @@ async function run(cmd: BrowserCommand, a: Record<string, unknown>): Promise<unk
         const runs = await chrome.scripting
           .executeScript({ target: { tabId, allFrames: true }, world: 'MAIN', func: pagePrintTake })
           .catch(() => [])
-        const got = runs.map((r) => r.result).find((r) => r && r.calls > 0)
+        const hit = runs.find((r) => r.result && r.result.calls > 0)
+        const got = hit ? { ...hit.result, frameId: hit.frameId } : undefined
         if (got) {
           await chrome.scripting
             .executeScript({ target: { tabId, allFrames: true }, world: 'MAIN', func: pagePrintUnhook })
             .catch(() => undefined)
-          if (got.via === 'page') {
+          if (got.via === 'page' && !got.frameId) {
             // The site printed its page itself: the same print Chrome's "Save as PDF" makes, with the site's print styles
             const r = await cdp<{ data: string }>(tabId, 'Page.printToPDF', {
               printBackground: true,
               preferCSSPageSize: true,
             })
-            return { via: 'page', data: r.data }
+            return { via: 'page', data: r.data, calls: got.calls }
           }
+          // A frame printed itself: say which, the daemon reports it (printing one frame of a page is not possible yet)
+          if (got.via === 'page') return { ...got, via: 'frame-page' }
           return got
         }
         if (Date.now() > until) {

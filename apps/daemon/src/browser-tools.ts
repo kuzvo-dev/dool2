@@ -114,6 +114,7 @@ import {
   tabTag,
   WORD_CHARS,
 } from './region/kr/browser.js'
+import { PRINT_BUTTON } from './region/kr/print.js'
 import {
   MAX_STEPS as ROUTE_MAX_STEPS,
   type RouteBook,
@@ -1448,6 +1449,13 @@ export class BrowserTools {
           false,
         )
       case 'click': {
+        // A site's own print button: pressed plainly it opened Chrome's print window, which froze the tab and nobody
+        // was at the PC to close it (test PC 11-27, a resident certificate). Pressed through the print path, the file
+        // the site prints is kept as a PDF and no print window opens
+        if (a.__printing !== true && this.savePdf) {
+          const name = this.pages.get(tabId)?.refs.get(String(a.ref ?? ''))?.name ?? ''
+          if (PRINT_BUTTON.test(name)) return this.saveSitePrint(tabId, String(a.ref), '')
+        }
         // Buttons inside a frame on the page (a small window from another address): frames change late. If unchanged right after the click, wait briefly and read again
         // (measured 11-20 Gmarket adding an address: the form appeared, but reading right away concluded 'no input window' and handed off to the person)
         const inFrame = frameRef(String(a.ref ?? ''))
@@ -3637,7 +3645,7 @@ export class BrowserTools {
       throw e
     })
     // The same click as browser_click: the gate judges the button like any other
-    const pressed = await this.runCall('click', { tabId, ref })
+    const pressed = await this.runCall('click', { tabId, ref, __printing: true })
     if (pressed.isError) {
       await this.browser.call('printtake', { tabId, waitMs: 1_000 }).catch(() => undefined)
       return pressed
