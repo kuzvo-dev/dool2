@@ -28,6 +28,7 @@ export const indexText = messages({
     finishByHand: (reason: string) => `${reason}. 화면을 열어 직접 마쳐 주세요.`,
     takeoverShown: (name: string) =>
       `${name} 자동 로그인이 중간에 멈췄어요. 두리가 화면을 보며 이어서 해 볼게요.`,
+    resumeCut: 'PC가 다시 켜져서 끊긴 답을 이어서 할게요.',
     takeoverWrong: (name: string) =>
       `${name}에서 저장된 아이디나 비밀번호가 맞지 않는다고 해요. 두리가 화면을 한 번 확인해 볼게요.`,
     chatNotOpen: '대화를 아직 열지 못했어요',
@@ -230,6 +231,7 @@ export const indexText = messages({
     finishByHand: (reason: string) => `${reason}. Open the screen and finish it yourself.`,
     takeoverShown: (name: string) =>
       `Automatic sign-in to ${name} stopped partway. Doori will look at the screen and continue.`,
+    resumeCut: 'Dool2 restarted on the PC, so it picks up the answer that was cut off.',
     takeoverWrong: (name: string) =>
       `${name} says the saved ID or password is wrong. Doori will check the screen once.`,
     chatNotOpen: 'The conversation is not open yet',

@@ -6117,6 +6117,33 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
 
   linkRef = link
   health.start()
+  // A request the last restart cut off (an update or a crash while it was being answered): answer it now instead of
+  // leaving the person looking at a reply that never comes (test PC 11-27)
+  const resumeTimer = setTimeout(() => {
+    if (closing) return
+    // Phones stay connected to the relay through a restart and kept showing "answering" from before it: say where
+    // the conversation is now
+    void link.broadcast({
+      kind: 'conversation-status',
+      busy: conversationBusy(),
+      queued: [...queued],
+    })
+    const cur = conversation.current()?.id
+    const last = cur ? store.listMessages(cur).at(-1) : undefined
+    if (!cur || !last || last.role !== 'user' || readAppNote(last.text) !== undefined) return
+    if (Date.now() - Date.parse(last.createdAt) > 10 * 60_000 || conversationBusy()) return
+    journal.write('resume-cut', {})
+    followUp(
+      cur,
+      appNote(
+        forAI(
+          m().resumeCut,
+          "Dool2 restarted on the PC while you were answering the user's last message, so that answer was cut off before it was saved. Answer that message now, from the start.",
+        ),
+      ),
+    )
+  }, 3_000)
+  resumeTimer.unref?.()
   return {
     url: `http://127.0.0.1:${port}`,
     events,
@@ -6140,6 +6167,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
         try {
           store.setSetting('tasks', tasks.views(30))
         } catch {}
+        clearTimeout(resumeTimer)
         journal.stop()
         health.stop()
         packs?.stop()
