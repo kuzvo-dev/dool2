@@ -460,13 +460,37 @@ chrome.tabs.onReplaced.addListener((added, removed) => {
     if (s.owned.includes(removed)) s.owned = [...s.owned.filter((t) => t !== removed), added]
   })
 })
+/** The daemon asked for an update (command update): apply it as soon as Chrome has it */
+let updateWanted = false
+chrome.runtime.onUpdateAvailable.addListener(() => {
+  if (updateWanted) chrome.runtime.reload()
+})
+/** Which tab opened which (popups such as a verification window): a closed popup's site alerts go to its opener */
+const openers = new Map<number, number>()
 chrome.webNavigation.onCreatedNavigationTarget.addListener((d) => {
+  openers.set(d.tabId, d.sourceTabId)
   adopt(d.sourceTabId, d.tabId)
 })
 chrome.tabs.onCreated.addListener((tab) => {
-  if (tab.id !== undefined && tab.openerTabId !== undefined) adopt(tab.openerTabId, tab.id)
+  if (tab.id !== undefined && tab.openerTabId !== undefined) {
+    openers.set(tab.id, tab.openerTabId)
+    adopt(tab.openerTabId, tab.id)
+  }
 })
 chrome.tabs.onRemoved.addListener(async (tabId) => {
+  // Alerts a popup showed right before it closed (a verification window saying the details did not match) were lost
+  // with it, and Dool2 asked for the same verification three times (test PC 11-27): hand them to the opener tab
+  const opener = openers.get(tabId)
+  openers.delete(tabId)
+  const left = dialogNotes.get(tabId)
+  if (opener !== undefined && left?.length)
+    dialogNotes.set(
+      opener,
+      [
+        ...(dialogNotes.get(opener) ?? []),
+        ...left.map((d) => ({ ...d, message: `(in the window that closed) ${d.message}` })),
+      ].slice(-5),
+    )
   let had = false
   await update((s) => {
     had = s.owned.includes(tabId)
@@ -1872,6 +1896,17 @@ async function run(cmd: BrowserCommand, a: Record<string, unknown>): Promise<unk
       // Send the answer first, then reload (after reloading it greets the daemon again)
       setTimeout(() => chrome.runtime.reload(), 200)
       return { ok: true }
+    }
+    case 'update': {
+      // The store copy asks Chrome for a newer version now instead of waiting for Chrome's own check every few hours
+      // (11-27: the store had 0.3.3 for hours while the test PC still ran 0.3.2). The daemon asks only while idle; when
+      // the download is ready the extension reloads itself and greets the daemon again
+      updateWanted = true
+      const r = (await chrome.runtime.requestUpdateCheck()) as unknown as {
+        status?: string
+        version?: string
+      }
+      return { status: r?.status ?? 'unknown', ...(r?.version ? { version: r.version } : {}) }
     }
     case 'open': {
       const url = safeUrl(a.url)

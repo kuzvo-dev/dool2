@@ -57,6 +57,7 @@ import {
   CreateThreadRequestSchema,
   type DaemonStreamEvent,
   DEFAULT_SETTINGS,
+  EXTENSION_LATEST,
   type ExtensionStatus,
   type FeedItem,
   FILE_CHUNK,
@@ -760,7 +761,24 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
       ...(s.connected ? { version: s.version, browser: s.browser } : {}),
     })
     if (s.connected && s.version && versionAtLeast(s.version, PDF_EXTENSION)) pdfReady()
+    if (s.connected && s.version && !versionAtLeast(s.version, EXTENSION_LATEST)) askExtensionUpdate()
   })
+  /**
+   * An older store copy of the extension: ask Chrome for the newer one now, while Dool2 is idle (a reload in the middle
+   * of a task drops its tabs' state). At most every 3 hours; copies before 0.3.5 do not know the command and ignore it
+   */
+  let updateAskedAt = 0
+  const askExtensionUpdate = () => {
+    setTimeout(() => {
+      if (closing || Date.now() - updateAskedAt < 3 * 3_600_000) return
+      if (running > 0) return
+      updateAskedAt = Date.now()
+      void browser
+        .call('update', {}, 20_000)
+        .then((r) => journal.write('extension-update', { asked: true, ...(r as object) }))
+        .catch(() => {})
+    }, 10_000).unref?.()
+  }
   /** Resolves true as soon as the extension connects, false after ms */
   const extensionConnects = (ms: number) =>
     new Promise<boolean>((resolve) => {

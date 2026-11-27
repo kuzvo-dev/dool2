@@ -443,6 +443,8 @@ export const MIN_CONNECTOR_EXTENSION = '0.2.0'
 export const PDF_EXTENSION = '0.3.3'
 /** The extension version with side-effect-free page scripts and the read-only DevTools list (ADR 0045) */
 export const EVAL_EXTENSION = '0.3.4'
+/** The newest extension in this repo: an older store copy is asked to update itself (command update, from 0.3.5) */
+export const EXTENSION_LATEST = '0.3.5'
 
 export { READ_CDP_METHODS } from './cdp.js'
 
@@ -503,6 +505,7 @@ export const BrowserCommandSchema = z.enum([
   'pdf',
   'eval',
   'cdp',
+  'update',
   /**
    * Excludes tabs waiting for a person or approval from tab cleanup (sleeping, closing) for a set time (ms: 0 releases).
    * Only 3 tabs are kept, and a tab waiting for payment approval was closed when another tab opened (measured: Lotte Cinema)

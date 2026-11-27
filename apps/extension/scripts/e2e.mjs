@@ -434,6 +434,11 @@ try {
     assert.equal((await call('snapshot', { tabId })).title, '두리 시험 가게')
   })
 
+  await step('Asking Chrome for an update answers with a status (0.3.5)', async () => {
+    const r = await call('update', {})
+    assert.equal(typeof r.status, 'string')
+  })
+
   await step('DevTools: print to PDF is on the list, cookies are not', async () => {
     const r = await call('cdp', { tabId, method: 'Page.printToPDF', params: {} })
     assert.ok(Buffer.from(r.data, 'base64').subarray(0, 5).toString('latin1') === '%PDF-')
