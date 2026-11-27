@@ -1,13 +1,7 @@
 // code_run (ADR 0045, threat model T32): JavaScript Dool2 writes runs in QuickJS compiled to WebAssembly, inside the
 // daemon. Nothing of the host goes in except a function that collects printed text: no file system, network, process,
 // timers or Dool2 API. Memory and run time are capped. For computing, converting and shaping data when no tool does it
-import variant from '@jitl/quickjs-singlefile-mjs-release-sync'
-import {
-  newQuickJSWASMModuleFromVariant,
-  type QuickJSHandle,
-  type QuickJSWASMModule,
-  shouldInterruptAfterDeadline,
-} from 'quickjs-emscripten-core'
+import type { InterruptHandler, QuickJSHandle, QuickJSWASMModule } from 'quickjs-emscripten-core'
 
 export interface CodeRunResult {
   ok: boolean
@@ -29,7 +23,18 @@ export interface CodeRunLimits {
 
 const LIMITS: CodeRunLimits = { timeMs: 10_000, memoryBytes: 128 << 20, printedMax: 50_000 }
 
-let module: Promise<QuickJSWASMModule> | undefined
+/** The engine (3 MB) loads on the first run, never at daemon start: a CI daemon test timed out while every start loaded it */
+let module: Promise<{ qjs: QuickJSWASMModule; deadline: (at: number) => InterruptHandler }> | undefined
+const load = async () => {
+  const [core, variant] = await Promise.all([
+    import('quickjs-emscripten-core'),
+    import('@jitl/quickjs-singlefile-mjs-release-sync'),
+  ])
+  return {
+    qjs: await core.newQuickJSWASMModuleFromVariant(variant.default),
+    deadline: core.shouldInterruptAfterDeadline,
+  }
+}
 
 /**
  * Runs the code once in a fresh runtime. `input` is put in as the global `input` (the data the code works on, already
@@ -41,13 +46,13 @@ export async function runCode(
   limits: Partial<CodeRunLimits> = {},
 ): Promise<CodeRunResult> {
   const lim = { ...LIMITS, ...limits }
-  module ??= newQuickJSWASMModuleFromVariant(variant)
-  const qjs = await module
+  module ??= load()
+  const { qjs, deadline } = await module
   const started = Date.now()
   const rt = qjs.newRuntime()
   rt.setMemoryLimit(lim.memoryBytes)
   rt.setMaxStackSize(1 << 20)
-  rt.setInterruptHandler(shouldInterruptAfterDeadline(started + lim.timeMs))
+  rt.setInterruptHandler(deadline(started + lim.timeMs))
   const vm = rt.newContext()
   const printed: string[] = []
   let size = 0
@@ -56,7 +61,7 @@ export async function runCode(
     return typeof v === 'string' ? v : JSON.stringify(v)
   }
   try {
-    const log = vm.newFunction('log', (...args) => {
+    const log = vm.newFunction('log', (...args: QuickJSHandle[]) => {
       const line = args.map(show).join(' ')
       size += line.length
       if (size <= lim.printedMax) printed.push(line)
