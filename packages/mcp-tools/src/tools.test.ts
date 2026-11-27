@@ -554,6 +554,7 @@ describe('tools on demand (ADR 0033)', () => {
       'feed_post',
       'idea_suggest',
       'ai_account_view',
+      'ai_use',
       'recipe_forget',
     ])
   })

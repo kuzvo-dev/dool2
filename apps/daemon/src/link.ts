@@ -7,6 +7,7 @@ import { hostname } from 'node:os'
 import type { Lang } from '@dool2/i18n'
 import {
   type AgentId,
+  AgentIdSchema,
   type ApprovalView,
   approvalSignText,
   type ConversationState,
@@ -118,6 +119,8 @@ export interface LinkHost {
   signup?(site: string, loginId: string | undefined): void
   /** The user doesn't know the account (Dool2 finds the ID or resets the password) */
   forgot?(site: string, loginId: string | undefined): void
+  /** Switch the AI Dool2 runs on to another connected one; message says why not when it is not connected */
+  useAgent?(agent: AgentId): Promise<{ ok: boolean; message?: string }>
   /** Capabilities the phone announced (hello). Text sending uses this to see if the phone app is new enough */
   caps?(phone: string, caps: string[]): void
   /** Result of a text the phone sent itself (arrives before the approval signature) */
@@ -471,6 +474,14 @@ export class PhoneLink {
         // So every connected phone sees the new name
         for (const p of this.phones) await this.send(p, await this.stateFor(p)).catch(() => {})
         return
+      }
+      case 'use-agent': {
+        const agent = AgentIdSchema.safeParse(msg.agent)
+        if (!agent.success || !this.host.useAgent) return
+        const r = await this.host.useAgent(agent.data)
+        // A switch reaches every phone through resync (the host's settings change); a refusal only this one
+        if (!r.ok) await this.send(phone, { kind: 'error', message: r.message ?? '' })
+        return this.send(phone, await this.stateFor(phone))
       }
       case 'screen':
       case 'remote': {

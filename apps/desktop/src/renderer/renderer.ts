@@ -118,6 +118,7 @@ declare global {
         smokeOpen?: string
         smokeSetup?: string
         smokeNoAi?: boolean
+        smokeAllAi?: boolean
         smokeAsk?: string
         smokeAskWait?: number
       }>
@@ -516,11 +517,17 @@ function renderDevice(settings?: Settings) {
 
 /** Smoke screenshots of a PC with no AI ready (DOOL2_SMOKE_NO_AI) */
 let smokeNoAi = false
+/** Smoke screenshots of a PC with every AI connected (DOOL2_SMOKE_ALL_AI) */
+let smokeAllAi = false
 
 async function loadAgents() {
   const { agents } = await api<{ agents: AgentStatus[] }>('/api/agents')
   const wasNoAi = noAiReady()
-  state.agents = smokeNoAi ? agents.map((a) => ({ id: a.id, installed: false, loggedIn: false })) : agents
+  state.agents = smokeNoAi
+    ? agents.map((a) => ({ id: a.id, installed: false, loggedIn: false }))
+    : smokeAllAi
+      ? agents.map((a) => ({ ...a, installed: true, loggedIn: true }))
+      : agents
   renderSpend()
   renderDevice()
   renderHead()
@@ -3044,6 +3051,7 @@ async function show(view: View, id?: string) {
 async function main() {
   const cfg = await window.dool2.config()
   smokeNoAi = cfg.smokeNoAi === true
+  smokeAllAi = cfg.smokeAllAi === true
   state.url = cfg.url
   state.token = cfg.token
   // Last-used language first (localStorage), settled from settings below

@@ -373,6 +373,20 @@ export function registerLifeTools(server: McpServer, client: BrowserClient) {
     call('ai_account_view'),
   )
   server.registerTool(
+    'ai_use',
+    {
+      title: 'Switch which AI Dool2 runs on',
+      description:
+        'Switches the AI Dool2 runs on to another one connected on this PC, when the user asks ("use Codex from now on", "switch back to Claude"). The next message runs on it in a fresh session with the recent chat carried over; this answer and running tasks stay on the current AI. Only a connected AI is taken: the result says which ones are and where the others get connected. ai_account_view shows what is connected.',
+      inputSchema: {
+        agent: z
+          .enum(['claude', 'codex', 'opencode'])
+          .describe('claude = Claude Code, codex = Codex, opencode = the pay-as-you-go API key'),
+      },
+    },
+    call('ai_use'),
+  )
+  server.registerTool(
     'vault_find',
     {
       title: 'View logins saved in the vault',

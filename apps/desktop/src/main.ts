@@ -405,6 +405,8 @@ app.whenReady().then(async () => {
     ...(SMOKE && process.env.DOOL2_SMOKE_SETUP ? { smokeSetup: process.env.DOOL2_SMOKE_SETUP } : {}),
     // Smoke: show the screens as if no AI were ready on this PC (DOOL2_SMOKE_NO_AI=1)
     ...(SMOKE && process.env.DOOL2_SMOKE_NO_AI === '1' ? { smokeNoAi: true } : {}),
+    // Smoke: show every AI as connected, to capture choosing among them (DOOL2_SMOKE_ALL_AI=1)
+    ...(SMOKE && process.env.DOOL2_SMOKE_ALL_AI === '1' ? { smokeAllAi: true } : {}),
     // Smoke: send this request, and with DOOL2_SMOKE_ASK_WAIT (ms) capture the working screen after that long
     ...(SMOKE && process.env.DOOL2_SMOKE_ASK
       ? { smokeAsk: process.env.DOOL2_SMOKE_ASK, smokeAskWait: Number(process.env.DOOL2_SMOKE_ASK_WAIT ?? 0) }

@@ -166,11 +166,29 @@ export function settingsView() {
     langSeg.append(segBtn(lang === id, { text: LANG_NAMES[id], onclick: () => setLang(id) }))
   box.append(h('h2', { class: 'over', text: mSet.language }), langSeg)
 
-  // ── AI · browser (PC: AI · browser): status only, changed on the PC ──
-  const agent = st.pc?.defaultAgent ?? st.pc?.agents[0]
+  // ── AI · browser (PC: AI · browser): the AI Dool2 uses can be switched among the connected ones; connecting one
+  // and the extension happen on the PC ──
+  const ready = st.pc?.agents ?? []
+  const chosen = st.pc?.defaultAgent
+  const agent = chosen && ready.includes(chosen) ? chosen : ready[0]
+  const pick = ready.length > 1 ? h('div', { class: 'seg' }) : undefined
+  for (const id of pick ? ready : [])
+    pick?.append(
+      segBtn(id === agent, {
+        text: agentLabel(id, lang),
+        onclick: () => {
+          if (id !== agent) void send({ kind: 'use-agent', agent: id })
+        },
+      }),
+    )
   sec(
     mSet.secAi,
-    row('brain', mSet.aiRow, agent ? mSet.aiSub(agentLabel(agent, lang)) : mSet.aiNone),
+    row(
+      'brain',
+      mSet.aiRow,
+      agent ? (pick ? mSet.aiSubPick : mSet.aiSub)(agentLabel(agent, lang)) : mSet.aiNone,
+    ),
+    pick ? h('div', { class: 'set-row' }, pick) : undefined,
     row('globe', mSet.browserRow, st.pc?.extension ? mSet.browserOn : mSet.browserOff),
     row(
       'apps',

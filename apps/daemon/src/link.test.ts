@@ -186,6 +186,14 @@ describe('폰 연결', () => {
     await p.send({ kind: 'rename-pc', name: '  집 맥북  ' })
     await waitFor(() => p.inbox.some((m) => m.kind === 'state' && m.pcName === '집 맥북'))
     expect((await api('/api/settings')).settings.pcName).toBe('집 맥북')
+
+    // Picking an AI that is not connected on this PC is refused with a reason; the connected one is taken
+    await p.send({ kind: 'use-agent', agent: 'codex' })
+    await waitFor(() => p.inbox.some((m) => m.kind === 'error' && m.message.includes('연결')))
+    expect((await api('/api/settings')).settings.defaultAgent).toBeUndefined()
+    await p.send({ kind: 'use-agent', agent: 'claude' })
+    await waitFor(() => p.inbox.some((m) => m.kind === 'state' && m.defaultAgent === 'claude'))
+    expect((await api('/api/settings')).settings.defaultAgent).toBe('claude')
   })
 
   it('페어링 안 된 기기, 틀린 비밀, 재전송은 버린다', async () => {

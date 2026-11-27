@@ -1,6 +1,7 @@
 import type { AgentStatus } from '@dool2/protocol'
 import { describe, expect, it } from 'vitest'
 import {
+  aiPicks,
   checkHeadline,
   checklist,
   costLabel,
@@ -173,5 +174,30 @@ describe("this month's spend", () => {
     }
     const row = checklist('payg', [payg]).find((i) => i.id === 'payg-key')
     expect(row?.detail).toContain('이번 달 약 73원 썼어요')
+  })
+})
+
+describe('the AI Dool2 uses (Settings)', () => {
+  it('only connected ones can be picked; the chosen one wins when connected, else the first connected', () => {
+    const picks = aiPicks(
+      [claudeReady, codexReady, { id: 'opencode', installed: false, loggedIn: false }],
+      'codex',
+    )
+    expect(picks.map((p) => [p.id, p.ready, p.chosen])).toEqual([
+      ['claude', true, false],
+      ['codex', true, true],
+      ['opencode', false, false],
+    ])
+    expect(picks[2]?.action).toBe('opencode-install')
+    // Chosen but signed out: the next message runs on the first connected one, and Codex shows its sign-in
+    const out = aiPicks([claudeReady, codexOut], 'codex')
+    expect(out.find((p) => p.chosen)?.id).toBe('claude')
+    expect(out.find((p) => p.id === 'codex')?.action).toBe('codex-login')
+  })
+
+  it('shows how to connect each one that is not connected', () => {
+    const picks = aiPicks([claudeMissing, { id: 'opencode', installed: true, loggedIn: false }], undefined)
+    expect(picks.map((p) => p.action)).toEqual(['claude-install', 'codex-install', 'payg-key'])
+    expect(picks.some((p) => p.chosen)).toBe(false)
   })
 })

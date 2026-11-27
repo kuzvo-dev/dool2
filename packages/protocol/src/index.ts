@@ -153,6 +153,13 @@ export const SendMessageRequestSchema = z.object({
 })
 export type SendMessageRequest = z.infer<typeof SendMessageRequestSchema>
 
+/**
+ * Switch the AI Dool2 runs on (PUT /api/agents/default, the phone's use-agent, the ai_use tool). Only a connected one is
+ * taken; the conversation's next turn runs on it
+ */
+export const UseAgentRequestSchema = z.object({ agent: AgentIdSchema })
+export type UseAgentRequest = z.infer<typeof UseAgentRequestSchema>
+
 // ── Settings (stored only on this PC) ──────────────────────────────────────
 
 /** The AI subscription chosen on first run. 'unsure' if not sure */
@@ -1280,6 +1287,8 @@ export type PhoneToPc =
   | { kind: 'sms-result'; id: string; ok: boolean; message: string }
   /** Rename this PC shown on the phone (saved in PC settings so other phones see it too) */
   | { kind: 'rename-pc'; name: string }
+  /** Switch the AI Dool2 runs on to another connected one (saved in the PC settings, every phone sees it) */
+  | { kind: 'use-agent'; agent: AgentId }
   /** I have the app open (every minute). The PC sends streaming answers and the live screen only to phones that have them on */
   | { kind: 'ping' }
   /**

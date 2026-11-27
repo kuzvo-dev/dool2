@@ -59,8 +59,9 @@ export const ON_DEMAND_TOOLS = [
   // Rarely used (0 to 6 calls)
   'feed_post',
   'idea_suggest',
-  // Which AI and API key Dool2 runs on: asked about now and then, changed only in the PC settings
+  // Which AI and API key Dool2 runs on, and switching among the connected ones: asked about now and then
   'ai_account_view',
+  'ai_use',
   // Forgetting remembered steps (ADR 0044): only when the user asks
   'recipe_forget',
 ] as const
