@@ -171,6 +171,57 @@ describe('단계 자세히 (일한 과정 시트)', () => {
 })
 
 describe('브라우저 도구 실행', () => {
+  it('browser_eval returns the value, says when a script tried to act, and keeps cookies out (ADR 0045)', async () => {
+    const b = fakeBrowser()
+    const call = b.call
+    const evals: string[] = []
+    b.call = async (cmd, args) => {
+      if (cmd === 'eval') evals.push(String(args?.expression))
+      if (cmd === 'eval')
+        return String(args?.expression).includes('click')
+          ? { error: 'EvalError: Possible side-effect in debug-evaluate' }
+          : { type: 'object', value: [{ row: 1, price: 9900 }] }
+      return call(cmd, args)
+    }
+    const tools = new BrowserTools(b)
+    await tools.run('open', { url: 'https://shop.example' })
+    const ok = await tools.run('eval', { tabId: 3, expression: '[...document.rows].map(r => r.price)' })
+    expect(text(ok)).toContain('"price": 9900')
+    const act = await tools.run('eval', { tabId: 3, expression: 'document.querySelector("button").click()' })
+    expect(act.isError).toBe(true)
+    expect(text(act)).toContain('browser_click')
+    const jar = await tools.run('eval', { tabId: 3, expression: 'document.cookie' })
+    expect(jar.isError).toBe(true)
+    expect(evals).toHaveLength(2)
+  })
+
+  it('browser_cdp takes only the read-or-produce list and keeps files it makes', async () => {
+    const b = fakeBrowser()
+    const call = b.call
+    const pdf = Buffer.concat([Buffer.from('%PDF-1.7\n'), Buffer.alloc(4_000, 32)]).toString('base64')
+    const cdps: string[] = []
+    b.call = async (cmd, args) => {
+      if (cmd === 'cdp') cdps.push(String(args?.method))
+      if (cmd === 'cdp')
+        return args?.method === 'Page.printToPDF' ? { data: pdf } : { frameTree: { frame: { id: 'f' } } }
+      return call(cmd, args)
+    }
+    const tools = new BrowserTools(b)
+    const kept: string[] = []
+    tools.savePdf = async (name) => {
+      kept.push(name)
+      return `~/두리/${name}.pdf`
+    }
+    await tools.run('open', { url: 'https://shop.example' })
+    const r = await tools.run('cdp', { tabId: 3, method: 'Page.printToPDF', name: '증명서' })
+    expect(text(r)).toContain('~/두리/증명서.pdf')
+    expect(kept).toEqual(['증명서'])
+    expect(text(await tools.run('cdp', { tabId: 3, method: 'Page.getResourceTree' }))).toContain('frameTree')
+    const no = await tools.run('cdp', { tabId: 3, method: 'Network.getCookies' })
+    expect(no.isError).toBe(true)
+    expect(cdps).toEqual(['Page.printToPDF', 'Page.getResourceTree'])
+  })
+
   it('an extension too old to print a PDF: says what else to try, and the daemon hears to come back', async () => {
     const b = fakeBrowser()
     const call = b.call
@@ -190,7 +241,7 @@ describe('브라우저 도구 실행', () => {
     expect(text(r)).toContain('download, save or PDF button')
     // The certificate run sent the person to chrome://extensions developer mode, and said Documents blocked saving
     expect(text(r)).toContain('never send them to chrome://extensions')
-    expect(text(r)).toContain('does not need the Documents folder')
+    expect(text(r)).toContain('needs no folder permission')
     expect(told).toEqual([3])
   })
 

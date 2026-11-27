@@ -9,6 +9,10 @@
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
     },
+    "./cdp": {
+      "types": "./dist/cdp.d.ts",
+      "default": "./dist/cdp.js"
+    },
     "./doori-draw": {
       "types": "./dist/doori-draw.d.ts",
       "default": "./dist/doori-draw.js"

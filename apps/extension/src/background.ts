@@ -3,6 +3,7 @@
 // - It only touches tabs Dool2 opened. Tabs the user opened are left alone
 // - Clicks and typing go through chrome.debugger (CDP Input), the same as real input
 import type { BridgeRequest, BrowserCommand } from '@dool2/protocol'
+import { READ_CDP_METHODS } from '@dool2/protocol/cdp'
 import { type FrameNode, layoutFrames, screenOrder } from './frames.js'
 import { staleBuild } from './fresh.js'
 import { keyDef, pickPath, safeUrl } from './keys.js'
@@ -2532,6 +2533,58 @@ async function run(cmd: BrowserCommand, a: Record<string, unknown>): Promise<unk
         preferCSSPageSize: true,
       })
       return { data: r.data }
+    }
+    case 'eval': {
+      // A script on a page Dool2 opened, evaluated side-effect free by V8 (ADR 0045, T31): it can read and compute,
+      // and throws if it would click, type, change the page, store anything or call the network
+      const tabId = await ownedTab(a)
+      const expression = String(a.expression ?? '')
+      if (!expression.trim() || expression.length > 20_000)
+        throw new Error('Give a script of up to 20,000 characters')
+      // Never hand a password field's value to the AI (T15): only while none holds one
+      const pw = await cdp<{ result: { value?: unknown } }>(tabId, 'Runtime.evaluate', {
+        expression: `[...document.querySelectorAll('input[type=password]')].some((i) => i.value !== '')`,
+        returnByValue: true,
+        throwOnSideEffect: true,
+      }).catch(() => ({ result: { value: true } }))
+      if (pw.result.value !== false)
+        throw new Error('A password field on this page holds a value, so scripts do not run here')
+      const r = await cdp<{
+        result: { type: string; value?: unknown; description?: string }
+        exceptionDetails?: { text?: string; exception?: { description?: string } }
+      }>(tabId, 'Runtime.evaluate', {
+        expression,
+        returnByValue: true,
+        throwOnSideEffect: true,
+        awaitPromise: false,
+        userGesture: false,
+        includeCommandLineAPI: false,
+        timeout: 5_000,
+      })
+      if (r.exceptionDetails)
+        return {
+          error: (r.exceptionDetails.exception?.description ?? r.exceptionDetails.text ?? 'Error').slice(
+            0,
+            1_000,
+          ),
+        }
+      return {
+        type: r.result.type,
+        value: r.result.value,
+        ...(r.result.description ? { description: r.result.description } : {}),
+      }
+    }
+    case 'cdp': {
+      // A DevTools method from the read-only list (ADR 0045, T31), on a page Dool2 opened
+      const tabId = await ownedTab(a)
+      const method = String(a.method ?? '')
+      if (!(READ_CDP_METHODS as readonly string[]).includes(method))
+        throw new Error(`${method} is not on the list of DevTools methods that only read or produce`)
+      const params =
+        a.params && typeof a.params === 'object' ? { ...(a.params as Record<string, unknown>) } : {}
+      // Always return the data, never a stream handle (IO.* is not on the list)
+      delete params.transferMode
+      return await cdp(tabId, method, params)
     }
     case 'screenshot': {
       const tabId = await ownedTab(a)

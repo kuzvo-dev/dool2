@@ -21,6 +21,7 @@ import type {
   RemoteInfo,
   StepDetail,
 } from '@dool2/protocol'
+import { READ_CDP_METHODS } from '@dool2/protocol/cdp'
 import {
   PAY_KINDS,
   type PayMethod,
@@ -159,6 +160,8 @@ export const BROWSER_TOOLS = [
   'request_code',
   'request_tap',
   'save_pdf',
+  'eval',
+  'cdp',
   'wait_auth',
   'new_password',
   'select',
@@ -877,6 +880,13 @@ export const PAGE_READ_CHARS = 5_000
 /** How long the last page the AI saw in a tab stays the base for showing only changes */
 export const SEEN_TTL_MS = 10 * 60_000
 
+/** How much of a script's or DevTools result the AI gets back (more is cut, with a note) */
+const EVAL_MAX = 8_000
+const SCRIPT_ON_PAYING =
+  'Scripts and DevTools do not run on a payment step: what happens there goes through the approval gate. Read it with browser_read.'
+const OLD_EXTENSION_EVAL =
+  "This PC's Dool2 Chrome extension is older than 0.3.4 and has no page scripts or DevTools yet (the Chrome Web Store copy updates by itself). What works now: browser_read, browser_find, browser_screenshot and browser_save_pdf."
+
 export class BrowserTools {
   private pages = new Map<number, PageInfo>()
   /**
@@ -1113,6 +1123,8 @@ export class BrowserTools {
    * preview: a picture of the page for the library
    */
   savePdf?: (name: string, pdf: Buffer, preview?: string) => Promise<string>
+  /** Keeps a file Dool2 produced from a page (browser_cdp) in the Dool2 folder and the library; returns where */
+  saveFile?: (name: string, ext: string, data: Buffer) => Promise<string>
   /** browser_save_pdf met an extension too old to print a PDF: the daemon says so in the conversation once it updates */
   pdfTooOld?: (tabId: number) => void
   requestTap?: (
@@ -1508,7 +1520,7 @@ export class BrowserTools {
           if (/Unknown command/.test(e.message)) {
             this.pdfTooOld?.(tabId)
             throw new Error(
-              "This PC's Dool2 Chrome extension is an older version that cannot print a page to PDF yet (the Chrome Web Store copy updates by itself within days; Dool2 is told the moment it does, so you can save this page then: leave its tab open). Do not stop at this. Look for another way to get the file now: a download, save or PDF button in the viewer (read the whole page, frames too, and the other tabs with browser_tabs), the issued-documents list, or the site's own option to get the document as a file or an electronic certificate. Do not ask the user to print or save it on the PC, and never send them to chrome://extensions, developer mode or an update button: the store copy cannot be hurried and updating Dool2 is not their job. Saving does not need the Documents folder (the file goes to Downloads when macOS has not allowed Documents). Other requests that end in a PDF (another certificate) are still worth doing up to the open document: say the PDF follows by itself once the extension updates. A picture copy (browser_screenshot) is the last resort, and only when the user wants something now: say it is a copy, not the issued file.",
+              "This PC's Dool2 Chrome extension is an older version that cannot print a page to PDF yet (the Chrome Web Store copy updates by itself within days; Dool2 is told the moment it does, so you can save this page then: leave its tab open). Do not stop at this. Look for another way to get the file now: a download, save or PDF button in the viewer (read the whole page, frames too, and the other tabs with browser_tabs), the issued-documents list, or the site's own option to get the document as a file or an electronic certificate. Do not ask the user to print or save it on the PC, and never send them to chrome://extensions, developer mode or an update button: the store copy cannot be hurried and updating Dool2 is not their job. Saving needs no folder permission (it goes to the Dool2 folder). Other requests that end in a PDF (another certificate) are still worth doing up to the open document: say the PDF follows by itself once the extension updates. A picture copy (browser_screenshot) is the last resort, and only when the user wants something now: say it is a copy, not the issued file.",
             )
           }
           throw e
@@ -1532,6 +1544,71 @@ export class BrowserTools {
             {
               type: 'text',
               text: `Saved the page as a PDF (${Math.round(pdf.length / 1024)} KB, the way Chrome prints it): ${path}. It is in the library too. Tell the user where it is; no print window and no printer were used.`,
+            },
+          ],
+        }
+      }
+      case 'eval': {
+        // ADR 0045, T31: read and compute on the page; Chrome refuses anything with a side effect
+        if (this.isPaying(tabId)) throw new Error(SCRIPT_ON_PAYING)
+        const expression = String(a.expression ?? '')
+        if (/\b(cookie|localStorage|sessionStorage|indexedDB)\b/.test(expression))
+          throw new Error(
+            'Cookies and site storage stay out of reach of scripts; read what the page shows instead.',
+          )
+        const r = (await this.browser.call('eval', { tabId, expression }, 20_000).catch((e: Error) => {
+          if (/Unknown command/.test(e.message)) throw new Error(OLD_EXTENSION_EVAL)
+          throw e
+        })) as { type?: string; value?: unknown; description?: string; error?: string }
+        if (r.error)
+          return {
+            isError: true,
+            content: [
+              {
+                type: 'text',
+                text: `The script threw: ${r.error}${/side.?effect/i.test(r.error) ? ' (scripts here may only read and compute; to act on the page use browser_click, browser_type or browser_steps)' : ''}`,
+              },
+            ],
+          }
+        const out =
+          r.value !== undefined ? JSON.stringify(r.value, null, 1) : (r.description ?? String(r.type))
+        return {
+          content: [
+            {
+              type: 'text',
+              text:
+                out.length > EVAL_MAX
+                  ? `${out.slice(0, EVAL_MAX)}\n… (cut at ${EVAL_MAX} of ${out.length} characters: return less, or a part at a time)`
+                  : out,
+            },
+          ],
+        }
+      }
+      case 'cdp': {
+        // ADR 0045, T31: a DevTools method from the read-only list. Big results become files in the Dool2 folder
+        const method = String(a.method ?? '')
+        if (!(READ_CDP_METHODS as readonly string[]).includes(method))
+          throw new Error(
+            `${method} is not available: only these read or produce: ${READ_CDP_METHODS.join(', ')}.`,
+          )
+        if (this.isPaying(tabId)) throw new Error(SCRIPT_ON_PAYING)
+        const params = a.params && typeof a.params === 'object' ? (a.params as Record<string, unknown>) : {}
+        const r = (await this.browser.call('cdp', { tabId, method, params }, 90_000).catch((e: Error) => {
+          if (/Unknown command/.test(e.message)) throw new Error(OLD_EXTENSION_EVAL)
+          throw e
+        })) as Record<string, unknown>
+        const name = String(a.name ?? '').trim() || method.split('.')[1] || 'page'
+        const saved = await this.saveCdp(method, r, name)
+        if (saved) return { content: [{ type: 'text', text: saved }] }
+        const out = JSON.stringify(r, null, 1)
+        return {
+          content: [
+            {
+              type: 'text',
+              text:
+                out.length > EVAL_MAX
+                  ? `${out.slice(0, EVAL_MAX)}\n… (cut at ${EVAL_MAX} of ${out.length} characters)`
+                  : out,
             },
           ],
         }
@@ -3472,6 +3549,50 @@ export class BrowserTools {
   paySession(tabId: number): PaySession | undefined {
     return this.liveSessions().find((x) => x.tabs.has(tabId))
   }
+  /** browser_cdp results that are files (a PDF, an archive, a picture, a loaded resource): saved, and where is said */
+  private async saveCdp(
+    method: string,
+    r: Record<string, unknown>,
+    name: string,
+  ): Promise<string | undefined> {
+    const keep = async (ext: string, data: Buffer, what: string) => {
+      if (!this.saveFile && !(ext === 'pdf' && this.savePdf)) return undefined
+      const path =
+        ext === 'pdf' && this.savePdf
+          ? await this.savePdf(name, data)
+          : await (this.saveFile as NonNullable<typeof this.saveFile>)(name, ext, data)
+      return `Saved ${what} (${Math.round(data.length / 1024)} KB): ${path}. It is in the library too.`
+    }
+    if (method === 'Page.printToPDF' && typeof r.data === 'string') {
+      const pdf = Buffer.from(r.data, 'base64')
+      if (pdf.length < 3_000)
+        return 'The page printed empty (the viewer may draw where printing cannot reach): try the tab or frame that holds the document, or the resource behind it (Page.getResourceTree).'
+      return keep('pdf', pdf, 'the page as a PDF, the way Chrome prints it')
+    }
+    if (method === 'Page.captureSnapshot' && typeof r.data === 'string')
+      return keep(
+        'mhtml',
+        Buffer.from(r.data, 'utf8'),
+        'the whole page as one archive file (opens in Chrome)',
+      )
+    if (method === 'Page.captureScreenshot' && typeof r.data === 'string')
+      return keep('png', Buffer.from(r.data, 'base64'), 'a picture of the page')
+    if (method === 'Page.getResourceContent' && typeof r.content === 'string') {
+      const data = r.base64Encoded ? Buffer.from(r.content, 'base64') : Buffer.from(r.content, 'utf8')
+      if (data.subarray(0, 5).toString('latin1') === '%PDF-')
+        return keep('pdf', data, 'the PDF the page loaded')
+      if (data.length > EVAL_MAX || r.base64Encoded) {
+        const ext = /^\s*[[{]/.test(data.subarray(0, 20).toString('utf8'))
+          ? 'json'
+          : r.base64Encoded
+            ? 'bin'
+            : 'txt'
+        return keep(ext, data, 'the resource the page loaded')
+      }
+    }
+    return undefined
+  }
+
   isPaying(tabId: number): boolean {
     return this.paySession(tabId) !== undefined
   }
@@ -4581,7 +4702,7 @@ export class BrowserTools {
       ...(!diff && s.truncated
         ? [
             '',
-            `(The text is long, so only ${max} characters are shown. To continue, read again with skip: ${(s.skipped ?? 0) + (s.mainLength ?? s.text.length)}; to jump to a part, put its text in from to read from that line)`,
+            `(The text is long, so only ${max} characters are shown. To continue, read again with skip: ${(s.skipped ?? 0) + (s.mainLength ?? s.text.length)}; to jump to a part, put its text in from to read from that line; to get every row of a list or table as data at once, browser_eval runs a script that reads it)`,
           ]
         : []),
     ]

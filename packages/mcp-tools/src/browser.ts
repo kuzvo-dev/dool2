@@ -1,5 +1,7 @@
 // Browser tools. The AI does web work in the Dool2 tabs of the user's Chrome.
 // This server makes no decisions: it forwards to the Dool2 daemon (/api/tools/browser), and the daemon blocks risky actions.
+
+import { READ_CDP_METHODS } from '@dool2/protocol/cdp'
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { z } from 'zod'
 
@@ -253,6 +255,28 @@ export function registerBrowserTools(server: McpServer, client: BrowserClient) {
         .max(80)
         .optional()
         .describe("File name without .pdf, in the user's language (what it is and the date)"),
+    },
+    true,
+  )
+  tool(
+    'eval',
+    'Run a script on the page',
+    'Runs JavaScript on a tab Dool2 opened and returns its value as JSON. For what reading the page as text does not give quickly: every row of a long table as data, values in attributes or data embedded in the page (JSON in script tags), sums and comparisons, what a frame holds. Chrome runs it side-effect free: it reads and computes anything on the page but cannot click, type, submit, change the page, store or call the network (such a script throws); to act, use browser_click, browser_type or browser_steps. Write one expression; for statements call an arrow function: (() => { … })(). Return plain data.',
+    {
+      tabId,
+      expression: z.string().min(1).max(20_000).describe('JavaScript expression whose value comes back'),
+    },
+    true,
+  )
+  tool(
+    'cdp',
+    'Chrome DevTools (read or produce)',
+    'Calls a Chrome DevTools method that only reads or produces, on a tab Dool2 opened, for what the other tools do not do: Page.printToPDF (a PDF exactly as Chrome prints; params like landscape, scale), Page.captureSnapshot (the whole page as one archive file), Page.captureScreenshot with captureBeyondViewport true (the full page as a picture), Page.getResourceTree then Page.getResourceContent (a file the page already loaded, such as the PDF or data behind a viewer), Accessibility.getFullAXTree, DOM.getDocument and DOM.getOuterHTML. Files go to the Dool2 folder and the library; other results come back as JSON.',
+    {
+      tabId,
+      method: z.enum(READ_CDP_METHODS),
+      params: z.record(z.string(), z.unknown()).optional().describe("The method's DevTools parameters"),
+      name: z.string().max(80).optional().describe("File name for a file result, in the user's language"),
     },
     true,
   )
