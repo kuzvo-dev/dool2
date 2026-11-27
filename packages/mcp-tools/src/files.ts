@@ -51,6 +51,20 @@ export function registerFileTools(server: McpServer, client: BrowserClient) {
     call('file_find'),
   )
   server.registerTool(
+    'code_run',
+    {
+      title: 'Run code (sandbox)',
+      description:
+        'Runs JavaScript in a sandbox and returns what it printed (console.log) and the value of its last expression. For computing, converting and shaping data when no tool does it: totals and comparisons over many rows, dates and schedules, reformatting a table, parsing text, building the rows for file_write. Pass the data in as input (read it first with another tool); the sandbox has no files, network, require or timers, and stops after 10 s. Make files with file_write from its output.',
+      inputSchema: {
+        code: z.string().min(1).max(50_000).describe('JavaScript; the last expression is the value returned'),
+        input: z.unknown().optional().describe('Data the code reads as the global input (JSON)'),
+      },
+      annotations: { readOnlyHint: true },
+    },
+    call('code_run'),
+  )
+  server.registerTool(
     'file_read',
     {
       title: 'Read PC file',

@@ -13,6 +13,7 @@ import { homedir, tmpdir } from 'node:os'
 import { basename, extname, join, relative, resolve, sep } from 'node:path'
 import { inflateRawSync } from 'node:zlib'
 import type { Lang } from '@dool2/i18n'
+import { runCode } from './code-run.js'
 import { applyLook, DOC_LOOKS, type DocLook } from './doc-kit.js'
 import { FileOps, type FileOpsOptions } from './file-ops.js'
 import { filesCopy } from './locales/files.js'
@@ -94,6 +95,25 @@ export const UPLOAD_MAX_BYTES = 4 * 1024 ** 3
 
 /** File names in a comparable form (macOS stores Korean names as separate jamo: normalize to NFC) */
 const norm = (s: string) => s.normalize('NFC').toLowerCase().replace(/\s+/g, '')
+
+/** code_run (ADR 0045, T32): the sandbox's printed text and value, cut to what the AI can read */
+async function codeRun(args: Record<string, unknown>): Promise<FileToolResult> {
+  const code = String(args.code ?? '')
+  if (!code.trim()) return fail('Give the code to run.')
+  const r = await runCode(code, args.input)
+  const out = [
+    r.printed.length ? `Printed:\n${r.printed.join('\n')}` : '',
+    r.ok
+      ? r.value !== undefined
+        ? `Value: ${JSON.stringify(r.value, null, 1)}`
+        : 'Ran (no value: end with an expression to return one).'
+      : `Error: ${r.error} (the sandbox has no files, network, require or timers; pass data in as input)`,
+  ]
+    .filter(Boolean)
+    .join('\n')
+  const text = out.length > 20_000 ? `${out.slice(0, 20_000)}\n… (cut at 20,000 characters)` : out
+  return r.ok ? { content: [{ type: 'text', text }] } : fail(text)
+}
 
 export class FileTools {
   private readonly folders: Record<FolderKey, string[]>
@@ -324,6 +344,7 @@ export class FileTools {
           ...(DOC_LOOKS.includes(args.look as DocLook) ? { look: args.look as DocLook } : {}),
           ...(args.replace === true ? { replace: true } : {}),
         })
+      if (tool === 'code_run') return await codeRun(args)
       if (tool === 'file_move') return await this.ops.move(args)
       if (tool === 'file_convert') return await this.ops.convert(args)
       if (tool === 'file_print') return await this.ops.print(args)
