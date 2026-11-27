@@ -249,6 +249,9 @@ describe('notes passed on while a task works', () => {
     expect(text).toContain('t1 "Train": working')
     expect(text).toContain('t2 "Hotel": done 1 min ago')
     expect(text).toContain('do not say it is missing): Booked hotel X')
+    // An ended result is how it was then: asked again, try again instead of repeating its blocker (11-27)
+    expect(text).toContain('start a new task and try')
+    expect(taskListText(b, new Map(), 61_000)).not.toContain('start a new task and try')
   })
 
   it('task_list names the card a waiting task has open, or its last step', () => {
