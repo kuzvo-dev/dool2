@@ -108,11 +108,15 @@ export function registerBrowserTools(server: McpServer, client: BrowserClient) {
   tool(
     'click',
     'Click',
-    "Clicks a marked (ref) button or link with a real mouse and returns what changed. Without a ref, put the on-screen text exactly in text. Pay, order, send and delete buttons are stopped by Dool2 and sent to an approval card (browser_checkout, browser_request_approval); inside an approved payment's window they are not stopped again.",
+    "Clicks a marked (ref) button or link with a real mouse and returns what changed. Without a ref, put the on-screen text exactly in text, or press what you see on browser_screenshot with at (an icon in a document viewer, a drawn screen, another site's frame that reading cannot mark). Pay, order, send and delete buttons are stopped by Dool2 and sent to an approval card (browser_checkout, browser_request_approval); inside an approved payment's window they are not stopped again.",
     {
       tabId,
       ref: ref.optional(),
       text: z.string().max(80).optional().describe('No ref: the on-screen text, exactly'),
+      at: z
+        .object({ x: z.number().min(0).max(1000), y: z.number().min(0).max(1000) })
+        .optional()
+        .describe('No ref: the center of what to press on the last browser_screenshot of this tab (0-1000)'),
       opens_checkout: z
         .boolean()
         .optional()
@@ -240,7 +244,7 @@ export function registerBrowserTools(server: McpServer, client: BrowserClient) {
   tool(
     'screenshot',
     'Screenshot',
-    'Views the visible part of the tab as an image. Use only when reading text cannot tell you (pictures, maps, table layout).',
+    'Views the visible part of the tab as an image: when reading text cannot tell you (pictures, maps, table layout), or what reading cannot mark (icons in a document viewer, a drawn screen). What you see there can be pressed with browser_click at.',
     { tabId },
     true,
   )

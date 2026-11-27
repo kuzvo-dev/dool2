@@ -249,6 +249,53 @@ describe('브라우저 도구 실행', () => {
     }
   })
 
+  it('a spot seen on the screenshot is pressed where it is, and pay buttons there still go to approval', async () => {
+    const b = fakeBrowser()
+    const call = b.call
+    let under = { x: 640, y: 300, label: '', role: 'canvas', frame: '' }
+    const taps: unknown[] = []
+    b.call = async (cmd, args) => {
+      if (cmd === 'eval') return { type: 'object', value: under }
+      if (cmd === 'input') {
+        taps.push([args?.x, args?.y])
+        return { tabId: 3 }
+      }
+      return call(cmd, args)
+    }
+    const tools = new BrowserTools(b)
+    await tools.run('open', { url: 'https://shop.example' })
+    // A drawn viewer: nothing named there, pressed, and the page read back
+    const r = await tools.run('click', { tabId: 3, at: { x: 500, y: 300 } })
+    expect(r.isError).toBeFalsy()
+    expect(text(r)).toContain('Pressed the spot (500, 300)')
+    expect(taps).toEqual([[640, 300]])
+    // A pay button drawn where reading cannot mark it is still stopped
+    under = { x: 100, y: 100, label: '결제하기', role: 'button', frame: '' }
+    const pay = await tools.run('click', { tabId: 3, at: { x: 80, y: 90 } })
+    expect(pay.isError).toBe(true)
+    expect(text(pay)).toContain('browser_checkout')
+    expect(taps).toHaveLength(1)
+    const off = await tools.run('click', { tabId: 3, at: { x: 1200, y: 10 } })
+    expect(off.isError).toBe(true)
+  })
+
+  it('a print icon seen on the screenshot goes through the print path', async () => {
+    const b = fakeBrowser()
+    const call = b.call
+    b.call = async (cmd, args) => {
+      if (cmd === 'eval')
+        return { value: { x: 30, y: 20, label: 'PDF 파일로 변환하여 인쇄', role: 'div', frame: '' } }
+      if (cmd === 'input') return { tabId: 3 }
+      return call(cmd, args)
+    }
+    const tools = new BrowserTools(b)
+    tools.savePdf = async () => '/x.pdf'
+    tools.printViaChrome = async () => ({ opened: true, path: '~/두리/검진.pdf' })
+    await tools.run('open', { url: 'https://shop.example' })
+    const r = await tools.run('click', { tabId: 3, at: { x: 20, y: 20 } })
+    expect(text(r)).toContain('~/두리/검진.pdf')
+  })
+
   it('an extension too old to print a PDF: says what else to try, and the daemon hears to come back', async () => {
     const b = fakeBrowser()
     const call = b.call

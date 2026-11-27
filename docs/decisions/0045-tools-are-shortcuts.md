@@ -39,6 +39,10 @@ also grew narrow tools whose texts decide for the AI, and each gap became a new 
    - **Code in a sandbox** (`code_run`): JavaScript in a WebAssembly engine with no access to the PC, the network
      or secrets, with time and memory limits. For computing, converting and shaping data when no tool does it.
      Its output goes back to the AI, and files are made with `file_write`.
+   - **Pressing what it sees** (`browser_click` with `at`): a spot on the screenshot (0-1000), for icons in a
+     document viewer, drawn screens and other sites' frames that reading cannot mark. What is at the spot is
+     measured first with the side-effect-free evaluation, so pay, send and delete buttons still go to approval and a
+     print button still goes to the print path.
    - **A site's own print, saved as a PDF** (`browser_save_pdf` with `print`, or `browser_click` on a print
      button): Dool2 presses the site's print button, and the daemon's Mac helper picks "Save as PDF" in Chrome's print
      window and saves into Dool2's folder. Certificates and receipts are printed the way the site lays them out,
