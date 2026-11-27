@@ -3065,6 +3065,13 @@ async function main() {
     }
   })
   const dock = $<HTMLFormElement>('composer')
+  // The input floats over the end of the chat: keep that much room under the last message (style.css --dock-h)
+  new ResizeObserver(() => {
+    const box = $('messages')
+    const atEnd = box.scrollHeight - box.scrollTop - box.clientHeight < 40
+    $('main').style.setProperty('--dock-h', `${dock.offsetHeight}px`)
+    if (atEnd) box.scrollTop = box.scrollHeight
+  }).observe(dock)
   dock.addEventListener('dragover', (e) => {
     if (e.dataTransfer?.types.includes('Files')) {
       e.preventDefault()
