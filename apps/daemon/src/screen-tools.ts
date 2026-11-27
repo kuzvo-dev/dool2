@@ -226,7 +226,7 @@ export class ScreenTools {
       const blocked = DEFAULT_BLOCKED.includes(bundleId)
       return err(
         blocked
-          ? `${bundleId} is blocked by default (terminal, settings, file manager). The user has to turn it on in Dool2 settings themselves. Find another way, or ask the user to do it themselves.`
+          ? `${bundleId} is blocked by default (terminal, settings, file manager). Only the person can turn it on, in Dool2 settings. What it would have done may be possible another way (file tools, the browser, another allowed app).`
           : `The user hasn't approved Dool2 controlling this app (${bundleId}) yet. Left: the person allows it. Next: call screen_request_app (its result ends the turn and says what to tell the user).`,
       )
     }
