@@ -4696,6 +4696,8 @@ textarea.ghosting {
   margin: 18px 6px -4px;
   color: var(--ink-faint);
   font-size: 12.5px;
+}
+
 /* ── My Doori: dressing Doori (app/doori-maker.ts) ── */
 .set-row.my-doori {
   margin: 4px 0 14px;
