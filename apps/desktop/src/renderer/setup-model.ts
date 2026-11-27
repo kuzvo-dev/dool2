@@ -60,7 +60,9 @@ export function neededAgents(choice: AiChoice): AgentId[] {
 }
 
 /** Plan name for people: max → Max */
-export const planLabel = (plan: string) => plan.charAt(0).toUpperCase() + plan.slice(1)
+export const planLabel = (plan: string) =>
+  // Codex signed in with a ChatGPT account reports the plan as "chatgpt" (first-run test 11-26: "Chatgpt")
+  plan.toLowerCase() === 'chatgpt' ? 'ChatGPT' : plan.charAt(0).toUpperCase() + plan.slice(1)
 
 const ready = (a?: AgentStatus) => Boolean(a?.installed && a.loggedIn)
 
@@ -92,6 +94,8 @@ export function checklist(
   agents: AgentStatus[],
   chrome?: ChromeStatus,
   extension?: ExtensionStatus,
+  /** withKey: Settings also shows the API key of a set-up pay-as-you-go runner when another AI was chosen */
+  opts: { withKey?: boolean } = {},
 ): CheckItem[] {
   const m = setupModelText(lang)
   const items: CheckItem[] = []
@@ -106,6 +110,9 @@ export function checklist(
           detail: m.notOnPc,
           action: 'claude-install',
         })
+        // The sign-in that follows shows from the start, so "two things" does not turn into three after the install
+        // (first-run test 11-26)
+        items.push({ id: 'claude-login', label: m.claudeLogin, ok: false, detail: m.afterInstall })
         continue
       }
       items.push({ id: 'claude-app', label: 'Claude Code', ok: true, detail: m.installed })
@@ -143,7 +150,7 @@ export function checklist(
               id: 'payg-key',
               label: m.apiKey,
               ok: true,
-              detail: a.plan ? m.connectedWith(a.plan) : m.connected,
+              detail: withSpent(a.plan ? m.connectedWith(a.plan) : m.connected, a),
               // A saved key can still be changed or removed (Settings → AI)
               action: 'payg-key',
             }
@@ -164,6 +171,7 @@ export function checklist(
           detail: m.firstDownload(120),
           action: 'codex-install',
         })
+        items.push({ id: 'codex-login', label: m.chatgptLogin, ok: false, detail: m.afterInstall })
         continue
       }
       items.push({ id: 'codex-app', label: 'Codex', ok: true, detail: m.ready })
@@ -180,6 +188,19 @@ export function checklist(
       )
     }
   }
+  // A key saved before (or a runner set up) stays changeable in Settings whatever subscription was chosen
+  // (beta report 11-25: "the button to edit the API key is not there")
+  const payg = agents.find((a) => a.id === 'opencode')
+  if (opts.withKey && payg?.installed && !visibleAgents(choice, agents).includes('opencode'))
+    items.push({
+      id: 'payg-key',
+      label: m.apiKey,
+      ok: payg.loggedIn,
+      detail: payg.loggedIn
+        ? withSpent(payg.plan ? m.connectedWith(payg.plan) : m.connected, payg)
+        : m.apiKeyTodo,
+      action: 'payg-key',
+    })
   // Browser work runs in Chrome (ADR 0006). Chat works without it, so it does not block starting
   if (chrome)
     items.push(
@@ -240,6 +261,27 @@ export function costLabel(usd: number): string {
     krw < 1 ? m.underOneWon : m.aboutWon(Math.round(krw).toLocaleString(lang === 'ko' ? 'ko-KR' : lang))
   const dollars = usd < 0.01 ? usd.toFixed(4) : usd.toFixed(2)
   return `$${dollars} · ${won}`
+}
+
+/** A model's price per million tokens, short for a list: won in Korean ("102 won"), dollars otherwise ("$0.07") */
+export function priceLabel(usdPerM: number): string {
+  if (lang !== 'ko') return `$${usdPerM < 0.1 ? usdPerM.toFixed(3) : usdPerM.toFixed(2)}`
+  const krw = usdPerM * KRW_PER_USD
+  const m = setupModelText(lang)
+  return krw < 1 ? m.underOneWon : m.won(Math.round(krw).toLocaleString('ko-KR'))
+}
+
+/** What pay-as-you-go answers cost this month, short: "about 72 won" in Korean, dollars otherwise */
+export function spentLabel(usd: number): string {
+  const m = setupModelText(lang)
+  if (lang !== 'ko') return `$${usd < 0.01 ? usd.toFixed(4) : usd.toFixed(2)}`
+  const krw = usd * KRW_PER_USD
+  return krw < 1 && usd > 0 ? m.underOneWon : m.aboutWon(Math.round(krw).toLocaleString('ko-KR'))
+}
+
+/** A connected line plus this month's spend, when the runner reports one */
+function withSpent(detail: string, a: AgentStatus): string {
+  return a.spent ? `${detail} · ${setupModelText(lang).spentMonth(spentLabel(a.spent.usd))}` : detail
 }
 
 /** New version state (same shape as UpdateState in apps/desktop/src/update.ts) */

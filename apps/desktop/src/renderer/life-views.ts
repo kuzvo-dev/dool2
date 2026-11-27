@@ -963,7 +963,39 @@ export function memoryTab(ctx: LifeCtx): HTMLElement {
         )
       : sideEmpty(t.memoryEmpty),
     ...knowBlock(ctx),
+    ...recipesBlock(ctx),
   )
+}
+
+/** Steps Dool2 remembered for requests asked more than once (ADR 0044): the words, the services used, how often */
+function recipesBlock(ctx: LifeCtx): HTMLElement[] {
+  const list = ctx.life().recipes ?? []
+  if (!list.length) return []
+  const t = lifeText(lang)
+  return [
+    el('p', 'cap', t.recipesAbout),
+    el(
+      'div',
+      'side-list',
+      ...list.map((r) => {
+        const forget = confirmButton('icon-btn', [icon('trash')], t.deleteAsk, () => {
+          void ctx.act({ action: 'recipe-delete', id: r.id }).then(() => ctx.toast(t.deleted))
+        })
+        forget.setAttribute('aria-label', t.delete)
+        forget.title = t.delete
+        const meta = [r.steps.join(' → '), t.recipeTimes(r.ok), shortWhen(r.lastAt)]
+          .filter(Boolean)
+          .join(' · ')
+        return el(
+          'div',
+          'side-row',
+          tile('list', 'amber', 36),
+          el('span', 'grow', el('span', 'side-t', r.ask), el('span', 'meta', meta)),
+          forget,
+        )
+      }),
+    ),
+  ]
 }
 
 /** What Dool2 knows: facts seen after logging in and applications or bookings it made (with seen date and basis) */

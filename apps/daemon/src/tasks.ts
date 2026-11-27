@@ -4,7 +4,7 @@
 
 import { WorkLog } from '@dool2/engine'
 import type { Lang } from '@dool2/i18n'
-import type { StoredMessage, TaskStatus, TaskView } from '@dool2/protocol'
+import type { StepDetail, StoredMessage, TaskStatus, TaskView } from '@dool2/protocol'
 import { appNote } from '@dool2/protocol/rich'
 import { forAI } from './locales/index-text.js'
 import { TASKS_TEXT } from './locales/tasks-text.js'
@@ -81,6 +81,19 @@ export interface Task {
   draft?: string
   /** Notes from the person not yet given to the task */
   notes: TaskNote[]
+  /** The question it last put in the conversation while waiting for the person in words (posted once) */
+  askedShown?: string
+  /**
+   * The same job tried a little earlier and stopped or failed: its id, how it ended and its last answer, so this one
+   * starts from what that found instead of from scratch (family certificate 11-26: the second try redid every step
+   * and never asked the one thing the first had found missing)
+   */
+  earlier?: { id: string; status: string; answer: string }
+  /**
+   * Basic items of my info not saved yet (field keys, never values), for a browser task: identity checks and sign-ups
+   * need them, so the task asks once at the start instead of stopping halfway (Shinhan card 11-26: three tries)
+   */
+  missingInfo?: string[]
   /** Notes already in its chat as the person's own words (typed in its detail): not shown again when delivered */
   shownNotes: Set<string>
   /** Its first message (the brief) was sent */
@@ -154,6 +167,7 @@ export interface TaskBoardOptions {
   /** Same helpers as the conversation's work steps */
   tabHost?: (tabId: number) => string | undefined
   toolTitle?: (name: string) => string | undefined
+  stepDetail?: (name: string, input: unknown) => StepDetail[] | undefined
   /** Lookup tasks may read beside the holder (the browser extension opens tabs in the background). Default yes */
   parallelReads?: () => boolean
 }
@@ -187,7 +201,13 @@ export class TaskBoard {
       notes: [],
       shownNotes: new Set(),
       begun: false,
-      work: new WorkLog(this.now, this.o.tabHost, this.o.toolTitle, this.o.lang?.() ?? 'ko'),
+      work: new WorkLog(
+        this.now,
+        this.o.tabHost,
+        this.o.toolTitle,
+        this.o.lang?.() ?? 'ko',
+        this.o.stepDetail,
+      ),
       turnOut: [],
       resume: [],
     }
@@ -428,6 +448,12 @@ export function taskBrief(t: Task, lang: Lang = 'ko'): string {
     list('Already known (do not ask again):', s.known),
     list('Must not happen:', s.avoid),
     list('The user also said, while the task waited to start:', t.notes.splice(0).map(noteText)),
+    t.missingInfo?.length
+      ? `My info has nothing saved yet for: ${t.missingInfo.join(', ')}. If this job will need them (an identity check, a sign-up, a booking in the user's name), ask for them first with one browser_request_profile card, before the steps that need them, and do the parts that do not need them meanwhile.`
+      : '',
+    t.earlier
+      ? `An earlier try of this job (${t.earlier.id}, ${t.earlier.status}) ended with this answer:\n---\n${t.earlier.answer}\n---\nStart from what it found: do not redo what it already learned. If it stopped on something only the user can give, ask for that first.`
+      : '',
     'Notes the user sends while you work arrive at the end of a tool result as "Message from the user". Follow them; ' +
       'where they differ from this spec, they come first.',
   ]
@@ -563,7 +589,18 @@ export function taskListText(
       .filter(Boolean)
       .join('\n')
   }
-  return `${views.map(line).join('\n')}\nSteer a running or waiting task with task_steer, stop one with task_stop.`
+  // The conversation read an old task's "blocked, the user must update the extension" and said it again without
+  // trying, after the cause had been fixed (test PC 11-27): an ended result is how it was then
+  const ended = views.some((v) => (v.status === 'done' || v.status === 'stopped') && results.has(v.id))
+  return [
+    views.map(line).join('\n'),
+    ended
+      ? 'A result above that says something blocked it tells how it was then; blockers change (a fix, an update, a sign-in, a page reopened). When the user asks for it again, start a new task and try, instead of repeating the old blocker or the steps it asked of the user.'
+      : '',
+    'Steer a running or waiting task with task_steer, stop one with task_stop.',
+  ]
+    .filter(Boolean)
+    .join('\n')
 }
 
 /** What a task waiting for the user waits on: its open cards, else its last step */

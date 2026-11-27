@@ -35,6 +35,15 @@
 
         </activity>
 
+        <!-- 스토어 앱 알림 (ADR 0042): PC가 암호화한 알림을 받아 이 폰의 키로 풀어서 띄운다 -->
+        <service
+            android:name=".PushService"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="com.google.firebase.MESSAGING_EVENT" />
+            </intent-filter>
+        </service>
+
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.fileprovider"
@@ -49,6 +58,8 @@
     <!-- Permissions -->
 
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- 알림 (안드로이드 13부터 물어본다): 사용자가 [알림 켜기]를 누를 때만 묻는다 -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <!-- 문자 보내기: 사용자가 두리 승인 카드에서 승인한 문자만 내 번호로 보낸다 (SmsPlugin) -->
     <uses-permission android:name="android.permission.SEND_SMS" />
     <!-- 받는 사람 이름으로 번호 찾기 (번호는 폰 밖으로 보내지 않는다) -->

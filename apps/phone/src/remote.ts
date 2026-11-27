@@ -9,6 +9,7 @@ import { h, icon } from './dom.js'
 import { lang } from './lang.js'
 import { remoteText } from './locales/remote.js'
 import { otpBoxes, reduced, Spring, springTo, tick } from './motion.js'
+import { haptic } from './native.js'
 import { createFormPane } from './remote-form.js'
 
 export interface Shot {
@@ -359,7 +360,7 @@ export function createRemote(o: RemoteOpts): RemoteScreen {
       timer: setTimeout(() => {
         if (gesture === g && g.mode === 'wait') {
           g.mode = 'loupe'
-          navigator.vibrate?.(6)
+          haptic('long')
           const p = pts.get(e.pointerId)
           if (p) showLoupe(p.x, p.y)
         }

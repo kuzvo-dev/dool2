@@ -28,6 +28,7 @@
     "test": "vitest run --passWithNoTests"
   },
   "dependencies": {
+    "@dool2/protocol": "workspace:*",
     "@modelcontextprotocol/sdk": "^1.32.2",
     "zod": "^4.6.7"
   }

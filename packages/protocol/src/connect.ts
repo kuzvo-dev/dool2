@@ -193,6 +193,11 @@ export const ConnectCardSchema = z
      */
     hints: z.array(z.string().trim().min(5).max(200)).min(1).max(3).optional(),
     /**
+     * Words people use for this service when they do not name it ("flight" for a flight search, "tracking number" for
+     * parcels), in the card's language. A request with one of them goes to this service's lookup tool at once
+     */
+    aliases: z.array(z.string().trim().min(2).max(20)).min(1).max(10).optional(),
+    /**
      * Where the service is for (ADR 0029): "KR", "JP", "TW", or "global" for services that work anywhere.
      * Omitted = Korea. The connect screen lists the user's region and global services first
      */

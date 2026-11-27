@@ -58,6 +58,9 @@ async function boot(
     token: 't0ken',
     runtimes: { claude: rt },
     chrome: { detect: async () => ({ installed: true, version: '157.0.8103.79' }) },
+    // Tests never ask an AI company about a key, or OpenRouter for prices
+    checkKey: async () => 'ok',
+    paygPrices: async () => new Map(),
     ...more,
   })
   const api = (path: string, init: RequestInit = {}) =>
@@ -260,6 +263,48 @@ describe('대화 하나 (ADR 0015)', () => {
     await reader?.cancel()
   })
 
+  it('keeps the steps that got a request done and offers them on the next request like it (ADR 0044)', async () => {
+    /** Looks the order tool up the first two times, then answers; records what it was sent */
+    class Shop extends EchoRuntime {
+      inputs: string[] = []
+      override async *runTurn(input: TurnInput): AsyncGenerator<AgentEvent> {
+        this.inputs.push(input.text)
+        yield { type: 'started', resumeId: 'r1', tools: ['mcp__dool2__status'] }
+        if (/쿠팡/.test(input.text.split('\n\n').at(-1) ?? '')) {
+          yield { type: 'tool', name: 'mcp__dool2__service_find', input: { query: '쿠팡 주문' } }
+          yield { type: 'tool_result', name: 'mcp__dool2__service_find', ok: true }
+          const call = { tool: 'coupang_orders', input: { days: 30 } }
+          yield { type: 'tool', name: 'mcp__dool2__service_call', input: call }
+          yield { type: 'tool_result', name: 'mcp__dool2__service_call', ok: true }
+        }
+        yield { type: 'text', delta: '내일 와요' }
+        yield { type: 'done', resumeId: 'r1', text: '내일 와요' }
+      }
+    }
+    const { api, rt } = await boot(new Shop())
+    const shop = rt as Shop
+    const state = async () => (await (await api('/api/conversation')).json()) as State
+    const ask = async (text: string, n: number) => {
+      await api('/api/conversation/messages', { method: 'POST', body: JSON.stringify({ text }) })
+      await until(async () => {
+        const s = await state()
+        return s.messages.filter((m) => m.role === 'user').length === n && !s.busy
+      })
+    }
+    await ask('쿠팡 주문 언제 와?', 1)
+    await ask('쿠팡에서 산 거 언제 와', 2)
+    // Twice is not offered yet on the second message; from the third it rides on the message
+    expect(shop.inputs.some((t) => t.includes('Steps that got requests like this one done'))).toBe(false)
+    await ask('쿠팡 택배 언제 와', 3)
+    const last = shop.inputs.filter((t) => !t.includes('judge')).at(-1) ?? ''
+    expect(last).toContain('service_call coupang_orders {"days":30}')
+    expect(existsSync(join(dir ?? '', 'recipes.json'))).toBe(true)
+    // Off in settings: nothing is offered
+    await api('/api/settings', { method: 'PATCH', body: JSON.stringify({ recipes: false }) })
+    await ask('쿠팡 택배 언제 와요', 4)
+    expect(shop.inputs.at(-1)).not.toContain('Steps that got requests like this one done')
+  })
+
   it('도구 서버는 지난 대화를 찾을 수 있다 (도구 토큰으로만)', async () => {
     const { api, rt } = await boot()
     const state = async () => (await (await api('/api/conversation')).json()) as State
@@ -427,7 +472,7 @@ describe('대화 하나 (ADR 0015)', () => {
     expect(rt.last?.resumeId).toBe('r1')
   })
 
-  it('끝내기 전 검사: 남은 게 있으면 같은 대화에 이어서 하게 하고, 끝나면 멈춘다 (ADR 0027)', async () => {
+  it('finish check in the conversation: what is left becomes a button under the one answer, not a second reply', async () => {
     class ToolRuntime extends EchoRuntime {
       inputs: string[] = []
       override async *runTurn(input: TurnInput): AsyncGenerator<AgentEvent> {
@@ -437,26 +482,23 @@ describe('대화 하나 (ADR 0015)', () => {
       }
     }
     const rt = new ToolRuntime()
-    const verdicts = [
-      '{"done":false,"why":"보험 1곳만 봤어요","next":"다른 보험사"}',
-      '{"done":true,"why":"다 했어요"}',
-    ]
     const prompts: string[] = []
     const { api } = await boot(rt, {
       finishJudge: async (p) => {
         prompts.push(p)
-        return verdicts.shift()
+        return '{"done":false,"why":"보험 1곳만 봤어요","next":"다른 보험사","offer":"2곳 더 비교해 줘"}'
       },
     })
     const state = async () => (await (await api('/api/conversation')).json()) as State
     await api('/api/conversation/messages', { method: 'POST', body: '{"text":"차 보험 3곳 비교해 줘"}' })
-    await until(async () => prompts.length === 2 && !(await state()).busy)
-    expect(rt.inputs).toHaveLength(2)
-    expect(rt.inputs[1]).toContain('보험 1곳만 봤어요')
-    // 두 번째 판정도 처음 부탁을 기준으로 한다
-    expect(prompts[1]).toContain('차 보험 3곳 비교해 줘')
+    await until(async () => prompts.length === 1 && !(await state()).busy)
     await new Promise((r) => setTimeout(r, 50))
-    expect(rt.inputs).toHaveLength(2)
+    // One answer: the judge is asked once and Dool2 is not sent back
+    expect(rt.inputs).toHaveLength(1)
+    const msgs = (await state()).messages
+    expect(msgs.filter((m) => m.role === 'assistant')).toHaveLength(1)
+    const quick = msgs.filter((m) => m.role === 'tool' && m.text.includes('"kind":"quick"'))
+    expect(JSON.parse(quick.at(-1)?.text ?? '{}')).toMatchObject({ replies: ['2곳 더 비교해 줘'] })
   })
 
   it('a claimed booking with no approval and no finished page is sent back by code, and the log says why', async () => {
@@ -501,6 +543,88 @@ describe('대화 하나 (ADR 0015)', () => {
     expect(checks[1]).toMatchObject({ result: 'done' })
   })
 
+  it('answers the last message once after a restart cut it off (#620), and only that one', async () => {
+    // The first daemon dies in the middle of the turn (an update restarted the PC's Dool2)
+    const gate = new GateRuntime()
+    const { api } = await boot(gate)
+    await api('/api/conversation/messages', { method: 'POST', body: '{"text":"주민등록등본 떼 볼까"}' })
+    await until(async () => gate.inputs.length === 1)
+    const kept = dir
+    dir = undefined
+    // Closed while the AI is still on it: nothing answered (the gate never opens)
+    await daemon?.close()
+    // The next start answers it, once
+    const rt = new (class extends EchoRuntime {
+      inputs: string[] = []
+      override async *runTurn(input: TurnInput): AsyncGenerator<AgentEvent> {
+        this.inputs.push(input.text)
+        yield* super.runTurn(input)
+      }
+    })()
+    daemon = await startDaemon({
+      timeLine: () => undefined,
+      dataDir: kept ?? '',
+      token: 't0ken',
+      runtimes: { claude: rt },
+      chrome: { detect: async () => ({ installed: true, version: '157.0.8103.79' }) },
+      checkKey: async () => 'ok',
+      paygPrices: async () => new Map(),
+    })
+    dir = kept
+    for (let i = 0; i < 100 && rt.inputs.length === 0; i++) await new Promise((r) => setTimeout(r, 50))
+    expect(rt.inputs).toHaveLength(1)
+    expect(rt.inputs[0]).toContain('restarted')
+    // Answered now: a start after that does not answer it again
+    await new Promise((r) => setTimeout(r, 100))
+    await daemon.close()
+    const again = new (class extends EchoRuntime {
+      inputs: string[] = []
+      override async *runTurn(input: TurnInput): AsyncGenerator<AgentEvent> {
+        this.inputs.push(input.text)
+        yield* super.runTurn(input)
+      }
+    })()
+    daemon = await startDaemon({
+      timeLine: () => undefined,
+      dataDir: kept ?? '',
+      token: 't0ken',
+      runtimes: { claude: again },
+      chrome: { detect: async () => ({ installed: true, version: '157.0.8103.79' }) },
+      checkKey: async () => 'ok',
+      paygPrices: async () => new Map(),
+    })
+    await new Promise((r) => setTimeout(r, 3_500))
+    expect(again.inputs).toHaveLength(0)
+  }, 15_000)
+
+  it('with no AI ready, keeps the message, says how to connect one, and answers once one is', async () => {
+    class SignedOut extends EchoRuntime {
+      ready = false
+      inputs: string[] = []
+      override async detect(): Promise<AgentStatus> {
+        return { id: 'claude', installed: true, loggedIn: this.ready }
+      }
+      override async *runTurn(input: TurnInput): AsyncGenerator<AgentEvent> {
+        this.inputs.push(input.text)
+        yield* super.runTurn(input)
+      }
+    }
+    const rt = new SignedOut()
+    const { api } = await boot(rt)
+    const state = async () => (await (await api('/api/conversation')).json()) as State
+    const r = await api('/api/conversation/messages', { method: 'POST', body: '{"text":"오늘 날씨 어때?"}' })
+    expect(r.status).toBe(202)
+    const msgs = (await state()).messages
+    expect(msgs.map((x) => x.role)).toEqual(['user', 'assistant'])
+    expect(msgs[1]?.text).toContain('설정 → AI · 브라우저')
+    expect(rt.inputs).toHaveLength(0)
+    // Signed in: the next look at the AIs answers the waiting message
+    rt.ready = true
+    await api('/api/agents')
+    await until(async () => rt.inputs.length === 1)
+    expect(rt.inputs[0]).toContain('오늘 날씨 어때?')
+  })
+
   it('acknowledges a message before the AI is called, and logs how long that took', async () => {
     const { api } = await boot()
     const live = await api('/api/conversation/live')
@@ -527,7 +651,7 @@ describe('대화 하나 (ADR 0015)', () => {
     expect(typeof JSON.parse(turn ?? '{}').ackMs).toBe('number')
   })
 
-  it('the draft design: checking is said before the answer, busy holds between rounds, and the limit leaves [Continue]', async () => {
+  it('the draft design: checking is said before the answer, and busy ends once after it', async () => {
     class ToolRuntime extends EchoRuntime {
       inputs: string[] = []
       override async *runTurn(input: TurnInput): AsyncGenerator<AgentEvent> {
@@ -537,23 +661,19 @@ describe('대화 하나 (ADR 0015)', () => {
       }
     }
     const rt = new ToolRuntime()
-    // The judge writes in the person's language (an English verdict under a Korean chat is replaced, see below)
-    const whys = ['보험사 1곳만 봤어요', '가격표가 없어요', '할인을 확인하지 않았어요']
     const { api } = await boot(rt, {
       finishJudge: async () =>
-        JSON.stringify({ done: false, why: whys.shift() ?? 'x', next: 'compare 2 more insurers' }),
+        JSON.stringify({ done: false, why: '보험사 1곳만 봤어요', next: 'compare 2 more insurers' }),
     })
     const live = await api('/api/conversation/live')
     const reader = live.body?.getReader()
     const state = async () => (await (await api('/api/conversation')).json()) as State
     await api('/api/conversation/messages', { method: 'POST', body: '{"text":"compare 3 car insurers"}' })
-    // Two rounds sent back (no new tools: 2 by default), then the third verdict reaches the limit
-    await until(async () => rt.inputs.length === 3 && !(await state()).busy)
+    await until(async () => rt.inputs.length === 1 && !(await state()).busy)
     let seen = ''
     const dec = new TextDecoder()
     const deadline = Date.now() + 2000
-    // The record is JSON inside the message text, so its quotes arrive escaped
-    while (!seen.includes('할인을 확인하지 않았어요') && Date.now() < deadline)
+    while (!seen.includes('"busy":false') && Date.now() < deadline)
       seen += dec.decode((await reader?.read())?.value)
     await reader?.cancel()
     const events = seen
@@ -575,26 +695,10 @@ describe('대화 하나 (ADR 0015)', () => {
     )
     expect(firstCheck).toBeGreaterThanOrEqual(0)
     expect(firstCheck).toBeLessThan(firstAnswer)
-    // Not idle between rounds: after the request, the only busy:false comes after the last answer
-    const start = events.findIndex((e) => e.event?.type === 'saved' && e.event.message?.role === 'user')
-    const idle = events
-      .map((e, i) => (i > start && e.kind === 'busy' && e.busy === false ? i : -1))
-      .filter((i) => i >= 0)
-    expect(idle).toHaveLength(1)
-    expect(
-      idle.every(
-        (i) =>
-          i > events.findLastIndex((e) => e.event?.type === 'saved' && e.event.message?.role === 'assistant'),
-      ),
-    ).toBe(true)
+    // No offer from the judge: no button and no "still left" card either
     const msgs = (await state()).messages
-    const left = msgs.filter((m) => m.role === 'tool' && m.text.includes('"kind":"left"'))
-    expect(left).toHaveLength(1)
-    expect(JSON.parse(left[0]?.text ?? '{}')).toMatchObject({ why: '할인을 확인하지 않았어요' })
-    // [Continue] sends Dool2 back with what is left, once
-    expect(await (await api('/api/conversation/continue', { method: 'POST' })).json()).toEqual({ ok: true })
-    await until(async () => rt.inputs.length === 4)
-    expect(rt.inputs[3]).toContain('Still left: 할인을 확인하지 않았어요')
+    expect(msgs.filter((m) => m.role === 'tool' && m.text.includes('"kind":"left"'))).toHaveLength(0)
+    expect(rt.inputs).toHaveLength(1)
   })
 
   it('take it as is: ends the check, keeps the draft and starts no round', async () => {
@@ -759,7 +863,9 @@ describe('대화 하나 (ADR 0015)', () => {
 describe('설정', () => {
   it('처음에는 기본값을 준다', async () => {
     const { api } = await boot()
-    expect(await (await api('/api/settings')).json()).toEqual({ settings: { setupDone: false } })
+    expect(await (await api('/api/settings')).json()).toEqual({
+      settings: { setupDone: false, autoApprove: true },
+    })
   })
 
   it('바꾼 항목만 저장하고, 다시 켜도 남아 있다', async () => {
@@ -769,7 +875,7 @@ describe('설정', () => {
       body: JSON.stringify({ aiChoice: 'both', defaultAgent: 'codex' }),
     })
     expect(await res.json()).toEqual({
-      settings: { setupDone: false, aiChoice: 'both', defaultAgent: 'codex' },
+      settings: { setupDone: false, autoApprove: true, aiChoice: 'both', defaultAgent: 'codex' },
     })
     await api('/api/settings', { method: 'PATCH', body: '{"setupDone":true}' })
 
@@ -785,7 +891,7 @@ describe('설정', () => {
     dir = keep
     const again = await fetch(`${daemon.url}/api/settings`, { headers: { authorization: 'Bearer t0ken' } })
     expect(await again.json()).toEqual({
-      settings: { setupDone: true, aiChoice: 'both', defaultAgent: 'codex' },
+      settings: { setupDone: true, autoApprove: true, aiChoice: 'both', defaultAgent: 'codex' },
     })
   })
 
@@ -794,7 +900,7 @@ describe('설정', () => {
     const seen: unknown[] = []
     daemon?.events.on('settings', (s) => seen.push(s))
     await api('/api/settings', { method: 'PATCH', body: '{"keepAwake":"working","launchAtLogin":true}' })
-    expect(seen).toEqual([{ setupDone: false, keepAwake: 'working', launchAtLogin: true }])
+    expect(seen).toEqual([{ setupDone: false, autoApprove: true, keepAwake: 'working', launchAtLogin: true }])
     expect(daemon?.settings()).toMatchObject({ keepAwake: 'working' })
   })
 
@@ -863,9 +969,52 @@ describe('Claude 로그인', () => {
   })
 })
 
+describe('pay-as-you-go spend', () => {
+  it("adds each answer's cost to this month and shows it on the runner's status", async () => {
+    class Costly extends EchoRuntime {
+      override async *runTurn(input: TurnInput): AsyncGenerator<AgentEvent> {
+        yield { type: 'cost', usd: 0.012, inputTokens: 1000, outputTokens: 200 }
+        yield* super.runTurn(input)
+      }
+    }
+    class Runner extends EchoRuntime {
+      override async detect(): Promise<AgentStatus> {
+        return { id: 'opencode', installed: true, loggedIn: true, plan: 'openrouter · ~z-ai/glm-latest' }
+      }
+    }
+    const until = async (f: () => Promise<boolean>) => {
+      for (let i = 0; i < 200 && !(await f()); i++) await new Promise((r) => setTimeout(r, 20))
+    }
+    const rt = new Costly()
+    const { api } = await boot(rt, { runtimes: { claude: rt, opencode: new Runner() } })
+    const state = async () => (await (await api('/api/conversation')).json()) as State
+    await api('/api/conversation/messages', { method: 'POST', body: '{"text":"hi"}' })
+    await until(async () => (await state()).messages.length === 2 && !(await state()).busy)
+    const { agents } = (await (await api('/api/agents')).json()) as { agents: AgentStatus[] }
+    const oc = agents.find((a) => a.id === 'opencode')
+    expect(oc?.spent?.usd).toBeCloseTo(0.012)
+    expect(oc?.spent?.month).toMatch(/^\d{4}-\d{2}$/)
+  })
+})
+
 describe('종량제 계정', () => {
+  it('a key its company rejects is not saved, and the screen says why', async () => {
+    const { api } = await boot(undefined, { checkKey: async () => 'rejected' })
+    const r = await api('/api/agents/opencode/account', {
+      method: 'PUT',
+      body: JSON.stringify({
+        provider: 'openrouter',
+        model: 'anthropic/claude-sonnet-5.5',
+        apiKey: 'undefined',
+      }),
+    })
+    expect(r.status).toBe(400)
+    expect(((await r.json()) as { error: string }).error).toContain('OpenRouter')
+    expect(await (await api('/api/agents/opencode/account')).json()).toEqual({ account: null })
+  })
+
   it('제공자·모델은 설정에, 키는 비밀값 보관소에 두고, 키는 끝 4자리만 보여 준다', async () => {
-    const { api } = await boot()
+    const { api } = await boot(undefined, { checkKey: async () => 'ok' })
     expect(await (await api('/api/agents/opencode/account')).json()).toEqual({ account: null })
     const cat = (await (await api('/api/agents/opencode/catalog')).json()) as { providers: { id: string }[] }
     expect(cat.providers.map((p) => p.id)).toContain('anthropic')
@@ -1110,6 +1259,8 @@ describe('승인 API', () => {
     writeFileSync(join(dl, 'b.pdf'), 'b')
     const rt = new EchoRuntime()
     const { api } = await boot(rt, { fileFolders: { desktop: [], documents: [], downloads: [dl] } })
+    // 승인 카드 흐름을 보는 시험: 자동 승인(기본 켜짐, 11-26)을 끈다
+    await api('/api/settings', { method: 'PATCH', body: '{"autoApprove":false}' })
     await api('/api/conversation/messages', { method: 'POST', body: '{"text":"PDF 나눠 줘"}' })
     for (let i = 0; i < 200 && !rt.last; i++) await new Promise((r) => setTimeout(r, 10))
     const toolToken = rt.last?.mcpServers[0]?.env?.DOOL2_TOOL_TOKEN ?? ''
@@ -1158,6 +1309,8 @@ describe('which chat a tool call came from (ADR 0038)', () => {
     }
     const rt = new Held()
     const { api } = await boot(rt, { fileFolders: { desktop: [], documents: [], downloads: [dl] } })
+    // 승인 카드 흐름을 보는 시험: 자동 승인(기본 켜짐, 11-26)을 끈다
+    await api('/api/settings', { method: 'PATCH', body: '{"autoApprove":false}' })
     const until = async (f: () => boolean) => {
       for (let i = 0; i < 300 && !f(); i++) await new Promise((r) => setTimeout(r, 10))
     }

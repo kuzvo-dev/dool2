@@ -357,7 +357,7 @@ describe('서비스 도구 실행기', () => {
       '- demo_eats_search [lookup · no login] 식당 찾기 — input: keyword*(지역이나 가게 이름), date(날짜 YYYY-MM-DD)',
     )
     expect(r).toContain(
-      "After connecting: 예약. When you reach that step, call connect_ask('demo-eats'): connecting on that card is the person's step",
+      "After connecting: 예약. When you reach that step, call connect_ask('demo-eats') with afterwards = what the user asked (also when its card is already open), so it carries on by itself once connected: connecting on that card is the person's step",
     )
   })
 
@@ -1039,6 +1039,28 @@ describe('quick lookup instead of a browser task (test PC loop 11-26)', () => {
   })
 })
 
+describe('quick lookup by a word people use for the service (aliases)', () => {
+  it('a flight question goes to the flight tool without naming the service', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'dool2-conn-'))
+    await mkdir(join(dir, 'demo-eats'))
+    await writeFile(
+      join(dir, 'demo-eats', 'connect.json'),
+      JSON.stringify({ ...CARD, how: 'open', aliases: ['맛집', '식당'] }),
+    )
+    await writeFile(join(dir, 'demo-eats', 'tools.json'), JSON.stringify(CONNECTOR))
+    const browser = { call: async () => ({}) }
+    const connectors = new Connectors({
+      dir,
+      browser,
+      tools: new BrowserTools(browser),
+      connected: () => ({}),
+    })
+    expect(await connectors.quickLookup('성수 맛집 찾기')).toMatchObject({ tool: 'demo_eats_search' })
+    expect(await connectors.quickLookup('성수 식당이 찾기 되나')).toMatchObject({ tool: 'demo_eats_search' })
+    expect(await connectors.quickLookup('성수 식당 예약해 줘')).toBeUndefined()
+  })
+})
+
 describe('quick lookup leaves actions alone (test PC loop 11-26)', () => {
   it('does not point an order or booking task to the search tool', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'dool2-conn-'))
@@ -1074,5 +1096,16 @@ describe('quick lookup leaves actions alone (test PC loop 11-26)', () => {
       tool: 'demo_eats_search',
     })
     expect(await connectors.quickLookup('데모맛집 예약 준비')).toBeUndefined()
+  })
+})
+
+describe('step conditions', () => {
+  it('ifMatch runs a step only when the filled if text matches (parcel carriers by digit count)', async () => {
+    const { stepWanted } = await import('./connectors.js')
+    expect(stepWanted('6012345678901', '^\\d{13}$')).toBe(true)
+    expect(stepWanted('572023456781', '^\\d{13}$')).toBe(false)
+    expect(stepWanted('572023456781')).toBe(true)
+    expect(stepWanted('', '^.*$')).toBe(false)
+    expect(stepWanted('x', '(')).toBe(false)
   })
 })

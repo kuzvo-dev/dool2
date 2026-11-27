@@ -198,6 +198,11 @@ export class Connectors {
   titleOf(name: string): string | undefined {
     return this.titles.get(name)
   }
+  /** Service tool name → the service's name people know (for the memory screen's remembered steps) */
+  private services = new Map<string, string>()
+  serviceOf(name: string): string | undefined {
+    return this.services.get(name)
+  }
   /** Service tool name → tier (after loading): the before-finishing check counts lookups */
   private tiers = new Map<string, ConnectorTool['tier']>()
   tierOf(name: string): ConnectorTool['tier'] | undefined {
@@ -245,6 +250,13 @@ export class Connectors {
       [...items.values()].flatMap(({ card, connector }) =>
         (connector?.tools ?? []).map(
           (t) => [connectorToolName(card.id, t.name), t.title] as [string, string],
+        ),
+      ),
+    )
+    this.services = new Map(
+      [...items.values()].flatMap(({ card, connector }) =>
+        (connector?.tools ?? []).map(
+          (t) => [connectorToolName(card.id, t.name), card.name] as [string, string],
         ),
       ),
     )
@@ -564,7 +576,7 @@ export class Connectors {
       .filter((w) => w.length >= 2)
     for (const { card, connector } of (await this.load()).values()) {
       if (!connector || card.how === 'device') continue
-      const names = [card.id, card.name.toLowerCase()]
+      const names = [card.id, card.name.toLowerCase(), ...(card.aliases ?? []).map((x) => x.toLowerCase())]
       // The whole word, or a Korean name with a particle of one or two syllables after it; "ktx" is not "kt"
       const named = (w: string) =>
         names.some(
@@ -605,7 +617,7 @@ export class Connectors {
     }
     const words = query.toLowerCase().split(/\s+/).filter(Boolean)
     const score = ({ card, connector }: Loaded) => {
-      const head = [card.id, card.name, card.site ?? ''].join(' ').toLowerCase()
+      const head = [card.id, card.name, card.site ?? '', ...(card.aliases ?? [])].join(' ').toLowerCase()
       const body = [
         card.summary,
         CONNECT_CATEGORIES[card.category],
@@ -715,7 +727,7 @@ export class Connectors {
     const locked = tools.filter((t) => t.login && !connected)
     if (locked.length)
       lines.push(
-        `After connecting: ${locked.map((t) => t.title).join(', ')}. When you reach that step, call connect_ask('${card.id}'): connecting on that card is the person's step, and its result ends the turn. Looking things up first with tools that need no login is fine.`,
+        `After connecting: ${locked.map((t) => t.title).join(', ')}. When you reach that step, call connect_ask('${card.id}') with afterwards = what the user asked (also when its card is already open), so it carries on by itself once connected: connecting on that card is the person's step, and its result ends the turn. Looking things up first with tools that need no login is fine.`,
       )
     lines.push(
       connected
@@ -928,7 +940,7 @@ export class Connectors {
     }
     for (const [i, step] of tool.steps.entries()) {
       // if: skip this step when the filled text is empty (e.g. do not open older periods once found in an earlier one)
-      if (step.if !== undefined && !fill(step.if, scope).trim()) continue
+      if (step.if !== undefined && !stepWanted(fill(step.if, scope).trim(), step.ifMatch)) continue
       const kind = stepKind(step)
       try {
         const done = await this.step(step, {
@@ -1688,4 +1700,15 @@ function toolPrint(t: ConnectorTool): string {
     prints.set(t, v)
   }
   return v
+}
+
+/** A step's if: run when the filled text is not empty and, with ifMatch, matches it (a bad regex never matches) */
+export function stepWanted(filled: string, ifMatch?: string): boolean {
+  if (!filled) return false
+  if (ifMatch === undefined) return true
+  try {
+    return new RegExp(ifMatch).test(filled)
+  } catch {
+    return false
+  }
 }

@@ -21,7 +21,7 @@ export function registerFileTools(server: McpServer, client: BrowserClient) {
     {
       title: 'Find PC files',
       description:
-        'Finds files by name in the Desktop, Documents, Downloads, Pictures and Movies folders of the user\'s PC (most recently changed first). Use it first whenever files come up ("the contract I got yesterday", "the Excel settlement file", "the video I shot yesterday"). Separate several words with commas. Narrow photos and videos with folder: pictures or movies, and if the name is unknown, leave query empty to see recent files first. Read one with file_read.',
+        'Finds files by name in the Desktop, Documents, Downloads, Pictures and Movies folders of the user\'s PC (most recently changed first, or biggest first with sort: size). Use it first whenever files come up ("the contract I got yesterday", "the Excel settlement file", "the video I shot yesterday"). Separate several words with commas. Narrow photos and videos with folder: pictures or movies, and if the name is unknown, leave query empty to see recent files first. Read one with file_read.',
       inputSchema: {
         query: z
           .string()
@@ -30,6 +30,12 @@ export function registerFileTools(server: McpServer, client: BrowserClient) {
             'Words in the file name, written the way files are named (usually the user\'s language, e.g. the Korean word for "contract"); separate several with commas ("settlement,November"). Empty = recent files',
           ),
         folder: folder.optional(),
+        sort: z
+          .enum(['recent', 'size'])
+          .optional()
+          .describe(
+            'recent = most recently changed first (default); size = biggest first ("what takes up space")',
+          ),
         limit: z
           .number()
           .int()
@@ -43,6 +49,20 @@ export function registerFileTools(server: McpServer, client: BrowserClient) {
       annotations: { readOnlyHint: true },
     },
     call('file_find'),
+  )
+  server.registerTool(
+    'code_run',
+    {
+      title: 'Run code (sandbox)',
+      description:
+        'Runs JavaScript in a sandbox and returns what it printed (console.log) and the value of its last expression. For computing, converting and shaping data when no tool does it: totals and comparisons over many rows, dates and schedules, reformatting a table, parsing text, building the rows for file_write. Pass the data in as input (read it first with another tool); the sandbox has no files, network, require or timers, and stops after 10 s. Make files with file_write from its output.',
+      inputSchema: {
+        code: z.string().min(1).max(50_000).describe('JavaScript; the last expression is the value returned'),
+        input: z.unknown().optional().describe('Data the code reads as the global input (JSON)'),
+      },
+      annotations: { readOnlyHint: true },
+    },
+    call('code_run'),
   )
   server.registerTool(
     'file_read',

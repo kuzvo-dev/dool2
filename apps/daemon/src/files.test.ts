@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, readFileSync, symlinkSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, realpathSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { deflateSync } from 'node:zlib'
@@ -30,6 +30,17 @@ describe('PC 파일 도구', () => {
     expect(text(r)).toContain('보증금 1억 원')
   })
 
+  it('lists the biggest files first with sort: size', async () => {
+    const { home, tools } = setup()
+    writeFileSync(join(home, 'Downloads', 'small.txt'), 'x')
+    writeFileSync(join(home, 'Downloads', 'big.zip'), 'x'.repeat(5000))
+    writeFileSync(join(home, 'Downloads', 'mid.pdf'), 'x'.repeat(2000))
+    const f = text(await tools.run('file_find', { query: '', folder: 'downloads', sort: 'size' }))
+    expect(f).toContain('biggest first')
+    expect(f.indexOf('big.zip')).toBeLessThan(f.indexOf('mid.pdf'))
+    expect(f.indexOf('mid.pdf')).toBeLessThan(f.indexOf('small.txt'))
+  })
+
   it('사용자 폴더 밖·민감한 파일·바로가기로 나가는 경로는 읽지 않는다', async () => {
     const { home, tools } = setup()
     writeFileSync(join(home, 'Secret', 'a.txt'), '비밀')
@@ -42,6 +53,20 @@ describe('PC 파일 도구', () => {
     expect((await tools.run('file_read', { path: '~/Desktop/link/a.txt' })).isError).toBe(true)
     expect((await tools.run('file_read', { path: '~/Documents/id_rsa' })).isError).toBe(true)
     expect((await tools.run('file_read', { path: '~/Documents/NPKI/signPri.key' })).isError).toBe(true)
+  })
+
+  it('on macOS keeps what Dool2 makes in the home folder, which needs no permission window', async () => {
+    const home = mkdtempSync(join(tmpdir(), 'dool2-files-'))
+    mkdirSync(join(home, 'Documents'))
+    const tools = new FileTools({ desktop: [], documents: [join(home, 'Documents')], downloads: [] }, home, {
+      dooriInHome: true,
+    })
+    const r = text(await tools.run('file_write', { name: '메모', kind: 'txt', text: 'a' }))
+    expect(r).toContain('메모.txt')
+    expect(readFileSync(join(home, '두리', '메모.txt'), 'utf8')).toBe('a')
+    // Still inside the fence: it can be read, linked and sent to the phone
+    expect(tools.readable(join(home, '두리', '메모.txt'))).toBe(true)
+    expect(tools.dooriDir()).toBe(join(realpathSync(home), '두리'))
   })
 
   it('replace: 두리 폴더의 같은 이름 파일은 고쳐 쓰고, 사용자가 고른 폴더는 그래도 덮어쓰지 않는다', async () => {

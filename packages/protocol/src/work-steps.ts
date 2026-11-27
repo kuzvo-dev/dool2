@@ -18,6 +18,7 @@ export interface WorkStepIn {
   /** toolPlace: site address, "tool:…", "app" or "file" */
   place?: string
   ms?: number
+  detail?: { k: string; v: string }[]
 }
 
 export interface WorkGroup {
@@ -125,8 +126,9 @@ function where(
         cardId: card.id,
         letter: firstLetter(card.name),
       }
-    const id = tool.split('_')[0] ?? tool
-    return { key: id, kind: 'service', title: id, letter: firstLetter(id) }
+    // A tool with no service card (Dool2's own tools, finding a tool) is Dool2's work, titled by its self-talk.
+    // Naming it by its prefix showed lines like "worked at tool" (measured 11-26)
+    return { key: '', kind: 'doori', title: '', letter: '' }
   }
   const card = cardForHost(place, cards)
   if (card)

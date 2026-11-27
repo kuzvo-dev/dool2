@@ -3,6 +3,7 @@
 import { LANGS, type Lang, REGIONS } from '@dool2/i18n'
 import { z } from 'zod'
 import type { ConnectionItem, SocialProvider } from './connect.js'
+import { type DooriLook, DooriLookSchema } from './doori-look.js'
 import type { PayMethod, PayMethodInput } from './pay-methods.js'
 
 /** The AIs Dool2 can run. They run on the user's subscription. */
@@ -33,6 +34,8 @@ export interface AgentStatus {
   plan?: string
   /** A description of the problem to show the user. None means all is well */
   problem?: string
+  /** Pay as you go: what this month's answers cost, in US dollars (month in Korean time, YYYY-MM) */
+  spent?: { month: string; usd: number }
 }
 
 /** One usage limit slot (e.g. a 5-hour window, a 7-day window) */
@@ -48,7 +51,7 @@ export type AgentEvent =
   | { type: 'started'; resumeId?: string; model?: string; tools: string[] }
   | { type: 'text'; delta: string }
   /** title: the human-readable title of a service tool (added by the engine, for the working indicator) */
-  | { type: 'tool'; name: string; input: unknown; title?: string }
+  | { type: 'tool'; name: string; input: unknown; title?: string; detail?: StepDetail[] }
   /** chars: how many characters of text the result gave the AI (sizes only, for the work log). Missing when unknown */
   | { type: 'tool_result'; name?: string; ok: boolean; chars?: number }
   | { type: 'usage'; limits: UsageLimit[] }
@@ -188,15 +191,23 @@ export const SettingsSchema = z.object({
     .max(100)
     .optional(),
   /**
-   * Auto-approve: everything except payments runs without an approval card (ADR 0030). Off by default.
+   * Auto-approve: everything except payments runs without an approval card (ADR 0030). On by default since
+   * 2026-11-26 (a card for every step was the most tiring part of using Dool2); turning it off is kept.
    * Turned on from the PC settings or the phone (phone changes are signed, see autoApproveSignText)
    */
   autoApprove: z.boolean().optional(),
+  /** How the user dressed Doori (colour, body, eyes, hat…); drawn the same on the phone and PC (doori-look.ts) */
+  dooriLook: DooriLookSchema.optional(),
   /**
    * Keep the AI program running between messages of the conversation (ADR 0035). Empty: on. False: start it for every
    * message, as before (a fallback if the resident session misbehaves)
    */
   residentAgent: z.boolean().optional(),
+  /**
+   * Remember the steps that got requests done and offer them on the next request like it (ADR 0044). Empty: on.
+   * False: nothing is offered (what is kept stays until the person deletes it)
+   */
+  recipes: z.boolean().optional(),
   /**
    * Hand longer work to task sessions so the conversation keeps talking (ADR 0038). Empty: the default of this build
    * (TASK_SESSIONS_DEFAULT in the daemon). Applies from the next segment of the conversation
@@ -230,7 +241,7 @@ export interface ScreenControlStatus {
 }
 export type Settings = z.infer<typeof SettingsSchema>
 
-export const DEFAULT_SETTINGS: Settings = { setupDone: false }
+export const DEFAULT_SETTINGS: Settings = { setupDone: false, autoApprove: true }
 
 /** Send only the items to change. Unknown items are rejected */
 export const SettingsPatchSchema = SettingsSchema.partial().strict()
@@ -267,6 +278,11 @@ export interface ChromeStatus {
 export interface PaygModel {
   id: string
   label: string
+  /** US dollars per million input and output tokens (from OpenRouter's public price list), when known */
+  inPerM?: number
+  outPerM?: number
+  /** Dool2's pick for the provider: cheap and good enough at using tools */
+  recommended?: boolean
 }
 
 export interface PaygProvider {
@@ -423,6 +439,14 @@ export const storeExtensionPage = (id: string) => `https://chromewebstore.google
 
 /** The extension version that includes the service tool (connector) engine (extract, find, capture). Below this, service tools are not used */
 export const MIN_CONNECTOR_EXTENSION = '0.2.0'
+/** The extension version that prints a page to PDF (browser_save_pdf) */
+export const PDF_EXTENSION = '0.3.3'
+/** The extension version with side-effect-free page scripts and the read-only DevTools list (ADR 0045) */
+export const EVAL_EXTENSION = '0.3.4'
+/** The newest extension in this repo: an older store copy is asked to update itself (command update, from 0.3.5) */
+export const EXTENSION_LATEST = '0.3.5'
+
+export { READ_CDP_METHODS } from './cdp.js'
 
 /** Version comparison like "0.10.1" >= "0.2.0" */
 export function versionAtLeast(v: string, min: string): boolean {
@@ -477,6 +501,11 @@ export const BrowserCommandSchema = z.enum([
   'dialog',
   /** Only moves the mouse to that spot (menus that open on hover) */
   'hover',
+  /** The tab printed as a PDF {tabId} → {data: base64}, the way Chrome prints it (certificates in a viewer) */
+  'pdf',
+  'eval',
+  'cdp',
+  'update',
   /**
    * Excludes tabs waiting for a person or approval from tab cleanup (sleeping, closing) for a set time (ms: 0 releases).
    * Only 3 tabs are kept, and a tab waiting for payment approval was closed when another tab opened (measured: Lotte Cinema)
@@ -529,6 +558,16 @@ export const FocusTabSchema = z.object({ tabId: z.number().int() })
  * Work process: for a turn that worked with tools, a 'tool' message is left right before the answer.
  * The screen draws it as a folded card ("Worked on Catchtable · 5 steps · 32 s"), and expanding it shows the steps
  */
+/**
+ * What one work step did, for the "how it worked" sheet: the address opened, what was pressed, which field was filled
+ * (never the value), what a service was asked for, the page read. Made by the daemon from the tool input and the page
+ * it knows; short and already masked
+ */
+export interface StepDetail {
+  k: 'url' | 'press' | 'field' | 'query' | 'page'
+  v: string
+}
+
 export interface WorkRecordMessage {
   kind: 'work'
   /**
@@ -536,7 +575,7 @@ export interface WorkRecordMessage {
    * act: what the tool did ("웹페이지 여는 중"), place: where it worked (toolPlace: site address, "tool:…", "app" or "file").
    * The screen groups steps with the same place into one service line (older records have neither)
    */
-  steps: { text: string; ms: number; act?: string; place?: string }[]
+  steps: { text: string; ms: number; act?: string; place?: string; detail?: StepDetail[] }[]
   /** Total number of steps (the original number even when steps was cut) */
   count: number
   /** Time the whole turn took (ms) */
@@ -634,6 +673,8 @@ export interface InfoRequestView {
   hint?: string
   /** Captcha picture (jpeg base64). If present, the card shows the picture and receives its text */
   image?: string
+  /** No notification of its own: the caller already sent one (a verification wait) */
+  quiet?: boolean
   status: 'pending' | 'answered' | 'cancelled' | 'expired'
   expiresAt: string
 }
@@ -1009,6 +1050,18 @@ export interface MemoryItem {
  * What Dool2 has noted (lookup memory and a ledger of things done). Facts about me seen after signing in (fact) and applications, payments, bookings, deliveries and signups Dool2 did or confirmed (done).
  * Whether it is still usable is judged by the AI from today's date and the reference point, with no fixed validity period
  */
+/** A recipe as the memory screen shows it (ADR 0044): what was asked, and the services or sites its steps used */
+export interface RecipeView {
+  id: string
+  /** The person's last words for a request these steps got done */
+  ask: string
+  /** Services or sites the steps used, in order (names people know, not tool names) */
+  steps: string[]
+  /** Requests these steps got done */
+  ok: number
+  lastAt: string
+}
+
 export interface KnowItem {
   id: string
   kind: 'fact' | 'done'
@@ -1172,6 +1225,8 @@ export interface LifeState {
   memory: MemoryItem[]
   /** What Dool2 has noted (lookup memory and a ledger of things done), newest first */
   know?: KnowItem[]
+  /** Steps Dool2 remembered for requests asked more than once (ADR 0044), most recent first */
+  recipes?: RecipeView[]
   /** Feed first page (the latest 30). More with GET /api/life/feed?before= via feedNext, life-page on the phone */
   feed: FeedItem[]
   /** The next feed page cursor (none means the end) */
@@ -1205,6 +1260,7 @@ export type LifeAction =
   | { action: 'memory-add'; text: string }
   | { action: 'memory-delete'; id: string }
   | { action: 'know-delete'; id: string }
+  | { action: 'recipe-delete'; id: string }
   | ({ action: 'identity' } & Identity)
   | { action: 'ideas-refresh' }
   | { action: 'watch'; on: boolean }
@@ -1232,6 +1288,11 @@ export type PhoneToPc =
    */
   | { kind: 'report'; note?: string; trail: { at: number; what: string }[]; app?: string }
   /**
+   * Report an AI answer (store AI-content policy): which answer and why. The PC looks up the answer text in its own
+   * record and sends it to the Dool2 team with the reason; the phone shows what goes before sending
+   */
+  | { kind: 'report-answer'; messageId: string; threadId?: string; reason: AnswerReportReason; note?: string }
+  /**
    * Start over (test PC only): erases the PC's conversations, memory, goals and library. The PC verifies the phone signature (resetSignText).
    * With services, it also erases the connected-service marks (vault passwords and phone pairing stay)
    */
@@ -1257,7 +1318,22 @@ export type PhoneToPc =
   | { kind: 'ask'; threadId?: string; agent?: AgentId; text: string; image?: string }
   | { kind: 'cancel'; threadId: string }
   | { kind: 'approval'; id: string }
-  | { kind: 'decide'; id: string; decision: 'approve' | 'reject'; sig: string; choice?: string }
+  /**
+   * key: which security-chip key signed (ADR 0043): 'pay' (after the phone lock) or 'plain'. Absent = the pairing
+   * key (Ed25519, older apps and the browser), which the PC stops accepting once chip keys are registered
+   */
+  | {
+      kind: 'decide'
+      id: string
+      decision: 'approve' | 'reject'
+      sig: string
+      choice?: string
+      key?: ApproveKeyName
+    }
+  /** Registers this phone's security-chip approval keys (SPKI, base64url). Signed with the pairing key (approveKeysSignText) */
+  | { kind: 'approve-keys'; plain: string; pay?: string; at: number; sig: string }
+  /** Phone lock for payment approvals on or off (payConfirmSignText). Off must be signed with the pay key */
+  | { kind: 'pay-confirm'; on: boolean; at: number; sig: string; key: ApproveKeyName }
   /** The ID and password put in the sign-in card (saved only in the PC vault) */
   | { kind: 'login'; id: string; username: string; password: string }
   /** Remote screen: ask for one frame of the tab Dool2 handed over */
@@ -1288,12 +1364,22 @@ export type PhoneToPc =
   | { kind: 'form-fill'; tabId: number; values: RemoteFormValue[]; press?: string }
   /** Web push subscription (null when notifications are turned off). The PC sends notifications directly to this address */
   | { kind: 'push'; sub: PushSubscriptionJSONLike | null }
+  /**
+   * Store app notifications (ADR 0042): the FCM token and this phone's notification key (32 bytes, base64url).
+   * The PC encrypts each notification with the key and the official relay hands it to FCM, so neither Google nor the
+   * relay can read it. null when notifications are turned off
+   */
+  | { kind: 'app-push'; reg: AppPushReg | null }
   /** Ask for the list of service connections (ADR 0014) */
   | { kind: 'connections' }
   /** Ask for the record of one conversation (ADR 0015). With before, the messages before it */
   | { kind: 'conversation'; before?: string; limit?: number }
   /** Stop what is being done in the conversation now */
   | { kind: 'conversation-cancel' }
+  /** Dress Doori (the look is shared with the PC and every phone) */
+  | { kind: 'doori-look'; look: DooriLook }
+  /** Take back a message still waiting in line (sent while Dool2 was answering, not yet read by the AI) */
+  | { kind: 'conversation-unqueue'; text: string }
   /** Take the draft as the result and stop further rounds of the before-finishing check (ADR 0027) */
   | { kind: 'conversation-accept' }
   /** Continue what the check left when it reached its limit (the [Continue] button on a 'left' record) */
@@ -1341,6 +1427,20 @@ export type PhoneToPc =
   /** Connect with one-tap sign-in (Kakao, Naver…). If sign-in at the provider is needed, hand over to the remote screen */
   | { kind: 'connect-social'; id: string; provider: SocialProvider }
 
+/** Why an AI answer is reported: harmful or offensive, wrong, or something else */
+export type AnswerReportReason = 'harmful' | 'wrong' | 'other'
+
+/** Security-chip approval keys (ADR 0043): 'pay' signs only after the phone lock, 'plain' signs right away */
+export type ApproveKeyName = 'pay' | 'plain'
+
+/** Store app notification address (ADR 0042) */
+export interface AppPushReg {
+  /** FCM registration token */
+  token: string
+  /** AES-256-GCM key for the notification content (base64url, 32 bytes). Made on the phone, never sent anywhere but the PC */
+  key: string
+}
+
 /** The PushSubscription.toJSON() fields the PC uses, from the phone browser */
 export interface PushSubscriptionJSONLike {
   endpoint: string
@@ -1348,6 +1448,42 @@ export interface PushSubscriptionJSONLike {
 }
 
 /** PC -> phone */
+/**
+ * How the PC is doing, sent to the phones every 30 s while one is around and at once when it changes, so the phone can
+ * say why the PC is slow or silent instead of only "the PC is not answering" (user 11-26)
+ */
+export type PcHealthIssue =
+  /** Dool2 itself is stalled (its work loop answered late) */
+  | 'slow'
+  /** The PC as a whole is busy (other programs) */
+  | 'busy'
+  /** Little disk space left */
+  | 'low-disk'
+  /** The Chrome extension is not connected */
+  | 'no-extension'
+  /** The AI subscription or key hit its usage limit */
+  | 'ai-limit'
+  /** The AI program is signed out */
+  | 'ai-signed-out'
+  /** The PC is going to sleep */
+  | 'sleeping'
+
+export interface PcHealth {
+  /** When the PC sent it (PC clock) */
+  at: number
+  issues: PcHealthIssue[]
+  /** How late Dool2's work loop answered at worst in the last half minute (ms) */
+  lagMs: number
+  /** Load on the PC: 1 = every core busy */
+  load: number
+  /** Free disk space where Dool2 keeps its data (GB) */
+  diskGb?: number
+  /** AI programs Dool2 keeps running now */
+  agents: number
+  /** When the AI usage limit resets, if known */
+  limitResetsAt?: string
+}
+
 export type PcToPhone =
   | { kind: 'paired'; pcName: string }
   | { kind: 'pair-rejected' }
@@ -1369,12 +1505,22 @@ export type PcToPhone =
       vapid?: string
       /** Whether this phone's subscription for notifications is registered on the PC */
       push?: boolean
+      /** Whether this store app's notification address (ADR 0042) is registered on the PC */
+      appPush?: boolean
       /** The service the Dool2 core is signing in to now */
       connecting?: string[]
       /** Test PC: show 'Start over' in the phone settings */
       dev?: boolean
       /** Auto-approve is on (ADR 0030): the phone shows it in settings and sends texts without a card */
       autoApprove?: boolean
+      /** How the user dressed Doori (doori-look.ts) */
+      dooriLook?: DooriLook
+      /** This phone's security-chip approval keys are registered (ADR 0043) */
+      approveKeys?: boolean
+      /** Payment approvals need the phone lock (only when a pay key is registered) */
+      payConfirm?: boolean
+      /** A pay key is registered (false: the phone had no screen lock when the keys were made) */
+      payKey?: boolean
     }
   | { kind: 'thread'; thread: ThreadSummary; messages: StoredMessage[] }
   | { kind: 'stream'; threadId: string; event: DaemonStreamEvent }
@@ -1414,10 +1560,14 @@ export type PcToPhone =
     }
   /** The result of Start over */
   | { kind: 'reset-done'; ok: boolean; message: string }
+  /** Result of reporting an AI answer: id is the report number the Dool2 team got */
+  | { kind: 'answer-reported'; messageId: string; ok: boolean; id?: string; message?: string }
   /** The record of one conversation (if it answers before, before comes with it) */
   | { kind: 'conversation'; state: ConversationState; before?: string }
   /** Whether the conversation is answering, and the messages waiting in line (every time it changes) */
   | { kind: 'conversation-status'; busy: boolean; queued: string[]; checking?: boolean }
+  /** How the PC is doing (PcHealth) */
+  | { kind: 'health'; health: PcHealth }
   /** A task changed (ADR 0038) */
   | { kind: 'task'; task: TaskView }
   | { kind: 'life'; state: LifeState }
@@ -1494,13 +1644,24 @@ export interface PairedPhone {
   pairedAt: string
   /** Web push subscription. If present, notifications are sent even when the app is off */
   push?: PushSubscriptionJSONLike
+  /** Store app notification address (ADR 0042). If present, notifications go through FCM */
+  appPush?: AppPushReg
+  /**
+   * Security-chip approval keys (ADR 0043, SPKI base64url). Once present, approvals signed with the pairing key are
+   * no longer accepted from this phone
+   */
+  approveKeys?: { plain: string; pay?: string }
+  /** Payment approvals need the pay key (default on when a pay key exists). Turned off only with a pay-key signature */
+  payConfirm?: boolean
 }
 
 export interface LinkStatus {
   relay?: string
   connected: boolean
   pcId?: string
-  phones: (Omit<PairedPhone, 'boxPub' | 'signPub' | 'push'> & { push: boolean })[]
+  phones: (Omit<PairedPhone, 'boxPub' | 'signPub' | 'push' | 'appPush' | 'approveKeys' | 'payConfirm'> & {
+    push: boolean
+  })[]
 }
 
 export type PairStatus =

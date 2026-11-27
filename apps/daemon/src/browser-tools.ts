@@ -19,7 +19,10 @@ import type {
   RemoteForm,
   RemoteFormValue,
   RemoteInfo,
+  StepDetail,
 } from '@dool2/protocol'
+import { AUTH_APPS } from '@dool2/protocol'
+import { READ_CDP_METHODS } from '@dool2/protocol/cdp'
 import {
   PAY_KINDS,
   type PayMethod,
@@ -111,7 +114,14 @@ import {
   tabTag,
   WORD_CHARS,
 } from './region/kr/browser.js'
-import { MAX_STEPS as ROUTE_MAX_STEPS, type RouteBook, routeStart } from './routes.js'
+import {
+  MAX_STEPS as ROUTE_MAX_STEPS,
+  type RouteBook,
+  readStep,
+  routeFields,
+  routeStart,
+  typedStep,
+} from './routes.js'
 import { notAccepted, sendFiles, sizeText, type UploadReply } from './upload.js'
 
 export type ToolContent = { type: 'text'; text: string } | { type: 'image'; data: string; mimeType: string }
@@ -150,6 +160,9 @@ export const BROWSER_TOOLS = [
   'request_profile',
   'request_code',
   'request_tap',
+  'save_pdf',
+  'eval',
+  'cdp',
   'wait_auth',
   'new_password',
   'select',
@@ -318,6 +331,8 @@ const TRAIL_KEEPS = new Set([
   'wait',
   'tabs',
   'route',
+  // Typing into a named field joins the walk without its value (ADR 0044 follow-up); other typing ends it in dispatch
+  'type',
 ])
 
 const PAYING_TAB_MOVE =
@@ -866,8 +881,38 @@ export const PAGE_READ_CHARS = 5_000
 /** How long the last page the AI saw in a tab stays the base for showing only changes */
 export const SEEN_TTL_MS = 10 * 60_000
 
+/** How much of a script's or DevTools result the AI gets back (more is cut, with a note) */
+const EVAL_MAX = 8_000
+/**
+ * A site as people call it: the last part of the page title ("Apply | Certificates | Family Registry"), else the
+ * host without www. Notifications showed "efamily.scourt.go.kr"
+ */
+export function siteName(page?: { url?: string; title?: string }): string {
+  const parts = String(page?.title ?? '')
+    .split(/\s+[|·–—-]\s+/)
+    .map((x) => x.trim())
+    .filter(Boolean)
+  const last = parts.at(-1)
+  if (last && last.length <= 24) return last
+  try {
+    return new URL(page?.url ?? '').hostname.replace(/^www\./, '')
+  } catch {
+    return last?.slice(0, 24) ?? ''
+  }
+}
+
+/** browser_wait_auth after two approvals that came back to the same page */
+const AUTH_REFUSED =
+  "Not asked again: the person approved twice and the page came back to the same screen both times. The site most likely refused something sent with the request: a name, a birth date, a phone number or a family member's name it checks against its records (one typed on a phone card may be wrong). Another request only sends the person another approval. Read the whole page and any message the site showed, tell the person which values went in, and ask them to correct the one that is wrong (browser_request_code for that field) before requesting again."
+const SCRIPT_ON_PAYING =
+  'Scripts and DevTools do not run on a payment step: what happens there goes through the approval gate. Read it with browser_read.'
+const OLD_EXTENSION_EVAL =
+  "This PC's Dool2 Chrome extension is older than 0.3.4 and has no page scripts or DevTools yet (the Chrome Web Store copy updates by itself). What works now: browser_read, browser_find, browser_screenshot and browser_save_pdf."
+
 export class BrowserTools {
   private pages = new Map<number, PageInfo>()
+  /** Approvals that came back to the page they were sent from (host+path), for browser_wait_auth */
+  private authStalls = new Map<string, { n: number; at: number }>()
   /**
    * Per AI session (the chat whose tool server called, '' when unknown), per tab: the last whole page that AI saw.
    * Actions on a page it saw give only what changed since. Each chat keeps its own: a page one task read is not in
@@ -957,6 +1002,78 @@ export class BrowserTools {
     }
   }
 
+  /**
+   * What one work step did, for the "how it worked" sheet on the screens: the address opened (no query), the name of
+   * what was pressed, the field typed into (never the value), the page read. From the tool input and the page Dool2
+   * last read on that tab; undefined when there is nothing to say
+   */
+  stepDetail(name: string, input: unknown): StepDetail[] | undefined {
+    const bare = name.replace(/^(mcp__dool2__|dool2_)/, '').replace(/^browser_/, '')
+    const i = (input && typeof input === 'object' ? input : {}) as Record<string, unknown>
+    const tabId = typeof i.tabId === 'number' ? i.tabId : this._lastTabId
+    const page = tabId === undefined ? undefined : this.pages.get(tabId)
+    const clip = (v: string) => (v.length > 80 ? `${v.slice(0, 79)}…` : v)
+    const named = (ref: unknown, text: unknown) =>
+      (typeof ref === 'string' ? page?.refs.get(ref)?.name : undefined) ||
+      (typeof text === 'string' ? text : undefined)
+    const out: StepDetail[] = []
+    if ((bare === 'open' || bare === 'navigate') && typeof i.url === 'string') {
+      try {
+        const u = new URL(i.url)
+        out.push({ k: 'url', v: clip(`${u.host}${u.pathname === '/' ? '' : u.pathname}`) })
+      } catch {
+        // not an address
+      }
+    } else if (bare === 'click' || bare === 'select' || bare === 'press') {
+      const n = named(i.ref, i.text)
+      if (n) out.push({ k: 'press', v: clip(n) })
+    } else if (bare === 'type') {
+      const n = named(i.ref, undefined)
+      if (n) out.push({ k: 'field', v: clip(n) })
+    } else if (bare === 'steps' && Array.isArray(i.steps)) {
+      for (const st of i.steps.slice(0, 6) as Record<string, unknown>[]) {
+        if (st?.do !== 'click' && st?.do !== 'type') continue
+        // A typed value is never shown: only the field's name
+        const n = named(st.ref, st.do === 'type' ? undefined : st.text)
+        if (n) out.push({ k: st.do === 'type' ? 'field' : 'press', v: clip(n) })
+      }
+    } else if ((bare === 'read' || bare === 'snapshot' || bare === 'screenshot') && page?.title) {
+      out.push({ k: 'page', v: clip(page.title) })
+    } else if (
+      /_(search|find|track|lookup|list|showtimes|price|prices|status)$/.test(bare) ||
+      bare === 'service_call'
+    ) {
+      // A service lookup: the few words it was asked for (search words, dates, places), never ids or numbers
+      const args = (
+        bare === 'service_call' && i.input && typeof i.input === 'object' ? i.input : i
+      ) as Record<string, unknown>
+      const words = [
+        'query',
+        'keyword',
+        'q',
+        'search',
+        'from',
+        'to',
+        'date',
+        'checkin',
+        'checkout',
+        'region',
+        'area',
+        'place',
+        'title',
+        'movie',
+        'city',
+      ]
+        .map((k) => args[k])
+        .filter(
+          (v): v is string | number => (typeof v === 'string' && v.trim() !== '') || typeof v === 'number',
+        )
+        .map(String)
+      if (words.length) out.push({ k: 'query', v: clip(words.join(' · ')) })
+    }
+    return out.length ? out : undefined
+  }
+
   tabHost(tabId: number): string | undefined {
     try {
       return new URL(this.pages.get(tabId)?.url ?? '').host || undefined
@@ -1011,6 +1128,8 @@ export class BrowserTools {
     host: string,
     label: string,
     hint: string,
+    /** The site as people call it (the end of the page title), for the card */
+    site?: string,
   ) => { answer: Promise<string | undefined>; cancel: () => void }
   /** Shows the verification code card (phone). The daemon puts the received code in that field and tells the chat to carry on */
   requestCode?: (
@@ -1019,12 +1138,21 @@ export class BrowserTools {
     label: string,
     hint: string,
     host: string,
-    kind?: 'code' | 'rrn_back' | 'captcha',
+    kind?: 'code' | 'rrn_back' | 'captcha' | 'text',
     ref?: string,
     /** CAPTCHA image (jpeg base64) */
     image?: string,
   ) => string | undefined
   /** Tap-to-solve image card (phone). The daemon taps the same spot inside rect where the user tapped the image (0~1000) */
+  /**
+   * Keeps a PDF of a page (the tab printed the way Chrome prints it) in the Doori folder and the library; returns where.
+   * preview: a picture of the page for the library
+   */
+  savePdf?: (name: string, pdf: Buffer, preview?: string) => Promise<string>
+  /** Keeps a file Dool2 produced from a page (browser_cdp) in the Dool2 folder and the library; returns where */
+  saveFile?: (name: string, ext: string, data: Buffer) => Promise<string>
+  /** browser_save_pdf met an extension too old to print a PDF: the daemon says so in the conversation once it updates */
+  pdfTooOld?: (tabId: number) => void
   requestTap?: (
     tabId: number,
     say: string,
@@ -1184,7 +1312,8 @@ export class BrowserTools {
   /** Pause before each click of a remembered route, like a person (shorter in tests) */
   routePause: () => number = () => 600 + Math.random() * 1200
   /** Per tab: where Dool2 opened it and the clicks since that each moved to another page */
-  private trails = new Map<number, { start: string; steps: string[] }>()
+  /** The walk on each tab; typed holds what was typed on it, only to keep it out of the route's title (never saved) */
+  private trails = new Map<number, { start: string; steps: string[]; typed?: string[] }>()
   /** Tabs walking a remembered route now (their clicks are not counted as walks by hand) */
   private walking = new Set<number>()
 
@@ -1350,8 +1479,21 @@ export class BrowserTools {
           `${r.note} (waited briefly for the frame on the page to change and read again)`,
         )
       }
-      case 'type':
-        return this.read(tabId, undefined, (await this.act(tabId, { ...a, do: 'type' })).note)
+      case 'type': {
+        const was = this.pages.get(tabId)
+        const field = was?.refs.get(String(a.ref ?? ''))
+        const out = await this.read(tabId, undefined, (await this.act(tabId, { ...a, do: 'type' })).note)
+        // A search box or a named field joins the walk by its name, never by what was typed. Long text (a post, a
+        // message) ends the walk: that page depends on what was written
+        const name = field?.name?.trim()
+        const fieldOk = name && ([ROLE.input, ROLE.searchBox] as string[]).includes(field?.role ?? '')
+        if (fieldOk && typeof a.text === 'string' && a.text.length <= 100) {
+          const t = this.trails.get(tabId)
+          if (t && a.text.trim()) t.typed = [...(t.typed ?? []), a.text.trim()]
+          this.noteTrail(tabId, was?.url, typedStep(name, a.submit === true))
+        } else this.trails.delete(tabId)
+        return out
+      }
       case 'press':
         return this.read(tabId, undefined, (await this.act(tabId, { ...a, do: 'press' })).note)
       case 'hover':
@@ -1359,7 +1501,11 @@ export class BrowserTools {
       case 'steps':
         return this.steps(tabId, a)
       case 'route':
-        return this.route(tabId, String(a.route ?? ''))
+        return this.route(
+          tabId,
+          String(a.route ?? ''),
+          Array.isArray(a.inputs) ? a.inputs.map((x) => String(x)) : [],
+        )
       case 'scroll': {
         const r = (await this.browser.call('scroll', {
           tabId,
@@ -1388,6 +1534,108 @@ export class BrowserTools {
           content: [
             { type: 'text', text: `${tabTag(tabId)} ${r.title} — ${r.url}` },
             { type: 'image', data: r.data, mimeType: r.mime },
+          ],
+        }
+      }
+      case 'save_pdf': {
+        if (!this.savePdf) throw new Error('Saving a PDF is not available on this PC')
+        const r = (await this.browser.call('pdf', { tabId }, 60_000).catch((e: Error) => {
+          // An extension from before 0.3.3 (the Chrome Web Store copy updates a few days after a release) has no pdf
+          // It told the AI to wait for the update, and Dool2 stopped there on Sonnet and Opus alike (test PC 11-27):
+          // now it says what else to try first, and the daemon tells the conversation when the update arrives
+          if (/Unknown command/.test(e.message)) {
+            this.pdfTooOld?.(tabId)
+            throw new Error(
+              "This PC's Dool2 Chrome extension is an older version that cannot print a page to PDF yet (the Chrome Web Store copy updates by itself within days; Dool2 is told the moment it does, so you can save this page then: leave its tab open). Do not stop at this. Look for another way to get the file now: a download, save or PDF button in the viewer (read the whole page, frames too, and the other tabs with browser_tabs), the issued-documents list, or the site's own option to get the document as a file or an electronic certificate. Do not ask the user to print or save it on the PC, and never send them to chrome://extensions, developer mode or an update button: the store copy cannot be hurried and updating Dool2 is not their job. Saving needs no folder permission (it goes to the Dool2 folder). Other requests that end in a PDF (another certificate) are still worth doing up to the open document: say the PDF follows by itself once the extension updates. A picture copy (browser_screenshot) is the last resort, and only when the user wants something now: say it is a copy, not the issued file.",
+            )
+          }
+          throw e
+        })) as { data?: string }
+        const pdf = Buffer.from(r.data ?? '', 'base64')
+        // A blank print (a viewer that draws into a plugin or blocks printing) is a few KB of empty pages
+        if (pdf.length < 3_000)
+          throw new Error(
+            'The page printed empty (the viewer may draw the document where printing cannot reach). Look for the document inside a frame or its own tab (browser_tabs) and try that tab, or a download button on the viewer.',
+          )
+        const shot = (await this.browser.call('screenshot', { tabId }).catch(() => undefined)) as
+          | { data?: string }
+          | undefined
+        const page = (await this.browser.call('snapshot', { tabId, maxChars: 200 }).catch(() => undefined)) as
+          | { title?: string }
+          | undefined
+        const name = String(a.name ?? '').trim() || page?.title || 'document'
+        const path = await this.savePdf(name, pdf, shot?.data)
+        return {
+          content: [
+            {
+              type: 'text',
+              text: `Saved the page as a PDF (${Math.round(pdf.length / 1024)} KB, the way Chrome prints it): ${path}. It is in the library too. Tell the user where it is; no print window and no printer were used.`,
+            },
+          ],
+        }
+      }
+      case 'eval': {
+        // ADR 0045, T31: read and compute on the page; Chrome refuses anything with a side effect
+        if (this.isPaying(tabId)) throw new Error(SCRIPT_ON_PAYING)
+        const expression = String(a.expression ?? '')
+        if (/\b(cookie|localStorage|sessionStorage|indexedDB)\b/.test(expression))
+          throw new Error(
+            'Cookies and site storage stay out of reach of scripts; read what the page shows instead.',
+          )
+        const r = (await this.browser.call('eval', { tabId, expression }, 20_000).catch((e: Error) => {
+          if (/Unknown command/.test(e.message)) throw new Error(OLD_EXTENSION_EVAL)
+          throw e
+        })) as { type?: string; value?: unknown; description?: string; error?: string }
+        if (r.error)
+          return {
+            isError: true,
+            content: [
+              {
+                type: 'text',
+                text: `The script threw: ${r.error}${/side.?effect/i.test(r.error) ? ' (scripts here may only read and compute; to act on the page use browser_click, browser_type or browser_steps)' : ''}`,
+              },
+            ],
+          }
+        const out =
+          r.value !== undefined ? JSON.stringify(r.value, null, 1) : (r.description ?? String(r.type))
+        return {
+          content: [
+            {
+              type: 'text',
+              text:
+                out.length > EVAL_MAX
+                  ? `${out.slice(0, EVAL_MAX)}\n… (cut at ${EVAL_MAX} of ${out.length} characters: return less, or a part at a time)`
+                  : out,
+            },
+          ],
+        }
+      }
+      case 'cdp': {
+        // ADR 0045, T31: a DevTools method from the read-only list. Big results become files in the Dool2 folder
+        const method = String(a.method ?? '')
+        if (!(READ_CDP_METHODS as readonly string[]).includes(method))
+          throw new Error(
+            `${method} is not available: only these read or produce: ${READ_CDP_METHODS.join(', ')}.`,
+          )
+        if (this.isPaying(tabId)) throw new Error(SCRIPT_ON_PAYING)
+        const params = a.params && typeof a.params === 'object' ? (a.params as Record<string, unknown>) : {}
+        const r = (await this.browser.call('cdp', { tabId, method, params }, 90_000).catch((e: Error) => {
+          if (/Unknown command/.test(e.message)) throw new Error(OLD_EXTENSION_EVAL)
+          throw e
+        })) as Record<string, unknown>
+        const name = String(a.name ?? '').trim() || method.split('.')[1] || 'page'
+        const saved = await this.saveCdp(method, r, name)
+        if (saved) return { content: [{ type: 'text', text: saved }] }
+        const out = JSON.stringify(r, null, 1)
+        return {
+          content: [
+            {
+              type: 'text',
+              text:
+                out.length > EVAL_MAX
+                  ? `${out.slice(0, EVAL_MAX)}\n… (cut at ${EVAL_MAX} of ${out.length} characters)`
+                  : out,
+            },
           ],
         }
       }
@@ -2141,7 +2389,7 @@ export class BrowserTools {
           String(a.label ?? '') || target.name || browserText(this.userLang()).codeLabel,
           hint,
           host,
-          a.kind === 'rrn_back' ? 'rrn_back' : a.kind === 'captcha' ? 'captcha' : 'code',
+          a.kind === 'rrn_back' || a.kind === 'captcha' || a.kind === 'text' ? a.kind : 'code',
           ref,
           image,
         )
@@ -2243,13 +2491,25 @@ export class BrowserTools {
           .filter(Boolean)
         const id = this.requestProfile(fields, String(a.reason ?? '').slice(0, 120), options)
         if (!id) throw new Error('Could not show the my-info card')
+        const labels = fields.map((f) => PROFILE_FIELDS[f].label).join('·')
+        // A wait for the person like the other phone cards (hand-back.ts): the turn is counted as waiting, so a task stays
+        // open ('needs you') and carries on when the card is saved. Before, the result read like a normal step: the
+        // finish check sent the task round twice and ended it seconds before the person filled the card, and the
+        // saved values reached a task that was over (measured 11-26, Shinhan Card ID recovery)
         return {
           content: [
             {
               type: 'text',
               text:
-                `Showed the my-info card (${fields.map((f) => PROFILE_FIELDS[f].label).join('·')}). While the card waits for an answer, finish now what works without this info (checking eligibility, researching prices and candidates, reading documents, candidates based on Seoul, a prep list), put the results in the reply, and end it with one sentence like "enter it on the card once and I'll fill it in myself from then on". Do not end with only a note about the card. ` +
-                'Entered values are stored only in the PC vault and you get only masked values. You are told in the next message once saved. Then fill with browser_fill_profile.',
+                'If part of the request works without this info (checking eligibility, researching prices and candidates, reading documents, a prep list), do it in this same reply first and put the results in it. ' +
+                handBack({
+                  done: `the my-info card (${labels}) is on the phone`,
+                  left: `enter ${labels} on that card once (kept only in the PC vault; you only ever get masked values)`,
+                  who: 'person',
+                  after:
+                    'you are told in the next message once saved; then fill the fields with browser_fill_profile and carry on',
+                  tell: 'to enter it on the card once, and that Dool2 fills it in by itself from then on',
+                }),
             },
           ],
         }
@@ -2316,11 +2576,31 @@ export class BrowserTools {
         // Notify the phone and press [verification done] every few seconds to see whether it was approved. Text like "not signed" means not yet.
         // Some sites (Hometax) open the verification window as a popup (new tab), so tabs Dool2 opened recently are checked too
         const am = browserText(this.userLang())
+        // Approved twice and back on the same page both times: the site refused something sent with the request.
+        // A third request only sent the person another approval (test PC 11-27: a family member's name typed wrong on
+        // the phone card, three KakaoTalk approvals, and Dool2 never saw why)
+        const placeOf = (u?: string) => {
+          try {
+            const x = new URL(u ?? '')
+            return `${x.hostname}${x.pathname}`
+          } catch {
+            return ''
+          }
+        }
+        const before = placeOf(this.pages.get(tabId)?.url)
+        const stalled = this.authStalls.get(before)
+        if (before && stalled && stalled.n >= 2 && Date.now() - stalled.at < 15 * 60_000)
+          return { isError: true, content: [{ type: 'text', text: AUTH_REFUSED }] }
         const msg =
           String(a.message ?? '')
             .trim()
             .slice(0, 120) || am.authBody
-        this.notifyUser?.(am.authTitle, msg)
+        // One notification per request, in words a person uses: which app, for what, and what happens next. It was
+        // two or three per request (a push plus the card's own), titled with the site's address and "input needed",
+        // listing four apps and asking to press a button the notification does not have (test PC 11-27)
+        const app = AUTH_APPS.find((x) => msg.includes(x))
+        const site = siteName(this.pages.get(tabId))
+        this.notifyUser?.(app ? am.authTitleApp(app) : am.authTitle, am.authBodySite(site))
         // Only keep the tab open. No phone remote screen prep (holdForPerson) — the screen changed and closed the verification window (measured)
         this.hold(tabId, 200_000)
         // Done or not yet is not decided by text rules (guidance like "…please proceed" was read as not yet and only showed the card again and again, measured K-Pass).
@@ -2355,7 +2635,8 @@ export class BrowserTools {
         } catch {}
         // Some sites close the verification window when [verification done] is pressed before approval (measured Hometax: the window vanished 6 seconds after the request).
         // So while waiting, nothing is pressed; it only watches
-        const card = (label: string) => this.askAuthDone?.(host, label, am.authHint)
+        const card = (label: string) =>
+          this.askAuthDone?.(host, label, app ? am.authHintApp(app) : am.authHint, site)
         const waiting = card(msg)
         let pressedByUser = false
         if (waiting)
@@ -2400,7 +2681,19 @@ export class BrowserTools {
         const backFrom = (main: Snapshot, why: string) => {
           waiting?.cancel()
           this.pages.set(tabId, pageInfo(main.url, main.text))
-          return this.read(tabId, undefined, `${why}. ${judge}`)
+          // Back on the page the request was sent from: say so, and after the second time, what that means
+          let same = ''
+          let refused = false
+          if (before && placeOf(main.url) === before && /approved|window closed/.test(why)) {
+            const was = this.authStalls.get(before)
+            const n = was && Date.now() - was.at < 15 * 60_000 ? was.n + 1 : 1
+            this.authStalls.set(before, { n, at: Date.now() })
+            refused = n >= 2
+            same = refused
+              ? ` ${AUTH_REFUSED}`
+              : ' The page is the one the request was sent from (no next step yet): read it once more for a message from the site before anything else.'
+          } else if (before) this.authStalls.delete(before)
+          return this.read(tabId, undefined, `${why}.${same}${refused ? '' : ` ${judge}`}`)
         }
         const watch = async (signal?: AbortSignal): Promise<ToolResult> => {
           while (Date.now() - started < 180_000) {
@@ -3315,6 +3608,50 @@ export class BrowserTools {
   paySession(tabId: number): PaySession | undefined {
     return this.liveSessions().find((x) => x.tabs.has(tabId))
   }
+  /** browser_cdp results that are files (a PDF, an archive, a picture, a loaded resource): saved, and where is said */
+  private async saveCdp(
+    method: string,
+    r: Record<string, unknown>,
+    name: string,
+  ): Promise<string | undefined> {
+    const keep = async (ext: string, data: Buffer, what: string) => {
+      if (!this.saveFile && !(ext === 'pdf' && this.savePdf)) return undefined
+      const path =
+        ext === 'pdf' && this.savePdf
+          ? await this.savePdf(name, data)
+          : await (this.saveFile as NonNullable<typeof this.saveFile>)(name, ext, data)
+      return `Saved ${what} (${Math.round(data.length / 1024)} KB): ${path}. It is in the library too.`
+    }
+    if (method === 'Page.printToPDF' && typeof r.data === 'string') {
+      const pdf = Buffer.from(r.data, 'base64')
+      if (pdf.length < 3_000)
+        return 'The page printed empty (the viewer may draw where printing cannot reach): try the tab or frame that holds the document, or the resource behind it (Page.getResourceTree).'
+      return keep('pdf', pdf, 'the page as a PDF, the way Chrome prints it')
+    }
+    if (method === 'Page.captureSnapshot' && typeof r.data === 'string')
+      return keep(
+        'mhtml',
+        Buffer.from(r.data, 'utf8'),
+        'the whole page as one archive file (opens in Chrome)',
+      )
+    if (method === 'Page.captureScreenshot' && typeof r.data === 'string')
+      return keep('png', Buffer.from(r.data, 'base64'), 'a picture of the page')
+    if (method === 'Page.getResourceContent' && typeof r.content === 'string') {
+      const data = r.base64Encoded ? Buffer.from(r.content, 'base64') : Buffer.from(r.content, 'utf8')
+      if (data.subarray(0, 5).toString('latin1') === '%PDF-')
+        return keep('pdf', data, 'the PDF the page loaded')
+      if (data.length > EVAL_MAX || r.base64Encoded) {
+        const ext = /^\s*[[{]/.test(data.subarray(0, 20).toString('utf8'))
+          ? 'json'
+          : r.base64Encoded
+            ? 'bin'
+            : 'txt'
+        return keep(ext, data, 'the resource the page loaded')
+      }
+    }
+    return undefined
+  }
+
   isPaying(tabId: number): boolean {
     return this.paySession(tabId) !== undefined
   }
@@ -4200,7 +4537,10 @@ export class BrowserTools {
     t.steps.push(pressed)
     // Kept when a click moved on, and not when the walk came back to where it started (home again)
     if (page.url === before || t.steps.length < 2 || routeStart(page.url) === t.start) return
-    this.routes?.record({ start: t.start, steps: t.steps, title: page.title ?? '' }, !this.walking.has(tabId))
+    // The page a search ends on is often titled with the words searched: they are not kept
+    let title = page.title ?? ''
+    for (const v of t.typed ?? []) title = title.split(v).join('…')
+    this.routes?.record({ start: t.start, steps: t.steps, title }, !this.walking.has(tabId))
   }
 
   /**
@@ -4208,11 +4548,16 @@ export class BrowserTools {
    * between them (no AI step in between). Each click goes through the same approval gate as browser_click. Stops at
    * the first step that is not on the page and returns that page
    */
-  private async route(tabId: number, id: string): Promise<ToolResult> {
+  private async route(tabId: number, id: string, inputs: string[] = []): Promise<ToolResult> {
     const r = this.routes?.get(id)
     if (!r)
       throw new Error(
         `There is no remembered route ${id || '(empty)'}. Use one listed when you open the site.`,
+      )
+    const fields = routeFields(r)
+    if (inputs.length < fields.length)
+      throw new Error(
+        `The route [${r.id}] types into ${fields.map((f) => `'${f}'`).join(', ')}: give what to type this time in inputs, in that order.`,
       )
     if (this.isPaying(tabId)) throw new Error(PAYING_TAB_MOVE)
     if (routeStart(this.pages.get(tabId)?.url ?? '') !== r.start) {
@@ -4221,17 +4566,33 @@ export class BrowserTools {
     }
     this.trails.set(tabId, { start: r.start, steps: [] })
     const stop = (i: number, why: string, out?: ToolResult): ToolResult => {
-      const note = `The route [${r.id}] stopped at step ${i + 1} ('${r.steps[i]}'): ${why}. Carry on yourself from this page.`
+      const st = readStep(r.steps[i] ?? '')
+      const what = st.kind === 'type' ? `typing in '${st.field}'` : `'${st.name}'`
+      const note = `The route [${r.id}] stopped at step ${i + 1} (${what}): ${why}. Carry on yourself from this page.`
       if (!out) return { content: [{ type: 'text', text: note }] }
       return { ...out, content: [{ type: 'text', text: note }, ...out.content] }
     }
     let out: ToolResult | undefined
     this.walking.add(tabId)
     try {
-      for (const [i, step] of r.steps.entries()) {
+      let typed = 0
+      for (const [i, raw] of r.steps.entries()) {
         await new Promise((res) => setTimeout(res, this.routePause()))
+        const step = readStep(raw)
         try {
-          out = await this.dispatch('click', { tabId, text: step })
+          if (step.kind === 'type') {
+            const ref = [...(this.pages.get(tabId)?.refs ?? new Map()).entries()].find(
+              ([, v]) =>
+                v.name?.trim() === step.field && ([ROLE.input, ROLE.searchBox] as string[]).includes(v.role),
+            )?.[0]
+            if (!ref) throw new Error(`the field '${step.field}' is not on the page`)
+            out = await this.dispatch('type', {
+              tabId,
+              ref,
+              text: inputs[typed++] ?? '',
+              ...(step.submit ? { submit: true } : {}),
+            })
+          } else out = await this.dispatch('click', { tabId, text: step.name })
         } catch (e) {
           // The link is gone (the site changed): this route is no longer kept
           this.routes?.forget(r.id)
@@ -4250,7 +4611,7 @@ export class BrowserTools {
       return stop(r.steps.length - 1, 'the clicks went through but the page did not move', out)
     }
     this.routes?.used(r.id)
-    const done = `Took the remembered route [${r.id}] (${r.steps.length} clicks, no AI step in between).`
+    const done = `Took the remembered route [${r.id}] (${r.steps.length} steps, no AI step in between).`
     return out ? { ...out, content: [{ type: 'text', text: done }, ...out.content] } : { content: [] }
   }
 
@@ -4400,7 +4761,7 @@ export class BrowserTools {
       ...(!diff && s.truncated
         ? [
             '',
-            `(The text is long, so only ${max} characters are shown. To continue, read again with skip: ${(s.skipped ?? 0) + (s.mainLength ?? s.text.length)}; to jump to a part, put its text in from to read from that line)`,
+            `(The text is long, so only ${max} characters are shown. To continue, read again with skip: ${(s.skipped ?? 0) + (s.mainLength ?? s.text.length)}; to jump to a part, put its text in from to read from that line; to get every row of a list or table as data at once, browser_eval runs a script that reads it)`,
           ]
         : []),
     ]

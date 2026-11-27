@@ -5,7 +5,7 @@
 // until a person has reviewed it and removed that block.
 import { type Connector, type ConnectorTool, checkConnector } from '@dool2/protocol/connector'
 import { TOOL_STATUS } from './region/kr/connectors.js'
-import { type Route, routeCounts, stepNameOk } from './routes.js'
+import { type Route, routeCounts, stepNameOk, TYPE_MARK } from './routes.js'
 
 /** A route becomes a draft once it reached its page this many times (with browser_route or by hand) */
 export const DRAFT_MIN_SUCCESSES = 3
@@ -183,6 +183,11 @@ export function routeDrafts(routes: Route[], cards: CardSites[], today: string):
       continue
     }
     const steps = (r.steps ?? []).map((s) => String(s).trim())
+    // Routes that type are not drafted yet (a connector step would need the input as a parameter)
+    if (steps.some((s) => s.startsWith(TYPE_MARK))) {
+      skipped.push({ route: label, host, why: 'it types into a field (not drafted yet)' })
+      continue
+    }
     if (!steps.length || !steps.every((s) => stepNameOk(s) && !/[{}]/.test(s))) {
       skipped.push({ route: label, host, why: 'a click name looks like a number, address or email' })
       continue

@@ -25,6 +25,7 @@ import type {
   LoginRecordMessage,
   LoginRequestView,
   Settings,
+  StepDetail,
   StoredMessage,
   TaskRecordMessage,
   TaskView,
@@ -45,6 +46,7 @@ import {
   type IconName,
   icon,
   liveDoori,
+  setDooriLook,
   setFileOpener,
   setRich,
   withLogo,
@@ -88,9 +90,11 @@ import {
   planLabel,
   SETUP_STEPS,
   type SetupStep,
+  spentLabel,
 } from './setup-model.js'
 import {
   AWAY_MIN_MS,
+  actDone,
   awaySummary,
   doneLine,
   groupSteps,
@@ -230,8 +234,16 @@ function renderUpdate(u: UpdateView | null) {
 
 const agentLabel = (id: AgentId): string =>
   id === 'claude' ? 'Claude Code' : id === 'codex' ? 'Codex' : A().apiKey
-const limitLabel = (kind: string): string =>
-  kind === 'five_hour' ? A().limit5h : kind === 'seven_day' ? A().limitWeek : kind
+const limitLabel = (kind: string): string => {
+  if (kind === 'five_hour') return A().limit5h
+  if (kind === 'one_day') return A().limitDay
+  if (kind === 'seven_day') return A().limitWeek
+  if (kind === 'month') return A().limitMonth
+  // Other windows come as minutes ("90m"): hours or days for people
+  const mins = Number(/^(\d+)m$/.exec(kind)?.[1])
+  if (!mins) return kind
+  return mins % 1440 === 0 ? A().limitDays(mins / 1440) : A().limitHours(Math.max(1, Math.round(mins / 60)))
+}
 const examples = () => [T().ex1, T().ex2, T().ex3]
 
 /** Five tabs on the left + Connections + side chats + goal detail */
@@ -246,6 +258,8 @@ const TABS: [Tab, IconName, () => string][] = [
 ]
 /** Sections of the assistant panel */
 type PanelTab = 'schedule' | 'memory' | 'screen' | 'activity' | 'approvals'
+/** Where the Screen tab's timeline comes from (a chat line opens it) */
+type WorkSrc = { kind: 'live' } | { kind: 'rec'; rec: WorkRecordMessage } | { kind: 'task'; id: string }
 const PANEL_TABS: [PanelTab, IconName, () => string][] = [
   ['schedule', 'clock', () => A().pSchedule],
   ['memory', 'brain', () => A().pMemory],
@@ -260,7 +274,7 @@ interface Turn {
   started: number
   steps: string[]
   /** What the tool did and where, per step (same order as steps; grouped into one row per service) */
-  info: { act: string; place?: string; at: number }[]
+  info: { act: string; place?: string; at: number; detail?: StepDetail[] }[]
   /** Last site opened */
   host?: string
   activity: string
@@ -284,6 +298,8 @@ const state: {
   libTab: LibraryTab
   panelOpen: boolean
   panelTab: PanelTab
+  /** What the Screen tab shows: the work running now, or the one a chat line was clicked for */
+  workSrc?: WorkSrc
   messages: StoredMessage[]
   hasMore: boolean
   busy: boolean
@@ -505,6 +521,7 @@ async function loadAgents() {
   const { agents } = await api<{ agents: AgentStatus[] }>('/api/agents')
   const wasNoAi = noAiReady()
   state.agents = smokeNoAi ? agents.map((a) => ({ id: a.id, installed: false, loggedIn: false })) : agents
+  renderSpend()
   renderDevice()
   renderHead()
   // The empty chat says "connect an AI" while none is ready: redraw it when that changes
@@ -1019,6 +1036,18 @@ function renderHead() {
   if (state.panelOpen) renderPanelTop()
 }
 
+/**
+ * Pay as you go has no usage window to fill: the strip says what this month's answers cost instead (first-run test
+ * 11-26: people asked to see what they spend)
+ */
+function renderSpend() {
+  if (state.choice !== 'payg') return
+  const spent = state.agents.find((a) => a.id === 'opencode' && a.loggedIn)?.spent
+  const box = $('usage')
+  box.hidden = !spent
+  if (spent) box.replaceChildren(el('div', 'u', el('span', '', A().spentMonth(spentLabel(spent.usd)))))
+}
+
 function renderUsage(limits: UsageLimit[]) {
   const box = $('usage')
   box.hidden = limits.length === 0
@@ -1243,52 +1272,95 @@ function renderPanel(reason: 'live' | 'life' | 'all' = 'live') {
   if (reason !== 'all') body.scrollTop = y
 }
 
-/** Screen: current task (step log) · up next · this computer */
+/** Screen: the timeline of the work running now, or of the one a chat line was clicked for (same as the phone's sheet) */
 function screenTab(): HTMLElement {
   const box = el('div', 'screen-tab')
   const t = state.turn
-  if (state.busy && t) {
-    const log = el('ul', 'worklog')
-    const groups = groupSteps(turnSteps(t.steps, t.info), placeCards(), lang)
-    groups.forEach((g, i) => {
-      log.append(groupRow(g, i === groups.length - 1 ? 'now' : 'done'))
-    })
-    if (!t.steps.length) log.append(el('li', 'now', A().deciding))
-    log.append(el('li', 'next', A().askFirstMoney))
-    const clock = el('span', 'meta', elapsed(Math.floor((Date.now() - t.started) / 1000)))
-    clock.id = 'work-clock'
-    const stop = button(
-      'btn-danger sm',
-      () => void api('/api/conversation/cancel', { method: 'POST' }).catch(() => {}),
-      icon('stop'),
-      A().stop,
+  const src = state.workSrc
+  const card = (title: string, meta: string, steps: WStep[], running: boolean, foot: HTMLElement[]) =>
+    el(
+      'article',
+      `workcard work-sheet${running ? '' : ' quiet'}`,
+      el('div', 'workcard-head ws-head', el('b', '', title), el('span', 'meta', meta)),
+      workTimeline(steps, running),
+      ...(foot.length ? [el('div', 'workcard-foot', el('span', 'grow'), ...foot)] : []),
     )
+  const draftOf = (text: string) => {
+    const d = el('details', 'wc-draft')
+    const body = el('div', 'rich')
+    setRich(body, text)
+    d.append(el('summary', '', A().seeDraft), body)
+    return d
+  }
+  if (src?.kind === 'rec') {
+    const rec = src.rec
     box.append(
-      el(
-        'article',
-        'workcard',
-        el(
-          'div',
-          'workcard-head',
-          el('b', '', cut(t.ask || A().yourRequest, 28)),
-          el('span', '', t.steps.length ? t.activity : A().thinking),
-        ),
-        el('div', 'panel-log', log),
-        el('div', 'workcard-foot', clock, el('span', 'grow'), stop),
+      card(
+        T().workLog,
+        T().stepsTime(rec.count, secs(rec.ms)),
+        rec.steps.map((x) => ({ ...x, act: x.act ?? x.text })),
+        false,
+        [],
       ),
     )
+  } else if (src?.kind === 'task' && state.tasks.get(src.id)) {
+    const v = state.tasks.get(src.id) as TaskView
+    const ended = v.status === 'done' || v.status === 'stopped' || v.status === 'failed'
+    const from = Date.parse(v.startedAt ?? v.createdAt)
+    const act = (what: 'stop' | 'accept') => () =>
+      void api(`/api/tasks/${encodeURIComponent(v.id)}/${what}`, { method: 'POST' }).catch(() => {})
+    const foot: HTMLElement[] = []
+    if (!ended && (v.draft || v.continuing)) foot.push(button('btn-ghost sm', act('accept'), A().takeAsIs))
+    if (!ended) foot.push(button('btn-text sm wc-stop', act('stop'), A().stopWork))
+    const c = card(
+      v.title,
+      ended && v.endedAt ? T().stepsTime(v.count, secs(Date.parse(v.endedAt) - from)) : clockText(from),
+      v.steps.map((x) => ({ ...x, act: x.act ?? x.text })),
+      !ended && v.status !== 'needs-you',
+      foot,
+    )
+    if (v.draft) c.insertBefore(draftOf(v.draft), c.querySelector('.workcard-foot'))
+    box.append(c)
+  } else if (state.busy && t) {
+    const fp = finishProgress(state.messages, { running: true, checking: state.checking })
+    const draftMsg = fp?.draft ? state.messages.find((m) => m.id === fp.draft) : undefined
+    const writing = t.text && t.steps.length ? t.text : ''
+    const foot: HTMLElement[] = []
+    if (draftMsg)
+      foot.push(
+        button(
+          'btn-ghost sm',
+          () => void api('/api/conversation/accept', { method: 'POST' }).catch(() => {}),
+          A().takeAsIs,
+        ),
+      )
+    foot.push(
+      button(
+        'btn-danger sm',
+        () => void api('/api/conversation/cancel', { method: 'POST' }).catch(() => {}),
+        icon('stop'),
+        A().stop,
+      ),
+    )
+    const c = card(cut(t.ask || A().yourRequest, 28), '', turnSteps(t.steps, t.info) as WStep[], true, foot)
+    const clock = c.querySelector<HTMLElement>('.ws-head .meta')
+    if (clock) clock.id = 'work-clock'
+    if (!t.steps.length)
+      c.querySelector('.wtl')?.append(
+        el('li', 'wtl-say', el('span', 'wtl-dot'), el('span', '', A().deciding)),
+      )
+    const draftText = writing || draftMsg?.text
+    if (draftText) c.insertBefore(draftOf(draftText), c.querySelector('.workcard-foot'))
+    box.append(c)
   } else if (state.lastTurn?.steps.length) {
     const lt = state.lastTurn
-    const log = el('ul', 'worklog')
-    for (const g of groupSteps(turnSteps(lt.steps, lt.info, Date.now()), placeCards(), lang))
-      log.append(groupRow(g, 'done'))
     box.append(
-      el(
-        'article',
-        'workcard quiet',
-        el('div', 'workcard-head', el('b', '', cut(lt.ask, 28)), el('span', 'done-label', A().finished)),
-        el('div', 'panel-log', log),
-        el('div', 'workcard-foot', el('span', 'meta', A().didSteps(lt.steps.length, elapsed(lt.seconds)))),
+      card(
+        cut(lt.ask, 28),
+        A().didSteps(lt.steps.length, elapsed(lt.seconds)),
+        turnSteps(lt.steps, lt.info, Date.now()) as WStep[],
+        false,
+        [],
       ),
     )
   } else if (state.agents.length && !readyAgents().length) {
@@ -1565,61 +1637,25 @@ const clockText = (from: number) => {
 }
 
 /**
- * The progress card (ProgressCard): one card per request while Dool2 works. Steps update in place, elapsed time and
- * stop sit on it, and the answer is a draft inside it until the before-finishing check passes (ADR 0027)
+ * The work running now: one line in the chat (what it is doing, the time), like the phone. Its timeline, the draft,
+ * take-as-is and stop are in the panel's Screen tab, which the line opens
  */
 function progressCard(t: Turn | undefined): HTMLElement {
   const fp = finishProgress(state.messages, { running: state.busy, checking: state.checking })
-  const draftMsg = fp?.draft ? state.messages.find((m) => m.id === fp.draft) : undefined
-  // Text written after tools were used is the draft of the answer, not a bubble yet
   const writing = t?.text && t.steps.length ? t.text : ''
-  const title = state.checking
-    ? A().checkingTitle
+  const steps = (t ? turnSteps(t.steps, t.info) : []) as WStep[]
+  const text = state.checking
+    ? [A().checkingTitle]
     : fp?.rounds
-      ? fp.next
-        ? A().continuingTitle(fp.next)
-        : A().continuingPlain
+      ? [fp.next ? A().continuingTitle(fp.next) : A().continuingPlain]
       : writing
-        ? A().writingTitle
-        : t?.steps.length
-          ? `${t.activity}…`
-          : A().thinkingDots
-  const time = el('span', 'wc-time', clockText(t?.started ?? Date.now()))
+        ? [A().writingTitle]
+        : steps.length
+          ? nowParts(steps)
+          : [A().thinkingDots]
+  const time = el('span', 'wl-meta wc-time', clockText(t?.started ?? Date.now()))
   time.dataset.from = String(t?.started ?? Date.now())
-  const card = el(
-    'article',
-    'workcard wc-progress',
-    el('div', 'workcard-head', el('span', 'spin'), el('b', 'shimmer', title), time),
-  )
-  // While continuing, the current step of this round under the title
-  if (fp?.rounds && !state.checking && t?.steps.length) card.append(el('p', 'wc-now', `${t.activity}…`))
-  const draftText = writing || draftMsg?.text
-  if (draftText) {
-    const d = el('details', 'wc-draft')
-    const body = el('div', 'rich')
-    setRich(body, draftText)
-    d.append(el('summary', '', fp?.rounds && !state.checking ? A().earlierDraft : A().seeDraft), body)
-    card.append(d)
-  }
-  const foot = el('div', 'workcard-foot')
-  if (draftMsg)
-    foot.append(
-      button(
-        'btn-ghost sm',
-        () => void api('/api/conversation/accept', { method: 'POST' }).catch(() => {}),
-        A().takeAsIs,
-      ),
-    )
-  foot.append(
-    el('span', 'grow'),
-    button(
-      'btn-text sm wc-stop',
-      () => void api('/api/conversation/cancel', { method: 'POST' }).catch(() => {}),
-      A().stopWork,
-    ),
-  )
-  card.append(foot)
-  return card
+  return workLineEl('doing', wlDots(), text, time, () => openWork({ kind: 'live' }))
 }
 
 // ── Return summary: what happened while the person was away, from stored records (no AI) ──
@@ -1803,6 +1839,8 @@ function onLive(ev: ConversationLiveEvent) {
     state.tasks.set(ev.task.id, ev.task)
     for (const c of document.querySelectorAll<HTMLElement>(`.task-card[data-task="${ev.task.id}"]`))
       c.replaceWith(taskCard({ kind: 'task', id: ev.task.id, title: ev.task.title }))
+    if (state.workSrc?.kind === 'task' && state.workSrc.id === ev.task.id) renderPanel('live')
+    renderSend()
     return
   }
   const e = ev.event
@@ -1880,13 +1918,26 @@ function onAgent(ev: AgentEvent) {
     if (/browser_(open|navigate)$/.test(ev.name) && place) t.host = place
     if (t.steps.at(-1) !== label || t.info.at(-1)?.place !== place) {
       t.steps.push(label)
-      t.info.push({ act, ...(place ? { place } : {}), at: Date.now() })
+      t.info.push({
+        act,
+        ...(place ? { place } : {}),
+        at: Date.now(),
+        ...(ev.detail ? { detail: ev.detail } : {}),
+      })
+    } else if (ev.detail) {
+      const cur = t.info.at(-1)
+      if (cur) cur.detail = [...(cur.detail ?? []), ...ev.detail].slice(-6)
     }
     t.activity = label
   } else if (ev.type === 'tool_result') t.activity = T().tidying
   else if (ev.type === 'usage') renderUsage(ev.limits)
-  else if (ev.type === 'cost') t.usd += ev.usd
-  else return
+  else if (ev.type === 'cost') {
+    t.usd += ev.usd
+    // The month's spend on the strip moves with each answer (the daemon adds the same cost)
+    const oc = state.agents.find((a) => a.id === 'opencode')
+    if (oc?.spent) oc.spent = { ...oc.spent, usd: oc.spent.usd + ev.usd }
+    renderSpend()
+  } else return
   renderHead()
   renderNow()
   renderPanel('live')
@@ -2058,6 +2109,16 @@ async function send(text: string) {
   }
 }
 
+/**
+ * The chat's own turn or a task at work: stop takes both (tasks show as one conversation, and with auto-approve on by
+ * default stop is the one brake). A task waiting for the person does not turn the button into stop
+ */
+function mainWorking(): boolean {
+  return (
+    state.busy || [...state.tasks.values()].some((t) => ['working', 'checking', 'waiting'].includes(t.status))
+  )
+}
+
 /** Send button: sends if there is text, stops if empty while working */
 function renderSend() {
   const input = $<HTMLTextAreaElement>('input')
@@ -2065,7 +2126,7 @@ function renderSend() {
   const hasText = input.value.trim().length > 0 || photo !== undefined
   // Side chats take one message at a time, no queue (only stop while answering)
   const inSide = state.view === 'thread'
-  const busy = inSide ? side?.busy === true : state.busy
+  const busy = inSide ? side?.busy === true : mainWorking()
   const stop = busy && (!hasText || inSide)
   btn.className = `send-btn${stop ? ' stop' : hasText ? ' ready' : ''}`
   btn.replaceChildren(icon(stop ? 'stop' : 'send', 'i md'))
@@ -2264,6 +2325,7 @@ function turnSteps(steps: string[], info: Turn['info'], end?: number): WorkStepI
       act: it?.act ?? text,
       ...(it?.place ? { place: it.place } : {}),
       ...(it && next ? { ms: next - it.at } : {}),
+      ...(it?.detail ? { detail: it.detail } : {}),
     }
   })
 }
@@ -2295,146 +2357,186 @@ function groupRow(g: WorkGroup, state: 'now' | 'done'): HTMLElement {
   )
 }
 
-/** Work log: one folded line above the answer ("logos · Looked at 4 places · 37s"), opens into one row per service */
+/** A finished turn: "worked at … · time", like the phone; the panel shows its timeline */
 function workDoneCard(rec: WorkRecordMessage): HTMLElement {
-  const groups = groupSteps(rec.steps, placeCards(), lang)
-  const places = [
+  const steps = rec.steps.map((x) => ({ ...x, act: x.act ?? x.text }))
+  const at = workPlaces(steps)
+  const lead = at[0] ? groupMark(at[0]) : el('span', 'wl-ok', icon('check'))
+  const text =
+    at.length === 1
+      ? [T().workedAtHead, el('b', '', at[0]?.title ?? ''), T().workedAtTail]
+      : at.length > 1
+        ? [T().lookedAt(at.length)]
+        : rec.host
+          ? [T().workedAtHead, el('b', '', rec.host.replace(/^(www|m|app)\./, '')), T().workedAtTail]
+          : [`${T().workLog} · ${T().stepsTime(rec.count, secs(rec.ms))}`]
+  return workLineEl('done', lead, text, el('span', 'wl-meta', secs(rec.ms)), () =>
+    openWork({ kind: 'rec', rec }),
+  )
+}
+
+/** A task (ADR 0038): the same one line, live while it runs, yellow while it waits for the person, then done */
+function taskCard(rec: TaskRecordMessage): HTMLElement {
+  const v = state.tasks.get(rec.id)
+  const open = () => openWork({ kind: 'task', id: rec.id })
+  let line: HTMLElement
+  if (!v || v.status === 'done' || v.status === 'stopped' || v.status === 'failed') {
+    const steps = v ? v.steps.map((x) => ({ ...x, act: x.act ?? x.text })) : []
+    const at = workPlaces(steps)
+    const ms = v?.endedAt ? Date.parse(v.endedAt) - Date.parse(v.startedAt ?? v.createdAt) : 0
+    const lead =
+      at[0] && v?.status === 'done'
+        ? groupMark(at[0])
+        : el('span', 'wl-ok', icon(v?.status === 'done' ? 'check' : 'stop'))
+    const text =
+      v?.status === 'stopped'
+        ? [el('b', '', rec.title), ` · ${A().taskStopped}`]
+        : v?.status === 'failed'
+          ? [el('b', '', rec.title), ` · ${A().taskFailed}`]
+          : at.length === 1
+            ? [T().workedAtHead, el('b', '', at[0]?.title ?? ''), T().workedAtTail]
+            : at.length > 1
+              ? [T().lookedAt(at.length)]
+              : [el('b', '', rec.title)]
+    line = workLineEl(
+      `done${v?.status === 'done' ? '' : ' off'}`,
+      lead,
+      text,
+      el('span', 'wl-meta', ms ? secs(ms) : ''),
+      open,
+    )
+  } else if (v.status === 'needs-you') {
+    const a = pendingApprovals()[0]
+    const l = pendingLogins()[0]
+    line = workLineEl(
+      'wait',
+      el('span', 'wl-wait'),
+      [el('b', '', T().waitsYou), a ? ` · ${a.what}` : l ? ` · ${l.site}` : ''],
+      el('span', 'wl-meta', ''),
+      a ? () => setPanel(true, 'approvals') : open,
+    )
+  } else {
+    const from = Date.parse(v.startedAt ?? v.createdAt)
+    const time = el('span', 'wl-meta wc-time', clockText(from))
+    time.dataset.from = String(from)
+    const steps = v.steps.map((x) => ({ ...x, act: x.act ?? x.text }))
+    const text =
+      v.status === 'waiting'
+        ? [el('b', '', rec.title), ` · ${T().inLine(v.ahead ?? 0)}`]
+        : v.status === 'checking'
+          ? [A().checkingTitle]
+          : steps.length
+            ? nowParts(steps)
+            : [el('b', '', rec.title)]
+    line = workLineEl('doing', wlDots(), text, time, open)
+  }
+  const wrap = el('div', 'wline-wrap task-card', line)
+  wrap.dataset.task = rec.id
+  return wrap
+}
+
+// ── Work as one line, its timeline in the panel (same as the phone's work-line.ts) ──
+
+type WStep = WorkStepIn & { act: string; detail?: StepDetail[] }
+
+function workLineEl(
+  cls: string,
+  lead: HTMLElement,
+  text: (HTMLElement | string)[],
+  meta: HTMLElement,
+  onclick: () => void,
+): HTMLElement {
+  const b = button(`wline ${cls}`, onclick, lead, el('span', 'wl-text', ...text), meta, icon('chevron'))
+  b.title = T().openWork
+  return b
+}
+
+const wlDots = () => el('span', 'wl-dots', el('i', ''), el('i', ''), el('i', ''), el('i', ''))
+
+function workPlaces(steps: WStep[]): WorkGroup[] {
+  const groups = groupSteps(steps, placeCards(), lang)
+  return [
     ...new Map(
       groups.filter((g) => g.kind === 'web' || g.kind === 'service').map((g) => [g.key, g]),
     ).values(),
   ]
-  const box = el('details', 'work-done')
-  const title = places.length
-    ? places.length === 1
-      ? T().workedAt(places[0]?.title ?? '')
-      : T().lookedAt(places.length)
-    : rec.host
-      ? T().workedAt(rec.host.replace(/^(www|m|app)\./, ''))
-      : T().workLog
-  const lead = places.length
-    ? el('span', 'wd-stack', ...places.slice(0, 4).map((g) => groupMark(g)))
-    : icon('check')
-  box.append(
-    el(
-      'summary',
-      '',
-      lead,
-      el('b', '', title),
-      // Folded to one line when done: where · how many steps · how long
-      el('span', 'meta', T().stepsTime(rec.count, secs(rec.ms))),
-    ),
-    el('ul', 'worklog', ...groups.map((g) => groupRow(g, 'done'))),
-  )
-  return box
 }
 
-/** Task details opened on their cards (the task's own chat, fetched once per opening) */
-const openTasks = new Set<string>()
+/** What a step did, as specific as its details allow */
+function actText(x: WStep, doing: boolean): string {
+  const d = x.detail?.at(-1)
+  if (d?.k === 'press') return doing ? T().pressingV(d.v) : T().pressedV(d.v)
+  if (d?.k === 'field') return doing ? T().fillingV(d.v) : T().filledV(d.v)
+  return doing ? x.act : actDone(x.act, lang)
+}
 
-/**
- * A task's card (ProgressCard, ADR 0038): one card in the conversation for work running on its own. Steps, elapsed
- * time, stop and take-as-is while it runs; one line when it ended. Its detail is the task's own chat
- */
-function taskCard(rec: TaskRecordMessage): HTMLElement {
-  const v = state.tasks.get(rec.id)
-  const ended = !v || v.status === 'done' || v.status === 'stopped' || v.status === 'failed'
-  const groups = v ? groupSteps(v.steps, placeCards(), lang) : []
-  // Its detail: the task's own chat (the brief's line, notes passed on, its answers), fetched when opened
-  const toggle = () =>
-    button(
-      'btn-text sm',
-      () => {
-        if (openTasks.has(rec.id)) openTasks.delete(rec.id)
-        else openTasks.add(rec.id)
-        document.querySelector<HTMLElement>(`.task-card[data-task="${rec.id}"]`)?.replaceWith(taskCard(rec))
-      },
-      openTasks.has(rec.id) ? A().taskClose : A().taskOpen,
-    )
-  const log = () => {
-    const box = el('div', 'task-log')
-    if (!v) return box
-    void api<{ messages: StoredMessage[] }>(`/api/threads/${encodeURIComponent(v.threadId)}`)
-      .then(({ messages }) => {
-        for (const x of messages) {
-          if (x.role === 'tool') continue
-          const note = x.role === 'user' ? readAppNote(x.text) : undefined
-          if (x.role === 'user' && !note) continue
-          box.append(messageEl(x.role, x.text, note, false))
-        }
-      })
-      .catch(() => {})
-    return box
-  }
-  if (ended) {
-    const box = el('details', 'work-done task-card')
-    box.dataset.task = rec.id
-    if (openTasks.has(rec.id)) box.open = true
-    const ms = v?.endedAt ? Date.parse(v.endedAt) - Date.parse(v.startedAt ?? v.createdAt) : 0
-    const line = !v
-      ? ''
-      : v.status === 'done'
-        ? T().stepsTime(v.count, secs(ms))
-        : v.status === 'stopped'
-          ? A().taskStopped
-          : A().taskFailed
-    box.append(
+/** "<service> · <what it does now>" for the live line */
+function nowParts(steps: WStep[]): (HTMLElement | string)[] {
+  const last = steps.at(-1)
+  if (!last) return []
+  const g = groupSteps([last], placeCards(), lang)[0]
+  const place = g && (g.kind === 'web' || g.kind === 'service') ? g.title : ''
+  const specific = last.detail?.some((d) => d.k === 'press' || d.k === 'field')
+  const what = specific ? actText(last, true) : last.text && last.text !== last.act ? last.text : last.act
+  // A step that already names its place goes alone ("Weather · checking the weather" said it twice)
+  return place && !what.includes(place) ? [el('b', '', place), ` · ${what}`] : [what]
+}
+
+const DETAIL_LABEL: Record<StepDetail['k'], () => string> = {
+  url: () => T().dUrl,
+  press: () => T().dPress,
+  field: () => T().dField,
+  query: () => T().dQuery,
+  page: () => T().dPage,
+}
+
+/** The timeline: one-line self-talk, then each action with its logo, what it did and its time; details open on click */
+function workTimeline(steps: WStep[], running: boolean): HTMLElement {
+  const list = el('ol', 'wtl')
+  let said = ''
+  steps.forEach((x, i) => {
+    if (x.text && x.text !== x.act && x.text !== said) {
+      said = x.text
+      list.append(el('li', 'wtl-say', el('span', 'wtl-dot'), el('span', '', x.text)))
+    }
+    const g = groupSteps([x], placeCards(), lang)[0]
+    const now = running && i === steps.length - 1
+    const web = g && (g.kind === 'web' || g.kind === 'service')
+    const has = Boolean(x.detail?.length)
+    const mk = g ? groupMark(g) : el('span', 'svc-mark plain', icon('brain'))
+    mk.classList.add('wl-mark')
+    const row = el(
+      'li',
+      `wtl-act${now ? ' cur' : ''}${has ? ' has' : ''}`,
+      mk,
       el(
-        'summary',
-        '',
-        icon(v?.status === 'done' ? 'check' : 'stop'),
-        el('b', '', rec.title),
-        el('span', 'meta', line),
+        'span',
+        'wtl-x',
+        el('b', '', web ? (g?.title ?? '') : x.act),
+        web ? el('small', '', actText(x, now)) : '',
       ),
-      el('ul', 'worklog', ...groups.map((g) => groupRow(g, 'done'))),
-      el('div', 'task-detail', toggle(), ...(v && openTasks.has(rec.id) ? [log()] : [])),
+      el('span', 'wtl-ms', !now && x.ms !== undefined ? secs(x.ms) : ''),
+      has ? icon('chevron') : '',
     )
-    return box
-  }
-  const from = Date.parse(v.startedAt ?? v.createdAt)
-  const time = el('span', 'wc-time', clockText(from))
-  time.dataset.from = String(from)
-  const now =
-    v.status === 'waiting'
-      ? A().taskWaiting(v.ahead ?? 0)
-      : v.status === 'needs-you'
-        ? A().taskNeedsYou
-        : v.status === 'checking'
-          ? A().checkingTitle
-          : v.continuing && v.now
-            ? A().continuingTitle(v.now)
-            : v.now
-              ? `${v.now}…`
-              : A().taskStarting
-  const card = el(
-    'article',
-    `workcard wc-progress task-card${v.status === 'needs-you' ? ' needs-you' : ''}`,
-    el(
-      'div',
-      'workcard-head',
-      v.status === 'needs-you' ? icon('bell') : el('span', 'spin'),
-      el('b', '', rec.title),
-      time,
-    ),
-    el('p', `wc-now${v.status === 'needs-you' ? '' : ' shimmer'}`, now),
-  )
-  card.dataset.task = rec.id
-  if (groups.length) card.append(el('ul', 'worklog', ...groups.slice(-3).map((g) => groupRow(g, 'done'))))
-  if (v.notes) card.append(el('p', 'meta wc-notes', A().taskNotes(v.notes)))
-  if (v.draft) {
-    const d = el('details', 'wc-draft')
-    const body = el('div', 'rich')
-    setRich(body, v.draft)
-    d.append(el('summary', '', A().seeDraft), body)
-    card.append(d)
-  }
-  const foot = el('div', 'workcard-foot')
-  const act = (what: 'stop' | 'accept') => () =>
-    void api(`/api/tasks/${encodeURIComponent(v.id)}/${what}`, { method: 'POST' }).catch(() => {})
-  if (openTasks.has(rec.id)) card.append(log())
-  if (v.draft || v.continuing) foot.append(button('btn-ghost sm', act('accept'), A().takeAsIs))
-  foot.append(el('span', 'grow'), toggle(), button('btn-text sm wc-stop', act('stop'), A().stopWork))
-  card.append(foot)
-  return card
+    list.append(row)
+    if (has) {
+      const dl = el('li', 'wtl-detail')
+      dl.hidden = true
+      for (const d of x.detail ?? []) dl.append(el('span', 'dt', DETAIL_LABEL[d.k]()), el('span', 'dd', d.v))
+      row.addEventListener('click', () => {
+        dl.hidden = !dl.hidden
+        row.classList.toggle('open', !dl.hidden)
+      })
+      list.append(dl)
+    }
+  })
+  return list
+}
+
+/** Opens the panel's Screen tab on this work's timeline */
+function openWork(src: WorkSrc) {
+  state.workSrc = src
+  setPanel(true, 'screen')
 }
 
 /**
@@ -2998,7 +3100,7 @@ async function main() {
       return
     }
     if (!text.trim() && !photo) {
-      if (state.busy) void api('/api/conversation/cancel', { method: 'POST' }).catch(() => {})
+      if (mainWorking()) void api('/api/conversation/cancel', { method: 'POST' }).catch(() => {})
       return
     }
     input.value = ''
@@ -3024,6 +3126,13 @@ async function main() {
   // Language first (ADR 0029): every load below may render text
   const { settings } = await api<{ settings: Settings }>('/api/settings')
   syncLang(settings.language, settings.region)
+  setDooriLook(settings.dooriLook)
+  // Doori may be dressed on the phone meanwhile: take the look again whenever this window comes back
+  addEventListener('focus', () => {
+    void api<{ settings: Settings }>('/api/settings')
+      .then((r) => setDooriLook(r.settings.dooriLook))
+      .catch(() => {})
+  })
   // First run: keep the language this window settled on, so the daemon (notices, the AI's voice) and the phone agree
   if (!settings.language)
     void api('/api/settings', { method: 'PATCH', body: JSON.stringify({ language: lang }) }).catch(() => {})

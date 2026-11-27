@@ -16,6 +16,11 @@ export const indexText = messages({
     photoBadName: '사진 이름이 맞지 않아요',
     photoMissing: '사진을 찾지 못했어요',
     noAgent: 'PC에 일할 AI가 연결돼 있지 않아요',
+    noAiReply:
+      '아직 이 PC에 일할 AI가 연결돼 있지 않아서 답을 못 했어요. PC의 두리 앱에서 **설정 → AI · 브라우저**를 열고 Claude나 ChatGPT에 로그인해 주세요. 구독이 없으면 AI 회사의 API 키를 넣어 쓸 수도 있어요. 연결되면 방금 말씀하신 것부터 바로 이어서 할게요.',
+    aiConnectedNote: 'AI가 연결됐어요. 아까 말씀하신 것부터 할게요.',
+    pdfReadyNote:
+      '크롬 확장 프로그램이 업데이트돼서 이제 PDF로 저장할 수 있어요. 아까 못 한 저장부터 할게요.',
     statusUnfinished: '상태 확인이 끝나지 않았어요',
     phoneOnlyService: '이 서비스는 폰에서 켜요',
     extNotConnected: 'Chrome의 두리 확장이 아직 연결되지 않았어요',
@@ -25,6 +30,9 @@ export const indexText = messages({
     finishByHand: (reason: string) => `${reason}. 화면을 열어 직접 마쳐 주세요.`,
     takeoverShown: (name: string) =>
       `${name} 자동 로그인이 중간에 멈췄어요. 두리가 화면을 보며 이어서 해 볼게요.`,
+    resumeCut: 'PC가 다시 켜져서 끊긴 답을 이어서 할게요.',
+    takeoverWrong: (name: string) =>
+      `${name}에서 저장된 아이디나 비밀번호가 맞지 않는다고 해요. 두리가 화면을 한 번 확인해 볼게요.`,
     chatNotOpen: '대화를 아직 열지 못했어요',
     connectRequest: (name: string) => `${name} 연결해 줘`,
     alreadyLoggedIn: (name: string) => `${name}에 로그인돼 있어요.`,
@@ -114,6 +122,7 @@ export const indexText = messages({
     needCode: '인증번호가 필요해요',
     needTap: '로봇 확인을 풀어 주세요',
     needInput: '입력이 필요해요',
+    needChoice: '골라 주세요',
     optOwn: '비밀번호는 제가 정할게요',
     optStop: '그만둘게요',
     optDooriMakes: '두리가 만들어 주세요',
@@ -139,6 +148,7 @@ export const indexText = messages({
     rrnPattern: '숫자 7자리예요 (첫 자리 1~4)',
     gotRrn: '주민번호 뒷자리 받았어요. 칸에 넣고 이어서 할게요.',
     gotCaptcha: '보안문자 받았어요. 칸에 넣고 이어서 할게요.',
+    gotText: '받았어요. 칸에 넣고 이어서 할게요.',
     gotCode: '인증번호 받았어요. 칸에 넣고 이어서 할게요.',
     screenChanged: '화면이 바뀐 걸 봤어요. 확인하고 이어서 할게요.',
     siteRobot: '로봇 확인',
@@ -179,8 +189,11 @@ export const indexText = messages({
     testPcOnly: '시험용 PC에서만 돼요',
     noRoute: '없는 주소예요',
     writeWhatHappened: '무슨 일이 있었는지 한 줄 적어 주세요',
+    answerNotFound: '신고할 답을 PC 기록에서 찾지 못했어요',
     unsupportedProvider: '지원하지 않는 AI 제공자예요',
     needApiKey: 'API 키를 넣어 주세요',
+    apiKeyRejected: (company: string) =>
+      `${company}에서 이 키를 받아 주지 않았어요. 키를 다시 복사해 붙여 넣어 주세요. 키 받는 곳에서 새로 만들 수도 있어요.`,
     cannotInstallChrome: '이 컴퓨터에서는 Chrome을 설치할 수 없어요',
     cannotInstallClaude: '이 컴퓨터에서는 Claude Code를 설치할 수 없어요',
     installClaudeFirst: '먼저 Claude Code를 설치해 주세요',
@@ -209,6 +222,11 @@ export const indexText = messages({
     photoBadName: 'That photo name is not valid',
     photoMissing: 'Could not find the photo',
     noAgent: 'No AI is connected on this PC yet',
+    noAiReply:
+      "No AI is connected on this PC yet, so I could not answer. In the Dool2 app on the PC, open **Settings → AI · Browser** and sign in to Claude or ChatGPT. Without a subscription, you can use an AI company's API key instead. Once one is connected, I'll start with what you just said.",
+    aiConnectedNote: "An AI is connected. I'll start with what you said earlier.",
+    pdfReadyNote:
+      "The Chrome extension updated, so I can save PDFs now. I'll start with the one I couldn't save earlier.",
     statusUnfinished: 'The status check did not finish',
     phoneOnlyService: 'Turn this service on from your phone',
     extNotConnected: 'The Doori extension in Chrome is not connected yet',
@@ -218,6 +236,9 @@ export const indexText = messages({
     finishByHand: (reason: string) => `${reason}. Open the screen and finish it yourself.`,
     takeoverShown: (name: string) =>
       `Automatic sign-in to ${name} stopped partway. Doori will look at the screen and continue.`,
+    resumeCut: 'Dool2 restarted on the PC, so it picks up the answer that was cut off.',
+    takeoverWrong: (name: string) =>
+      `${name} says the saved ID or password is wrong. Doori will check the screen once.`,
     chatNotOpen: 'The conversation is not open yet',
     connectRequest: (name: string) => `Connect ${name}`,
     alreadyLoggedIn: (name: string) => `You are signed in to ${name}.`,
@@ -308,6 +329,7 @@ export const indexText = messages({
     needCode: 'A verification code is needed',
     needTap: 'Please solve the robot check',
     needInput: 'Input needed',
+    needChoice: 'Pick one',
     optOwn: 'I will choose the password',
     optStop: 'Never mind',
     optDooriMakes: 'Let Doori make one',
@@ -336,6 +358,7 @@ export const indexText = messages({
     rrnPattern: '7 digits (the first digit is 1 to 4)',
     gotRrn: 'Got the ID number digits. Entering them and continuing.',
     gotCaptcha: 'Got the code. Entering it and continuing.',
+    gotText: 'Got it. Entering it and continuing.',
     gotCode: 'Got the verification code. Entering it and continuing.',
     screenChanged: 'I saw the screen change. Checking and continuing.',
     siteRobot: 'Robot check',
@@ -377,8 +400,11 @@ export const indexText = messages({
     testPcOnly: 'Only works on a test PC',
     noRoute: 'No such address',
     writeWhatHappened: 'Write one line about what happened',
+    answerNotFound: "Couldn't find that answer in the PC's record",
     unsupportedProvider: 'That AI provider is not supported',
     needApiKey: 'Enter the API key',
+    apiKeyRejected: (company: string) =>
+      `${company} did not accept this key. Copy it again and paste it, or make a new one where you get keys.`,
     cannotInstallChrome: 'Chrome cannot be installed on this computer',
     cannotInstallClaude: 'Claude Code cannot be installed on this computer',
     installClaudeFirst: 'Install Claude Code first',

@@ -25,7 +25,9 @@ import {
   sameFinal,
   scopeLines,
   siteKey,
+  siteName,
 } from './browser-tools.js'
+import { waitsForPerson } from './hand-back.js'
 import { ProfileStore } from './profile.js'
 
 const PAGE = `# 두리 시험 가게
@@ -136,7 +138,114 @@ function fakeBrowser() {
 const text = (r: { content: { type: string; text?: string }[] }) =>
   r.content.map((c) => c.text ?? '').join('\n')
 
+describe('단계 자세히 (일한 과정 시트)', () => {
+  it('연 주소(물음표 뒤 빼고)·누른 버튼 이름·넣은 칸 이름만, 넣은 값은 절대 안 싣는다', async () => {
+    const b = fakeBrowser()
+    const tools = new BrowserTools(b)
+    await tools.run('open', { url: 'https://shop.example' })
+    expect(
+      tools.stepDetail('mcp__dool2__browser_open', { url: 'https://shop.example/item/1?token=abc' }),
+    ).toEqual([{ k: 'url', v: 'shop.example/item/1' }])
+    expect(tools.stepDetail('mcp__dool2__browser_click', { tabId: 3, ref: 'e4' })).toEqual([
+      { k: 'press', v: '바로 구매' },
+    ])
+    const steps = tools.stepDetail('mcp__dool2__browser_steps', {
+      tabId: 3,
+      steps: [
+        { do: 'type', ref: 'e4', text: '비밀번호1234' },
+        { do: 'click', ref: 'e4' },
+      ],
+    })
+    expect(steps).toEqual([
+      { k: 'field', v: '바로 구매' },
+      { k: 'press', v: '바로 구매' },
+    ])
+    expect(JSON.stringify(steps)).not.toContain('비밀번호1234')
+    expect(
+      tools.stepDetail('mcp__dool2__service_call', {
+        tool: 'catchtable_search',
+        input: { query: '성수 오마카세', date: '2026-12-01' },
+      }),
+    ).toEqual([{ k: 'query', v: '성수 오마카세 · 2026-12-01' }])
+    expect(tools.stepDetail('mcp__dool2__memory_save', { text: 'x' })).toBeUndefined()
+  })
+})
+
 describe('브라우저 도구 실행', () => {
+  it('browser_eval returns the value, says when a script tried to act, and keeps cookies out (ADR 0045)', async () => {
+    const b = fakeBrowser()
+    const call = b.call
+    const evals: string[] = []
+    b.call = async (cmd, args) => {
+      if (cmd === 'eval') evals.push(String(args?.expression))
+      if (cmd === 'eval')
+        return String(args?.expression).includes('click')
+          ? { error: 'EvalError: Possible side-effect in debug-evaluate' }
+          : { type: 'object', value: [{ row: 1, price: 9900 }] }
+      return call(cmd, args)
+    }
+    const tools = new BrowserTools(b)
+    await tools.run('open', { url: 'https://shop.example' })
+    const ok = await tools.run('eval', { tabId: 3, expression: '[...document.rows].map(r => r.price)' })
+    expect(text(ok)).toContain('"price": 9900')
+    const act = await tools.run('eval', { tabId: 3, expression: 'document.querySelector("button").click()' })
+    expect(act.isError).toBe(true)
+    expect(text(act)).toContain('browser_click')
+    const jar = await tools.run('eval', { tabId: 3, expression: 'document.cookie' })
+    expect(jar.isError).toBe(true)
+    expect(evals).toHaveLength(2)
+  })
+
+  it('browser_cdp takes only the read-or-produce list and keeps files it makes', async () => {
+    const b = fakeBrowser()
+    const call = b.call
+    const pdf = Buffer.concat([Buffer.from('%PDF-1.7\n'), Buffer.alloc(4_000, 32)]).toString('base64')
+    const cdps: string[] = []
+    b.call = async (cmd, args) => {
+      if (cmd === 'cdp') cdps.push(String(args?.method))
+      if (cmd === 'cdp')
+        return args?.method === 'Page.printToPDF' ? { data: pdf } : { frameTree: { frame: { id: 'f' } } }
+      return call(cmd, args)
+    }
+    const tools = new BrowserTools(b)
+    const kept: string[] = []
+    tools.savePdf = async (name) => {
+      kept.push(name)
+      return `~/두리/${name}.pdf`
+    }
+    await tools.run('open', { url: 'https://shop.example' })
+    const r = await tools.run('cdp', { tabId: 3, method: 'Page.printToPDF', name: '증명서' })
+    expect(text(r)).toContain('~/두리/증명서.pdf')
+    expect(kept).toEqual(['증명서'])
+    expect(text(await tools.run('cdp', { tabId: 3, method: 'Page.getResourceTree' }))).toContain('frameTree')
+    const no = await tools.run('cdp', { tabId: 3, method: 'Network.getCookies' })
+    expect(no.isError).toBe(true)
+    expect(cdps).toEqual(['Page.printToPDF', 'Page.getResourceTree'])
+  })
+
+  it('an extension too old to print a PDF: says what else to try, and the daemon hears to come back', async () => {
+    const b = fakeBrowser()
+    const call = b.call
+    b.call = async (cmd, args) => {
+      if (cmd === 'pdf') throw new Error('Unknown command: pdf')
+      return call(cmd, args)
+    }
+    const tools = new BrowserTools(b)
+    tools.savePdf = async () => '/x.pdf'
+    const told: number[] = []
+    tools.pdfTooOld = (tabId) => told.push(tabId)
+    await tools.run('open', { url: 'https://shop.example' })
+    const r = await tools.run('save_pdf', { tabId: 3 })
+    expect(r.isError).toBe(true)
+    // It used to say "tell them you will save it once the extension updates", and Dool2 stopped there (11-27)
+    expect(text(r)).toContain('Do not stop at this')
+    expect(text(r)).toContain('download, save or PDF button')
+    // The certificate run sent the person to chrome://extensions developer mode, and said Documents blocked saving
+    expect(text(r)).toContain('never send them to chrome://extensions')
+    expect(text(r)).toContain('needs no folder permission')
+    expect(told).toEqual([3])
+  })
+
   it('열면 바로 읽어 돌려준다', async () => {
     const b = fakeBrowser()
     const tools = new BrowserTools(b)
@@ -1296,6 +1405,8 @@ describe('내 정보로 예약자 칸 채우기', () => {
     })
     expect(card.isError).toBeUndefined()
     expect(asked).toEqual([['email', 'phone']])
+    // A wait for the person: the task stays open and carries on when the card is saved (11-26 it ended first)
+    expect(waitsForPerson(card)).toBe(true)
     // 버튼에는 채우지 않는다
     expect(
       (await tools.run('fill_profile', { tabId: 3, fields: [{ ref: 'e7', key: 'name' }] })).isError,
@@ -2082,6 +2193,71 @@ describe('간편인증 기다리기 (폰 [인증 완료했어요])', () => {
     const t = r.content[0]?.type === 'text' ? r.content[0].text : ''
     expect(t).toContain('Judge from the screen below yourself')
     expect(t).toContain('로그아웃')
+  }, 40_000)
+
+  it('one plain notification per verification: the app, the site by name, and what happens next', async () => {
+    const b = {
+      call: async (cmd: string) =>
+        cmd === 'snapshot'
+          ? {
+              tabId: 3,
+              url: 'https://efamily.scourt.go.kr/pt/apply',
+              title: '신청인 정보 조회 | 증명서발급 | 전자가족관계등록시스템',
+              text: '# 간편인증\n[e9 버튼 "인증 완료"]',
+            }
+          : { tabId: 3 },
+    }
+    const tools = new BrowserTools(b as never)
+    const pushed: [string, string][] = []
+    tools.notifyUser = (title, body) => pushed.push([title, body])
+    let card: unknown[] = []
+    tools.askAuthDone = (...args) => {
+      card = args
+      return { answer: Promise.resolve('인증 완료했어요'), cancel: () => {} }
+    }
+    await tools.run('read', { tabId: 3 })
+    await tools.run('wait_auth', {
+      tabId: 3,
+      message: '카카오톡에서 가족관계증명서 간편인증을 승인해 주세요',
+    })
+    expect(pushed).toEqual([
+      ['카카오톡에서 승인해 주세요', '전자가족관계등록시스템 본인 확인이에요. 승인하면 바로 이어서 할게요.'],
+    ])
+    expect(card[2]).toBe('카카오톡에 온 알림에서 승인한 다음, 아래 버튼을 눌러 주세요.')
+    expect(card[3]).toBe('전자가족관계등록시스템')
+    expect(siteName({ url: 'https://www.shop.example/a', title: '' })).toBe('shop.example')
+  }, 40_000)
+
+  it('two approvals that come back to the same page: says the site refused an input, and does not ask a third time', async () => {
+    // Test PC 11-27: a family member's name typed wrong, three KakaoTalk approvals, the page never moved
+    const b = {
+      call: async (cmd: string) => {
+        if (cmd === 'snapshot')
+          return {
+            tabId: 3,
+            url: 'https://gov.example/apply?step=1',
+            title: '신청인 정보',
+            text: '# 신청인 정보\n[e9 버튼 "인증 완료"]',
+          }
+        return { tabId: 3, url: 'https://gov.example/apply?step=1', title: '' }
+      },
+    }
+    const tools = new BrowserTools(b as never)
+    let asked = 0
+    tools.askAuthDone = () => {
+      asked++
+      return { answer: Promise.resolve('인증 완료했어요'), cancel: () => {} }
+    }
+    const text = (r: { content: { type: string; text?: string }[] }) =>
+      r.content.map((c) => c.text ?? '').join('\n')
+    await tools.run('read', { tabId: 3 })
+    const first = text(await tools.run('wait_auth', { tabId: 3, ref: 'e9' }))
+    expect(first).toContain('the one the request was sent from')
+    const second = text(await tools.run('wait_auth', { tabId: 3, ref: 'e9' }))
+    expect(second).toContain('refused something sent with the request')
+    const third = await tools.run('wait_auth', { tabId: 3, ref: 'e9' })
+    expect(third.isError).toBe(true)
+    expect(asked).toBe(2)
   }, 40_000)
 
   it('누르지 않아도 화면이 바뀌면(확인 창·인증 창 닫힘) 바로 AI에게 넘기고, 아무 변화가 없어도 카드를 누르면 3분 기다리지 않는다', async () => {

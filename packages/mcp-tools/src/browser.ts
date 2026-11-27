@@ -1,5 +1,7 @@
 // Browser tools. The AI does web work in the Dool2 tabs of the user's Chrome.
 // This server makes no decisions: it forwards to the Dool2 daemon (/api/tools/browser), and the daemon blocks risky actions.
+
+import { READ_CDP_METHODS } from '@dool2/protocol/cdp'
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { z } from 'zod'
 
@@ -184,13 +186,20 @@ export function registerBrowserTools(server: McpServer, client: BrowserClient) {
   tool(
     'route',
     'Take a remembered route',
-    "Goes to a page by a route Dool2 took on this site before (opening the site lists them as [r3]): Dool2 presses the same links itself at a person's pace and returns the last page. If a link is gone it stops there; carry on yourself. Gated as in browser_click.",
+    "Goes to a page by a route Dool2 took on this site before (opening the site lists them as [r3]): Dool2 presses the same links and types into the same fields itself at a person's pace and returns the last page. A route that types (it lists its inputs, e.g. a search box) takes this request's words in inputs. If a link or field is gone it stops there; carry on yourself. Gated as in browser_click.",
     {
       tabId,
       route: z
         .string()
         .regex(/^r\d+$/)
         .describe('E.g. r3'),
+      inputs: z
+        .array(z.string().max(100))
+        .max(4)
+        .optional()
+        .describe(
+          'What to type this time, in the order of the route\'s inputs (e.g. ["wool coat"] for a search box)',
+        ),
     },
     false,
   )
@@ -233,6 +242,42 @@ export function registerBrowserTools(server: McpServer, client: BrowserClient) {
     'Screenshot',
     'Views the visible part of the tab as an image. Use only when reading text cannot tell you (pictures, maps, table layout).',
     { tabId },
+    true,
+  )
+  tool(
+    'save_pdf',
+    'Save the page as a PDF',
+    'Keeps the page as a PDF file the way Chrome prints it, without a print window or a printer: certificates, statements, receipts and tickets that open in a viewer. Point it at the tab that shows the document (a viewer often opens its own tab or pop-up: browser_tabs). It goes to the Dool2 folder (no macOS permission needed) and the library. Never ask the user to print or save it on the PC.',
+    {
+      tabId,
+      name: z
+        .string()
+        .max(80)
+        .optional()
+        .describe("File name without .pdf, in the user's language (what it is and the date)"),
+    },
+    true,
+  )
+  tool(
+    'eval',
+    'Run a script on the page',
+    'Runs JavaScript on a tab Dool2 opened and returns its value as JSON. For what reading the page as text does not give quickly: every row of a long table as data, values in attributes or data embedded in the page (JSON in script tags), sums and comparisons, what a frame holds. Chrome runs it side-effect free: it reads and computes anything on the page but cannot click, type, submit, change the page, store or call the network (such a script throws); to act, use browser_click, browser_type or browser_steps. Write one expression; for statements call an arrow function: (() => { … })(). Return plain data.',
+    {
+      tabId,
+      expression: z.string().min(1).max(20_000).describe('JavaScript expression whose value comes back'),
+    },
+    true,
+  )
+  tool(
+    'cdp',
+    'Chrome DevTools (read or produce)',
+    'Calls a Chrome DevTools method that only reads or produces, on a tab Dool2 opened, for what the other tools do not do: Page.printToPDF (a PDF exactly as Chrome prints; params like landscape, scale), Page.captureSnapshot (the whole page as one archive file), Page.captureScreenshot with captureBeyondViewport true (the full page as a picture), Page.getResourceTree then Page.getResourceContent (a file the page already loaded, such as the PDF or data behind a viewer), Accessibility.getFullAXTree, DOM.getDocument and DOM.getOuterHTML. Files go to the Dool2 folder and the library; other results come back as JSON.',
+    {
+      tabId,
+      method: z.enum(READ_CDP_METHODS),
+      params: z.record(z.string(), z.unknown()).optional().describe("The method's DevTools parameters"),
+      name: z.string().max(80).optional().describe("File name for a file result, in the user's language"),
+    },
     true,
   )
   tool('back', 'Back', 'Presses back in the tab and returns the page read as text.', { tabId }, true)
@@ -341,10 +386,10 @@ export function registerBrowserTools(server: McpServer, client: BrowserClient) {
       ref: ref.optional().describe('The input (not for an image keypad)'),
       label: z.string().max(40).optional().describe('Field name on the card'),
       kind: z
-        .enum(['code', 'rrn_back', 'captcha', 'pin'])
+        .enum(['code', 'rrn_back', 'captcha', 'pin', 'text'])
         .optional()
         .describe(
-          'code (default) · rrn_back (saved to the vault) · captcha (text robot check) · pin (payment keypad)',
+          'code (default, digits) · rrn_back (saved to the vault) · captcha (text robot check) · pin (payment keypad) · text (words only the person knows that a form asks for, such as a family member\'s name or the registration place; any letters; the label says what is asked, e.g. "father\'s name")',
         ),
       keys: z
         .record(z.string(), z.string())

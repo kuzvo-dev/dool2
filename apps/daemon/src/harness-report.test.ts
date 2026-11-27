@@ -121,6 +121,21 @@ describe('harness report', () => {
     expect(row('"End this answer" results without what is left / next')?.[3]).toBe('ok')
   })
 
+  it('splits requests done by whether their steps were new, seen before or offered (ADR 0044)', () => {
+    const n = aggregateHarness([
+      e('recipe', { event: 'done', ms: 20_000, tools: 6, before: 0, offered: 0 }),
+      e('recipe', { event: 'done', ms: 12_000, tools: 4, before: 1, offered: 0 }),
+      e('recipe', { event: 'offered', n: 1 }),
+      e('recipe', { event: 'done', ms: 5_000, tools: 2, before: 2, offered: 1, followed: true }),
+      e('recipe', { event: 'forgot', id: 'k1' }),
+    ])
+    expect(n.recipes.first.ms.p50).toBe(20_000)
+    expect(n.recipes.again.tools.p50).toBe(4)
+    expect(n.recipes.offered.ms.p50).toBe(5_000)
+    expect(n.recipes).toMatchObject({ followed: 1, offers: 1, forgot: 1 })
+    expect(renderHarness(n, {})).toContain('offered on 1 messages · followed 1 · forgotten 1')
+  })
+
   it('renders an empty log without failing', () => {
     const out = renderHarness(aggregateHarness([]), {})
     expect(out).toContain('no records')

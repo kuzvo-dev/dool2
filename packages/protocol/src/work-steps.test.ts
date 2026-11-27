@@ -50,6 +50,11 @@ describe('일하는 카드: 서비스별 줄', () => {
     ])
   })
 
+  it('카드가 없는 도구는 앞부분 이름("tool")이 아니라 두리가 한 일로 묶는다 (11-26 "tool에서 일했어요")', () => {
+    const g = groupSteps([{ text: '내 정보 카드 띄우기', act: '띄우는 중', place: 'tool:tool_find' }], cards)
+    expect(g.map((x) => [x.kind, x.title])).toEqual([['doori', '내 정보 카드 띄우기']])
+  })
+
   it('상위 도메인을 하위 사이트 카드로 보지 않는다 (구글 검색 ≠ 구글 캘린더)', () => {
     const g = groupSteps(
       [

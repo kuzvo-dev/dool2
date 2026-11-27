@@ -177,6 +177,46 @@ export async function verifyText(signPub: string, text: string, sig: string): Pr
   }
 }
 
+/**
+ * ECDSA P-256 signature from the phone's security chip (ADR 0043): public key as SPKI DER, signature as DER
+ * (what Android Keystore gives). WebCrypto wants the signature as r||s, so it is converted here
+ */
+export async function verifyP256(spki: string, text: string, derSig: string): Promise<boolean> {
+  try {
+    const pub = await subtle().importKey(
+      'spki',
+      fromB64u(spki),
+      { name: 'ECDSA', namedCurve: 'P-256' },
+      false,
+      ['verify'],
+    )
+    const raw = derToRaw(fromB64u(derSig))
+    if (!raw) return false
+    return await subtle().verify({ name: 'ECDSA', hash: 'SHA-256' }, pub, raw, enc.encode(text))
+  } catch {
+    return false
+  }
+}
+
+/** DER ECDSA signature (SEQUENCE { INTEGER r, INTEGER s }) -> 64-byte r||s; undefined if malformed */
+export function derToRaw(der: Uint8Array): Uint8Array<ArrayBuffer> | undefined {
+  let i = 0
+  if (der[i++] !== 0x30) return undefined
+  let len = der[i++] ?? 0
+  if (len & 0x80) i += len & 0x7f
+  const out = new Uint8Array(new ArrayBuffer(64))
+  for (let part = 0; part < 2; part++) {
+    if (der[i++] !== 0x02) return undefined
+    len = der[i++] ?? 0
+    let v = der.subarray(i, i + len)
+    i += len
+    while (v.length > 32 && v[0] === 0) v = v.subarray(1)
+    if (v.length > 32) return undefined
+    out.set(v, part * 32 + (32 - v.length))
+  }
+  return i === der.length ? out : undefined
+}
+
 /** Receiver: remembers the last sequence number per sending device, and drops the same or smaller numbers */
 export class SeqGuard {
   private last = new Map<string, number>()

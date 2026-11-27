@@ -8,7 +8,9 @@ description: Use when creating or fixing a Dool2 service tool (connector, skills
 
 Dool2 works with typed per-service tools (`catchtable_search` …) ([ADR 0018](../../../docs/decisions/0018-service-connectors.md)). A connector is data, not code (`skills/<id>/tools.json`). The Dool2 daemon runs it with fixed engine actions and keeps the approval gate intact. The format and the list of actions are in [skills/README.md](../../../skills/README.md).
 
-Note: the JSON examples here keep Korean values because they are service text. The `tier` values will become the English keys `lookup` | `fill` | `pay` | `contact` (ADR 0029); in prose this document uses those keys.
+Note: the JSON examples here keep Korean values because they are service text. `tier` is one of the English keys `lookup` | `fill` | `pay` | `contact` (ADR 0029); `status` stays Korean (`초안`, `검증됨(…)`, `막힘(…)`).
+
+**What a good connector is measured by: seconds.** A person asks in a few words ("택배 어디쯤이야", "금요일 저녁 부산 가는 비행기") and a lookup tool should answer in seconds where a browser task takes one to three minutes. Most fixes from the test PC loop (`.claude/skills/self-improve`) were about that: the tool was not found, opened sites it did not need, waited on a page that would never come, or returned so much that the answer went wrong. Sections 1, 3 and 5 say how to avoid each.
 
 ## 0. Preparation
 
@@ -25,8 +27,10 @@ export DOOL2_TEST_CHROME=".../Google Chrome for Testing"   # if you don't have i
 - The `abilities` (what it can do) in `skills/<id>/connect.json` is the starting point. If there is no card, make the card first (check with `pnpm connector check <id>`).
 - While signed in to the real site, also fill the card's `account` (where the signed-in account shows, [ADR 0041](../../../docs/decisions/0041-connection-is-an-account.md)): the page address and a pattern whose group 1 is the ID or email as typed on the sign-in form. Without it Dool2 cannot tell whether Chrome is signed in to the account the person connected or to someone else's. Copy the pattern from a real page read (`browser_read`), and do not guess.
 - A new card also needs `regions` (`KR`, or `global` for services that work anywhere) and `i18n.en` (English name, summary, example and abilities in the same order). See `skills/README.md`.
+- **Fill `aliases`** with the words people use instead of the service name (`날씨`·`우산` for weather, `택배`·`운송장` for parcels, `비행기`·`항공권` for flights, `박스오피스` for KOBIS). A request with one of them goes to the lookup tool at once; without them only the service's own name matches, and a two-word name like `네이버 항공권` never matches a single word ("flight to Busan" went to a 93 s browser task, #586). `pnpm connector check <id>` shows a tip while they are missing.
 - **One user intent = one tool.** Like "find open tables at a restaurant", "prepare a reservation", "view order history". One screen is not one tool.
-- Start with **`lookup` tools that work without login**. Users can use them right away even before connecting, and they are easy to test.
+- Start with **`lookup` tools that work without login**. Users can use them right away even before connecting, and they are easy to test. Before the AI opens a browser task, Dool2 points it to a lookup tool that runs now (no sign-in, or connected) for a service the request names (#553), so these are the tools that make Dool2 fast.
+- **When the answer needs several sites, make one tool that tries them** rather than leaving the AI to call each site's tool. Parcel tracking tries five carriers in one call and says which one had the number (#567); Naver Flights compares fares across airlines (#584). Then point the single-site tools to it in their description ("to compare fares, use naver_flight_search first; use this for one airline's own screen", #585), or the AI starts with the first single-site tool it sees (165 s for the cheapest Gimpo–Jeju flight).
 
 ### Starting from remembered routes
 
@@ -67,10 +71,16 @@ a `lookup` tool that opens the start, presses the same links and hands the page 
 - **Photo cards**: candidate lists to choose from (products, lodging, restaurants, movies, books) must have `image` and `link` fields — they become photo cards under the answer. For screen lists use `"image": {"image": true}`; for data, put the photo path in the map. For lists that cards do not suit (theaters, timetables, lyrics) use `"cards": false`. `check` verifies this in shopping, groceries, fashion, travel, ticketing, video, and books. For details see "Photo cards" in skills/README.
 - **Optional inputs** (maximum price, region, and so on) go into the address like `{{#max_price}}&toPrice={{max_price}}{{/max_price}}`, or if the site cannot filter them, filter with a `filter` step (if value is empty it passes through unchanged).
 - **No result is also a result**: "tracking number not yet registered" and "that time is full" return what to tell the user with `require`/`stop_if` + `say`. This is distinguished from being blocked (the site changed).
+- **Wait for every page that can come, and stop at once on the wrong ones**: a `wait` for the result list sits for its full timeout when the site shows something else. List the sign-in page and the "access temporarily limited" page in the same wait and stop on them: the sign-in page with a `say` that offers the other services that can do it and to connect this one, the limit page as `blocked: true` (Naver shopping: 15–19 s failures → a 3.8 s stop, #575).
 - **Screens the site blocked get `blocked: true`**: When you catch a block screen like "Access Denied" or "abnormal access" with `stop_if`, add `blocked: true`. It is not a connector problem to fix, so the nightly check does not open an issue or repair and shows it as "site blocked". Do not add workarounds that evade the block (such as going back through another address). Robot-check screens (security checks, CAPTCHAs) are also caught with `blocked: true`: instead of a dead end, the daemon keeps the tab open, has the AI solve it with a card on the user's phone (`browser_request_code` captcha for text, `browser_request_tap` for images), and then has it call the same tool again. You do not need to write only "I'll look elsewhere" in `say`. Calls to the same service are run by the daemon one at a time, 1.5 seconds apart.
 - **Sites that block shortcut addresses: start from the front page**: Sites that block when you enter a search or product address directly but open it after passing through the front page (Coupang) are written in the order `open` front page → `wait` → `sleep` → the original address. That is the path people use.
+- **Open only the sites that can have it (`ifMatch`)**: a tool that tries several sites in turn gives each `open` an `if` with `ifMatch`, a regular expression the filled text must match. Carriers use numbers of known lengths, so parcel_track opens Korea Post only for 13 digits and Logen for 10–11 (an unknown 13-digit number: 61 s → 5.6 s, #583).
+- **Cover the asked range in one call**: if people ask for "this week" or "this month", take a `range` (or start and end) input instead of one day per call (Calendar: four calls and 36 s for a week → one call, #568).
+- **Keep the result small**: what the AI gets back should stay within a few KB. A 17 KB showtime list for 19 movies made the answer pick movies from an earlier question (#571). Drop fields nobody tells the person about, take an input that narrows the list (a `movie` to filter by), and let the rest come with `offset`: lists come 10 rows at a time and the result says how to read the next ones. `try` and `canary` print the size and warn past 8 KB.
+- **Count only real rows as found**: a not-found page can still have a row (a summary with the number you typed and masked names). Run the rows through a `filter` that keeps only rows with what a real hit has (a processing time, a price) before you decide "found" (#579).
 - **Lists where you must go through periods or pages: keep searching inside the tool**: If the AI calls repeatedly while changing the year or page, it waits on each call and becomes very slow (measured 80 seconds for Coupang order search). Use `if` (only when nothing was found before) and `append` (attach after the earlier list) in the steps so that one call searches recent → this year → last year … in order and stops where it finds it. Put the searched period (`searched`) and the next path if not found (`tip`) in the result so the AI does not search again with the same word.
 - **next**: what the AI does after the result (for example "Show 2–3 places and let them choose. To book, use catchtable_prepare_booking").
+- **Never send the person to the site.** `description`, `next` and `say` never end with "book it on the site" or "사이트에서 직접 예매하세요". Dool2 offers to do it: prepare the booking with the next tool and ask for approval before paying, with the choices as quick replies (Korail, #568). If there is no tool for that step yet, say Dool2 can open the page and prepare it, and leave the last button to an approval. `check` fails a tool with these words (a sentence saying it does _not_ do this is fine).
 - **tier**: read-only = `lookup`; reversible things like a cart or temporary save = `fill`; things that spend money or confirm a booking = `pay`; things sent to other people = `contact`.
 - **login**: `true` only for tools that work only when logged in. If not yet connected, Dool2 returns connection guidance instead of running.
 - **minIntervalSec**: so the same input is not asked too often (parcel 1800, open tables 300, and so on).
@@ -93,6 +103,8 @@ pnpm connector canary <id>                        # all lookup tools with exampl
 ```
 
 - Compare the result with the real screen to see if it is right (shop names, times, amounts).
+- **Write down seconds.** Run the request before and after your change and put both times in the PR (and the KB if you cut a result). "Works" is not enough: a tool that answers in 60 s when it could in 6 is the next thing to fix.
+- Try the not-found case too (an unregistered number, a place that does not exist): it should end quickly with the not-found `say`, not wait out a timeout or count a summary row as found.
 - `--pc` passes the repo's definition to the running test PC daemon (`DOOL2_DEV_RESET=1`) and runs it in that PC's Chrome. It uses `DOOL2_TOOL_TOKEN` (the daemon's tool token) and `DOOL2_PC` (default `http://127.0.0.1:8833`). You see the fixed definition right away without installing.
 - Write `status` according to how much you ran: `검증됨(2026-11-17, 검색 → 예약금 화면까지)` (verified: 2026-11-17, from search to the deposit screen). Tools you could not run stay `초안` (draft). If it does not work, leave `막힘(reason)` (blocked), and it is not shown to the AI.
 
@@ -106,7 +118,8 @@ pnpm connector canary <id>                        # all lookup tools with exampl
 
 ## 7. Submitting
 
-- One PR = one service (or one tool). Paste the `pnpm connector try` result (with personal information masked) in the PR body.
+- One PR = one service (or one tool). Paste the `pnpm connector try` result (with personal information masked) in the PR body, with the seconds before and after.
+- After the merge, no app release is needed (ADR 0039): the merge builds a signed pack for test PCs (`pack-beta.json`), and a maintainer gives it to everyone with the promote run of the Connector packs workflow (`pack.json`). Check the fix on a test PC before asking for the promote. A fix that also needs app code (a new step kind, the extension) still waits for the app release.
 - A `lookup` tool that returns rows can also back a quick check on a watch (ADR 0031), so mention it in the PR when the
   tool came from remembered routes.
 - `pnpm lint && pnpm build && pnpm typecheck && pnpm test`.

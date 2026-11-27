@@ -397,3 +397,11 @@ describe('only Dool2 tools on Codex (ADR 0003)', () => {
     expect(r?.events[0]).toMatchObject({ type: 'error', code: 'tools_unsafe' })
   })
 })
+
+describe('usage windows', () => {
+  it('names a month-long window instead of showing its minutes', async () => {
+    const { rateLimitEvents } = await import('./map.js')
+    const ev = rateLimitEvents({ primary: { usedPercent: 0, windowDurationMins: 43_200 } })
+    expect(ev).toEqual([{ type: 'usage', limits: [{ kind: 'month', percent: 0 }] }])
+  })
+})

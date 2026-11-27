@@ -214,3 +214,106 @@ export async function smsSend(
     return { ok: false, reason: 'error', message: (e as Error).message }
   }
 }
+
+/** Store app notifications (ADR 0042, PushPlugin.java) */
+const Push = registerPlugin<{
+  status(): Promise<{ available: boolean; allowed: boolean; denied: boolean }>
+  register(o: { ask?: boolean }): Promise<{ token: string; key: string; allowed: boolean }>
+  unregister(): Promise<void>
+  addListener(event: 'open', f: (e: { url: string }) => void): Promise<{ remove(): Promise<void> }>
+}>('Push')
+
+export interface AppPushStatus {
+  /** Notifications can work in this app build (Firebase set up). False in the web and older apps */
+  available: boolean
+  allowed: boolean
+  /** The user said no to the permission (turn it on in the phone settings) */
+  denied: boolean
+}
+
+export async function appPushStatus(): Promise<AppPushStatus> {
+  if (!isNative()) return { available: false, allowed: false, denied: false }
+  try {
+    return await Push.status()
+  } catch {
+    // Older app (no plugin)
+    return { available: false, allowed: false, denied: false }
+  }
+}
+
+/**
+ * FCM token and this phone's notification key. ask: show the permission dialog if needed (only when the user pressed
+ * [Turn on]). The dialog can lose its callback, so after 60 s it checks again without asking
+ */
+export async function appPushRegister(ask: boolean): Promise<{ token: string; key: string } | undefined> {
+  if (!isNative()) return undefined
+  const once = (a: boolean) =>
+    Push.register({ ask: a }).then(
+      (r) => ({ token: r.token, key: r.key }),
+      () => undefined,
+    )
+  if (!ask) return once(false)
+  const r = await Promise.race([
+    once(true),
+    new Promise<'late'>((res) => setTimeout(() => res('late'), 60_000)),
+  ])
+  return r === 'late' ? once(false) : r
+}
+
+export async function appPushUnregister() {
+  if (isNative()) await Push.unregister().catch(() => {})
+}
+
+/** A notification was tapped: url is where to go (#a=…, #t=…, #tab=…) */
+export function onPushOpen(f: (url: string) => void) {
+  if (!isNative()) return
+  void Push.addListener('open', (e) => {
+    if (typeof e.url === 'string' && /^#/.test(e.url)) f(e.url)
+  }).catch(() => {})
+}
+
+/** Approval keys in the security chip (ADR 0043, ApproveKeyPlugin.java) */
+const ApproveKey = registerPlugin<{
+  keys(): Promise<{ plain: string; pay?: string; lock: boolean }>
+  sign(o: {
+    key: 'pay' | 'plain'
+    text: string
+    title?: string
+    subtitle?: string
+  }): Promise<{ sig?: string; cancel?: boolean; reason?: string }>
+}>('ApproveKey')
+
+/** This phone's chip public keys (made the first time); undefined in the web and older apps */
+export async function approveKeys(): Promise<{ plain: string; pay?: string } | undefined> {
+  if (!isNative()) return undefined
+  try {
+    const k = await ApproveKey.keys()
+    return { plain: k.plain, ...(k.pay ? { pay: k.pay } : {}) }
+  } catch {
+    return undefined
+  }
+}
+
+/** Signs with a chip key. 'pay' shows the phone lock first; 'cancel' if the person backed out */
+export async function approveSign(
+  key: 'pay' | 'plain',
+  text: string,
+  title: string,
+  subtitle?: string,
+): Promise<string | 'cancel' | undefined> {
+  try {
+    const r = await ApproveKey.sign({ key, text, title, ...(subtitle ? { subtitle } : {}) })
+    return r.sig ?? (r.cancel ? 'cancel' : undefined)
+  } catch {
+    return undefined
+  }
+}
+
+/** Phone haptics (HapticsPlugin.java); a short buzz in a browser */
+export type HapticKind = 'tick' | 'key' | 'long' | 'confirm' | 'reject'
+const Haptics = registerPlugin<{ tap(o: { kind: HapticKind }): Promise<void> }>('Haptics')
+const BUZZ: Record<HapticKind, number> = { tick: 6, key: 8, long: 10, confirm: 18, reject: 24 }
+export function haptic(kind: HapticKind) {
+  if (isNative()) void Haptics.tap({ kind }).catch(() => navigator.vibrate?.(BUZZ[kind]))
+  else navigator.vibrate?.(BUZZ[kind])
+}

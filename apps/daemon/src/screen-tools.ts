@@ -51,6 +51,19 @@ export const DEFAULT_BLOCKED = [
   'com.apple.Automator',
 ]
 
+/**
+ * Shortcuts screen_key refuses (ADR 0045, T20): they delete, quit the app (unsaved work goes) or log out, and none
+ * can be taken back. Everything else is a key like any other in an app the user allowed
+ */
+export function harmfulShortcut(key: string, mods: string[]): string | undefined {
+  const m = new Set(mods.map((x) => (x === 'command' || x === 'meta' ? 'cmd' : x === 'alt' ? 'option' : x)))
+  if (!m.has('cmd')) return undefined
+  if (key === 'Backspace' || key === 'Delete') return 'deletes'
+  if (key === 'q') return m.has('shift') ? 'logs out' : m.has('ctrl') ? 'locks the screen' : 'quits the app'
+  if (key === 'Escape' && m.has('option')) return 'force-quits apps'
+  return undefined
+}
+
 /** Apps where pressing Enter sends a message */
 export const MESSENGERS = [
   'com.kakao.KakaoTalkMac',
@@ -226,7 +239,7 @@ export class ScreenTools {
       const blocked = DEFAULT_BLOCKED.includes(bundleId)
       return err(
         blocked
-          ? `${bundleId} is blocked by default (terminal, settings, file manager). The user has to turn it on in Dool2 settings themselves. Find another way, or ask the user to do it themselves.`
+          ? `${bundleId} is blocked by default (terminal, settings, file manager). Only the person can turn it on, in Dool2 settings. What it would have done may be possible another way (file tools, the browser, another allowed app).`
           : `The user hasn't approved Dool2 controlling this app (${bundleId}) yet. Left: the person allows it. Next: call screen_request_app (its result ends the turn and says what to tell the user).`,
       )
     }
@@ -454,6 +467,12 @@ export class ScreenTools {
         if (r) return r
         const key = String(a.key ?? '')
         const mods = Array.isArray(a.modifiers) ? a.modifiers.map(String) : []
+        // Any key (ADR 0045), but not the shortcuts that delete, quit or log out: those cannot be taken back
+        const harm = harmfulShortcut(key, mods)
+        if (harm)
+          return err(
+            `${[...mods, key].join('+')} ${harm} in macOS, which cannot be taken back, so Dool2 does not press it. Deleting goes through the file tools (with approval); an app is left open.`,
+          )
         // Enter in a messenger means "send"
         if (
           (key === 'Enter' || key === 'Return') &&
