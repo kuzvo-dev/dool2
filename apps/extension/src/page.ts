@@ -3091,3 +3091,65 @@ export function pagePrintUnhook(): void {
   for (const r of w.__dool2Print?.restore.splice(0) ?? []) r()
   delete w.__dool2Print
 }
+
+/**
+ * A frame printed itself (a viewer whose document sits in an inner frame, test PC 11-27: the government portal's
+ * resident certificate). Chrome can print only the top page, so the frame's document is copied into a box only the
+ * print view shows, with its own styles (its print rules too) and its canvases' pixels; pagePrintCleanup takes it
+ * away. Same-origin frames only. Returns whether the frame was found
+ */
+export function pagePrintFrameCopy(href: string): boolean {
+  const find = (w: Window): Document | null => {
+    for (let i = 0; i < w.frames.length; i++) {
+      try {
+        const f = w.frames[i] as Window
+        if (f.location.href === href) return f.document
+        const deeper = find(f)
+        if (deeper) return deeper
+      } catch {}
+    }
+    return null
+  }
+  const doc = find(window)
+  if (!doc?.body) return false
+  document.getElementById('dool2-print-only')?.remove()
+  document.getElementById('dool2-print-style')?.remove()
+  const box = document.createElement('div')
+  box.id = 'dool2-print-only'
+  for (const s of doc.querySelectorAll('style, link[rel~="stylesheet"]')) {
+    const c = s.cloneNode(true) as HTMLElement
+    if (c instanceof HTMLLinkElement) c.href = (s as HTMLLinkElement).href
+    box.appendChild(c)
+  }
+  const body = doc.body.cloneNode(true) as HTMLElement
+  // Copied canvases are blank: draw the originals' pixels in, in the same order
+  const from = [...doc.body.querySelectorAll('canvas')]
+  const to = [...body.querySelectorAll('canvas')]
+  to.forEach((c, i) => {
+    const o = from[i]
+    if (!o) return
+    c.width = o.width
+    c.height = o.height
+    c.getContext('2d')?.drawImage(o, 0, 0)
+  })
+  // Relative image and link addresses resolve against the frame, not this page
+  for (const el of body.querySelectorAll('img[src]'))
+    (el as HTMLImageElement).src = (el as HTMLImageElement).src
+  const inner = document.createElement('div')
+  inner.className = doc.body.className
+  inner.append(...body.childNodes)
+  box.appendChild(inner)
+  const style = document.createElement('style')
+  style.id = 'dool2-print-style'
+  style.textContent = [
+    '@media screen { #dool2-print-only { display: none !important } }',
+    '@media print {',
+    'html, body { margin: 0 !important; padding: 0 !important; background: #fff !important; height: auto !important; overflow: visible !important }',
+    'body > *:not(#dool2-print-only) { display: none !important }',
+    '#dool2-print-only { display: block !important }',
+    '}',
+  ].join('\n')
+  document.head.appendChild(style)
+  document.body.appendChild(box)
+  return true
+}

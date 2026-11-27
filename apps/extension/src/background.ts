@@ -42,6 +42,7 @@ import {
   pageMutRead,
   pageOptionPoint,
   pagePrintCleanup,
+  pagePrintFrameCopy,
   pagePrintHook,
   pagePrintPrepare,
   pagePrintTake,
@@ -2624,8 +2625,25 @@ async function run(cmd: BrowserCommand, a: Record<string, unknown>): Promise<unk
             })
             return { via: 'page', data: r.data, calls: got.calls }
           }
-          // A frame printed itself: say which, the daemon reports it (printing one frame of a page is not possible yet)
-          if (got.via === 'page') return { ...got, via: 'frame-page' }
+          // A frame printed itself: print its document, copied with its own styles into the page (Chrome prints only
+          // the top page)
+          if (got.via === 'page') {
+            const href = await chrome.scripting
+              .executeScript({ target: { tabId, frameIds: [got.frameId] }, func: () => location.href })
+              .then((r) => String(r[0]?.result ?? ''))
+              .catch(() => '')
+            const copied = href ? await inPage(tabId, pagePrintFrameCopy, href).catch(() => false) : false
+            if (!copied) return { ...got, via: 'frame-page' }
+            try {
+              const r = await cdp<{ data: string }>(tabId, 'Page.printToPDF', {
+                printBackground: true,
+                preferCSSPageSize: true,
+              })
+              return { via: 'frame', data: r.data, type: 'application/pdf', calls: got.calls }
+            } finally {
+              await inPage(tabId, pagePrintCleanup).catch(() => undefined)
+            }
+          }
           return got
         }
         if (Date.now() > until) {
