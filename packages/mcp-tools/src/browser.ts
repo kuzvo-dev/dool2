@@ -251,7 +251,7 @@ export function registerBrowserTools(server: McpServer, client: BrowserClient) {
   tool(
     'save_pdf',
     'Save the page as a PDF',
-    'Keeps the page as a PDF file the way Chrome prints it, without a print window or a printer: certificates, statements, receipts and tickets that open in a viewer. Point it at the tab that shows the document (a viewer often opens its own tab or pop-up: browser_tabs). It goes to the Dool2 folder (no macOS permission needed) and the library. Never ask the user to print or save it on the PC.',
+    "Keeps a document as a PDF file: certificates, statements, receipts and tickets that open in a viewer. When the page has the site's own print button (also an icon in a viewer), Dool2 presses it and saves what the site prints through Chrome's print window as Save as PDF; otherwise it prints the page the way Chrome does, without a printer. Point it at the tab that shows the document (a viewer often opens its own tab or pop-up: browser_tabs). It goes to the Dool2 folder (no macOS permission needed) and the library. Never ask the user to print or save it on the PC.",
     {
       tabId,
       name: z
