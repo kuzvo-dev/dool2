@@ -762,6 +762,103 @@ func requestPermissions() -> [String: Any] {
   return status()
 }
 
+// ── Chrome's print window: Save as PDF ───────────────────────────
+
+/**
+ * The one thing Dool2 (the daemon, never the AI) does in Chrome's own window: when a site's print button opened
+ * Chrome's print window, pick "Save as PDF", press Save, and save the file into the folder it names. That is the file
+ * a person gets with print → Save as PDF (test PC 11-27: certificate viewers print what they show on screen only through
+ * that window). Nothing else in Chrome is touched: the browser stays out of screen control (hardBlocked)
+ */
+func printPdf(_ args: [String: Any]) async throws -> [String: Any] {
+  guard AXIsProcessTrusted() else { throw fail("손쉬운 사용 권한이 필요해요") }
+  let dir = args["dir"] as? String ?? ""
+  let name = args["name"] as? String ?? "document"
+  let timeout = Date().addingTimeInterval(Double(args["timeoutMs"] as? Int ?? 40_000) / 1000)
+  guard !dir.isEmpty, let chrome = runningApp("com.google.Chrome") else { throw fail("Chrome이 켜져 있지 않아요") }
+  let app = AXUIElementCreateApplication(chrome.processIdentifier)
+  AXUIElementSetAttributeValue(app, "AXManualAccessibility" as CFString, kCFBooleanTrue)
+  func kids(_ e: AXUIElement) -> [AXUIElement] { (attr(e, "AXChildren") as? [AXUIElement]) ?? [] }
+  func s(_ e: AXUIElement, _ a: String) -> String { (attr(e, a) as? String) ?? "" }
+  func value(_ e: AXUIElement) -> String { (attr(e, "AXValue") as? String) ?? "" }
+  func find(_ e: AXUIElement, _ depth: Int = 0, _ ok: (AXUIElement) -> Bool) -> AXUIElement? {
+    if depth > 70 { return nil }
+    if ok(e) { return e }
+    for k in kids(e) { if let f = find(k, depth + 1, ok) { return f } }
+    return nil
+  }
+  func windows() -> [AXUIElement] { (attr(app, "AXWindows") as? [AXUIElement]) ?? [] }
+  let pdfNames = ["PDF로 저장", "Save as PDF"]
+  let destNames = ["대상", "Destination"]
+  let saveNames = ["저장", "Save"]
+  func clickCenter(_ e: AXUIElement) {
+    var p = CGPoint.zero, sz = CGSize.zero
+    if let pv = attr(e, "AXPosition") { AXValueGetValue(pv as! AXValue, .cgPoint, &p) }
+    if let sv = attr(e, "AXSize") { AXValueGetValue(sv as! AXValue, .cgSize, &sz) }
+    let c = CGPoint(x: p.x + sz.width / 2, y: p.y + sz.height / 2)
+    let src = CGEventSource(stateID: .hidSystemState)
+    CGEvent(mouseEventSource: src, mouseType: .mouseMoved, mouseCursorPosition: c, mouseButton: .left)?.post(tap: .cghidEventTap)
+    usleep(120_000)
+    CGEvent(mouseEventSource: src, mouseType: .leftMouseDown, mouseCursorPosition: c, mouseButton: .left)?.post(tap: .cghidEventTap)
+    usleep(60_000)
+    CGEvent(mouseEventSource: src, mouseType: .leftMouseUp, mouseCursorPosition: c, mouseButton: .left)?.post(tap: .cghidEventTap)
+  }
+  // 1. The print window (a window holding the Destination choice)
+  var dest: AXUIElement?
+  var win: AXUIElement?
+  while dest == nil {
+    for w in windows() {
+      if let d = find(w, 0, { s($0, "AXRole") == "AXPopUpButton" && destNames.contains(s($0, "AXTitle")) }) { dest = d; win = w; break }
+    }
+    if dest != nil { break }
+    if Date() > timeout { return ["opened": false] }
+    try await Task.sleep(nanoseconds: 700_000_000)
+  }
+  guard let d = dest, let w = win else { return ["opened": false] }
+  chrome.activate()
+  try await Task.sleep(nanoseconds: 400_000_000)
+  // 2. Destination: Save as PDF (a real printer must never get it)
+  if !pdfNames.contains(value(d)) {
+    clickCenter(d)
+    try await Task.sleep(nanoseconds: 700_000_000)
+    guard let item = find(w, 0, { (s($0, "AXRole") == "AXMenuItem" || s($0, "AXRole") == "AXListBoxOption") && (pdfNames.contains(value($0)) || pdfNames.contains(s($0, "AXTitle"))) }) else {
+      try? postKey("Escape", [])
+      throw fail("인쇄 창에 'PDF로 저장'이 없어요")
+    }
+    clickCenter(item)
+    try await Task.sleep(nanoseconds: 900_000_000)
+    guard pdfNames.contains(value(d)) else { throw fail("인쇄 창의 대상을 'PDF로 저장'으로 바꾸지 못했어요") }
+  }
+  // 3. Save (the print window's own button; the preview needs a moment to be ready)
+  try await Task.sleep(nanoseconds: 800_000_000)
+  guard let save = find(w, 0, { s($0, "AXRole") == "AXButton" && saveNames.contains(s($0, "AXTitle")) }) else {
+    throw fail("인쇄 창에서 저장 버튼을 찾지 못했어요")
+  }
+  clickCenter(save)
+  // 4. The save panel: file name, folder, Save
+  var field: AXUIElement?
+  let panelBy = Date().addingTimeInterval(10)
+  while field == nil && Date() < panelBy {
+    try await Task.sleep(nanoseconds: 500_000_000)
+    for ww in windows() {
+      if let sheet = find(ww, 0, { s($0, "AXRole") == "AXSheet" }) ?? (s(ww, "AXSubrole") == "AXDialog" ? ww : nil),
+        let f = find(sheet, 0, { s($0, "AXRole") == "AXTextField" && (attr($0, "AXFocused") as? Bool ?? false) })
+      { field = f; break }
+    }
+  }
+  guard let f = field else { throw fail("저장 창이 열리지 않았어요") }
+  AXUIElementSetAttributeValue(f, "AXValue" as CFString, name as CFString)
+  try await Task.sleep(nanoseconds: 300_000_000)
+  try postKey("g", ["cmd", "shift"])
+  try await Task.sleep(nanoseconds: 700_000_000)
+  try await paste(dir)
+  try await Task.sleep(nanoseconds: 400_000_000)
+  try postKey("Enter", [])
+  try await Task.sleep(nanoseconds: 900_000_000)
+  try postKey("Enter", [])
+  return ["opened": true, "saved": true]
+}
+
 // ── Commands ───────────────────────────────────────────────
 
 @MainActor
@@ -787,6 +884,7 @@ func run(_ cmd: String, _ args: [String: Any]) async throws -> Any {
   case "input_text": return try await inputText(args)
   case "key": return try await pressKey(args)
   case "screenshot": return try await screenshot(args)
+  case "print_pdf": return try await printPdf(args)
   default: throw fail("모르는 명령이에요: \(cmd)")
   }
 }

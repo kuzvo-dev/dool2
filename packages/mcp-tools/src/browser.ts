@@ -266,7 +266,7 @@ export function registerBrowserTools(server: McpServer, client: BrowserClient) {
         .string()
         .optional()
         .describe(
-          "Ref of the site's own print button (a printer icon in a viewer). Dool2 presses it and keeps exactly the file the site prints, like pressing print and choosing Save as PDF, without a print window. Use it first whenever the page has a print button",
+          "Ref of the site's own print button (a printer icon in a viewer). Dool2 presses it, and in Chrome's print window picks Save as PDF and saves the file: exactly what the site prints, nothing goes to a printer. Use it first whenever the page has a print button (pressing a print button with browser_click does the same)",
         ),
     },
     true,
