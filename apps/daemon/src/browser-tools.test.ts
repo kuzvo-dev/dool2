@@ -279,6 +279,35 @@ describe('브라우저 도구 실행', () => {
     expect(off.isError).toBe(true)
   })
 
+  it("save_pdf presses the site's print icon by itself, and falls back to the page print when it fails", async () => {
+    const b = fakeBrowser()
+    const call = b.call
+    const pdf = Buffer.concat([Buffer.from('%PDF-1.7\n'), Buffer.alloc(4_000, 32)]).toString('base64')
+    const did: string[] = []
+    b.call = async (cmd, args) => {
+      did.push(cmd)
+      if (cmd === 'eval') return { value: { x: 40, y: 30 } }
+      if (cmd === 'input') return { tabId: 3 }
+      if (cmd === 'pdf') return { data: pdf, part: 'document', pages: 1 }
+      return call(cmd, args)
+    }
+    const tools = new BrowserTools(b)
+    tools.savePdf = async (name) => `~/두리/${name}.pdf`
+    let printed: { opened: boolean; path?: string } = { opened: true, path: '~/두리/증명서.pdf' }
+    tools.printViaChrome = async () => printed
+    await tools.run('open', { url: 'https://shop.example' })
+    const r = await tools.run('save_pdf', { tabId: 3, name: '증명서' })
+    expect(text(r)).toContain("Pressed the site's print button")
+    expect(did).toContain('input')
+    expect(did).not.toContain('pdf')
+    // No print window: the page print still gives a file, and says the site's print was tried
+    printed = { opened: false }
+    const again = await tools.run('save_pdf', { tabId: 3, name: '증명서' })
+    expect(again.isError).toBeFalsy()
+    expect(text(again)).toContain("so this is Chrome's print of the page")
+    expect(did).toContain('pdf')
+  }, 20_000)
+
   it('a print icon seen on the screenshot goes through the print path', async () => {
     const b = fakeBrowser()
     const call = b.call

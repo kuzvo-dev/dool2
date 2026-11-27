@@ -84,3 +84,37 @@ const PROBE = `(px, py) => {
   }
   return out
 }`
+
+/**
+ * A side-effect-free script that finds the site's own print button on the visible part of the tab (and in same-site
+ * frames): an element whose aria-label, title, alt, value or short text matches the print words. Returns the center
+ * of the first visible one in CSS pixels of the tab, or null
+ */
+export function printProbe(pattern: string): string {
+  return `(${PRINT_PROBE})(${JSON.stringify(pattern)})`
+}
+
+const PRINT_PROBE = `(pattern) => {
+  const re = new RegExp(pattern, 'i')
+  const visit = (doc, ox, oy, depth) => {
+    for (const e of [...doc.querySelectorAll('button, a, input, img, [role=button], [title], [aria-label], [onclick]')]) {
+      const r = e.getBoundingClientRect()
+      if (r.width < 4 || r.height < 4) continue
+      if (r.bottom < 0 || r.right < 0 || r.top > doc.documentElement.clientHeight || r.left > doc.documentElement.clientWidth) continue
+      const short = (e.innerText || '').replace(/\\s+/g, ' ').trim()
+      const names = [e.getAttribute('aria-label'), e.getAttribute('title'), e.getAttribute('alt'), e.tagName === 'INPUT' ? e.value : '', short.length <= 20 ? short : '']
+      if (names.some((n) => n && re.test(n.trim()))) return { x: Math.round(ox + r.left + r.width / 2), y: Math.round(oy + r.top + r.height / 2) }
+    }
+    if (depth >= 3) return null
+    for (const f of [...doc.querySelectorAll('iframe, frame')]) {
+      let inner = null
+      try { inner = f.contentDocument } catch (_) {}
+      if (!inner) continue
+      const r = f.getBoundingClientRect()
+      const hit = visit(inner, ox + r.left + f.clientLeft, oy + r.top + f.clientTop, depth + 1)
+      if (hit) return hit
+    }
+    return null
+  }
+  return visit(document, 0, 0, 0)
+}`

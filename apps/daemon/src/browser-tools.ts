@@ -38,7 +38,7 @@ import { scrubUrl } from './journal.js'
 import { browserText } from './locales/browser.js'
 import { LoginRequests } from './logins.js'
 import { pageDiff, type SeenPage } from './page-diff.js'
-import { type PointWhat, pointProbe } from './point-probe.js'
+import { type PointWhat, pointProbe, printProbe } from './point-probe.js'
 import {
   maskValue,
   PROFILE_FIELDS,
@@ -1561,6 +1561,21 @@ export class BrowserTools {
         // picks "Save as PDF". A viewer page printed as it is shows only a picture of the screen (test PC 11-27)
         if (typeof a.print === 'string' && a.print)
           return this.saveSitePrint(tabId, this.pressRef(tabId, a.print), String(a.name ?? ''))
+        // Without print, the site's own print button is still preferred when the page has one: Dool2 chose the page
+        // print on a family certificate viewer and the person got a copy of the screen, not what the site prints
+        // (test PC 11-27). Asked for a part (ref) or the whole page (whole), the page print is what was meant
+        let printNote = ''
+        if (typeof a.ref !== 'string' && a.whole !== true && this.printViaChrome) {
+          const press = await this.findPrintButton(tabId)
+          if (press) {
+            const viaSite = await this.saveSitePrint(tabId, press, String(a.name ?? ''))
+            if (!viaSite.isError) return viaSite
+            printNote = ` The site's print button was pressed first, but its print was not saved (${viaSite.content
+              .map((c) => ('text' in c ? c.text : ''))
+              .join(' ')
+              .slice(0, 200)}), so this is Chrome's print of the page.`
+          }
+        }
         const r = (await this.browser
           .call(
             'pdf',
@@ -1605,7 +1620,7 @@ export class BrowserTools {
                 r.part === 'document'
                   ? `Saved only the document as a PDF (${r.pages} A4 page${r.pages === 1 ? '' : 's'}, without the viewer's toolbar and buttons)`
                   : "Saved the whole page as a PDF the way Chrome prints it (nothing on it looked like a document's pages; if the viewer's toolbar is in it, call again with ref set to the document element)"
-              } (${Math.round(pdf.length / 1024)} KB): ${path}. It is in the library too. Tell the user where it is; no print window and no printer were used.`,
+              } (${Math.round(pdf.length / 1024)} KB): ${path}. It is in the library too. Tell the user where it is; no print window and no printer were used.${printNote}`,
             },
           ],
         }
@@ -3650,6 +3665,27 @@ export class BrowserTools {
    * folder. That is the file print → Save as PDF gives, whatever the viewer does inside (a frame printing itself,
    * a print PDF in a hidden frame). Without the PC helper the print window is left for the person
    */
+  /**
+   * The site's own print button on the page, as a press for the print path: a marked button named like print, else
+   * an element whose name says print (a viewer's icon has it only in title or alt), found with a side-effect-free
+   * script and pressed where it is drawn
+   */
+  private async findPrintButton(tabId: number): Promise<(() => Promise<ToolResult>) | undefined> {
+    for (const [ref, r] of this.pages.get(tabId)?.refs ?? new Map()) {
+      if (PRINT_BUTTON.test(r.name ?? '')) return this.pressRef(tabId, ref)
+    }
+    const r = (await this.browser
+      .call('eval', { tabId, expression: printProbe(PRINT_BUTTON.source) }, 20_000)
+      .catch(() => undefined)) as { value?: { x: number; y: number } | null } | undefined
+    const at = r?.value
+    if (!at || typeof at.x !== 'number') return undefined
+    return () =>
+      this.browser.call('input', { tabId, action: 'tap', x: at.x, y: at.y }, 20_000).then(
+        () => ({ content: [{ type: 'text' as const, text: 'Pressed.' }] }),
+        (e: Error) => ({ isError: true, content: [{ type: 'text' as const, text: e.message }] }),
+      )
+  }
+
   /** Presses a ref for the print path (the print button itself is not routed to the print path again) */
   private pressRef(tabId: number, ref: string): () => Promise<ToolResult> {
     return () => this.runCall('click', { tabId, ref, __printing: true })
