@@ -543,6 +543,60 @@ describe('대화 하나 (ADR 0015)', () => {
     expect(checks[1]).toMatchObject({ result: 'done' })
   })
 
+  it('answers the last message once after a restart cut it off (#620), and only that one', async () => {
+    // The first daemon dies in the middle of the turn (an update restarted the PC's Dool2)
+    const gate = new GateRuntime()
+    const { api } = await boot(gate)
+    await api('/api/conversation/messages', { method: 'POST', body: '{"text":"주민등록등본 떼 볼까"}' })
+    await until(async () => gate.inputs.length === 1)
+    const kept = dir
+    dir = undefined
+    // Closed while the AI is still on it: nothing answered (the gate never opens)
+    await daemon?.close()
+    // The next start answers it, once
+    const rt = new (class extends EchoRuntime {
+      inputs: string[] = []
+      override async *runTurn(input: TurnInput): AsyncGenerator<AgentEvent> {
+        this.inputs.push(input.text)
+        yield* super.runTurn(input)
+      }
+    })()
+    daemon = await startDaemon({
+      timeLine: () => undefined,
+      dataDir: kept ?? '',
+      token: 't0ken',
+      runtimes: { claude: rt },
+      chrome: { detect: async () => ({ installed: true, version: '157.0.8103.79' }) },
+      checkKey: async () => 'ok',
+      paygPrices: async () => new Map(),
+    })
+    dir = kept
+    for (let i = 0; i < 100 && rt.inputs.length === 0; i++) await new Promise((r) => setTimeout(r, 50))
+    expect(rt.inputs).toHaveLength(1)
+    expect(rt.inputs[0]).toContain('restarted')
+    // Answered now: a start after that does not answer it again
+    await new Promise((r) => setTimeout(r, 100))
+    await daemon.close()
+    const again = new (class extends EchoRuntime {
+      inputs: string[] = []
+      override async *runTurn(input: TurnInput): AsyncGenerator<AgentEvent> {
+        this.inputs.push(input.text)
+        yield* super.runTurn(input)
+      }
+    })()
+    daemon = await startDaemon({
+      timeLine: () => undefined,
+      dataDir: kept ?? '',
+      token: 't0ken',
+      runtimes: { claude: again },
+      chrome: { detect: async () => ({ installed: true, version: '157.0.8103.79' }) },
+      checkKey: async () => 'ok',
+      paygPrices: async () => new Map(),
+    })
+    await new Promise((r) => setTimeout(r, 3_500))
+    expect(again.inputs).toHaveLength(0)
+  }, 15_000)
+
   it('with no AI ready, keeps the message, says how to connect one, and answers once one is', async () => {
     class SignedOut extends EchoRuntime {
       ready = false
