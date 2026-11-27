@@ -404,7 +404,7 @@ export class FileTools {
     // Biggest first for "what takes the space" (11-26: ten calls by file type to find the 5 biggest in Downloads)
     hits.sort((a, b) => (sort === 'size' ? b.size - a.size : b.mtime - a.mtime))
     const ask = blocked.length
-      ? `\nmacOS has not let Dool2 read ${blocked.join(', ')} yet: a permission window ("would like to access files in your ${blocked[0]} folder") is probably waiting on the PC screen, or it was turned off. Tell the user in one sentence: on the PC, press Allow, or turn Dool2 on under System Settings > Privacy & Security > Files and Folders. Do not try other ways (browser, apps, screen); call file_find again once they did.`
+      ? `\nmacOS has not let Dool2 read ${blocked.join(', ')} yet: a permission window ("would like to access files in your ${blocked[0]} folder") is probably waiting on the PC screen, or it was turned off. Only someone at the PC can allow it (press Allow, or turn Dool2 on under System Settings > Privacy & Security > Files and Folders); the other folders were searched. What else is possible: the file may also be in the library, in mail (an attachment) or in Dool2's own folder, which needs no permission. If the person is needed, say it in one sentence and carry on with the rest of the request.`
       : ''
     if (!hits.length && blocked.length) return fail(ask.trim())
     if (!hits.length) return ok(`Found no file with "${query}" in ${FOLDERS_TEXT}.`)

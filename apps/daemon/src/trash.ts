@@ -28,8 +28,8 @@ export interface TrashContext {
 
 /** What to tell the user when the trash cannot be read */
 export const MAC_TRASH_BLOCKED =
-  'macOS is blocking access to the trash (Doori does not have "Full Disk Access"). For now, tell the user to open the Trash at the end of the Dock, right-click the file and choose "Put Back". ' +
-  'To let Doori find and restore it directly, turn Doori on in System Settings > Privacy & Security > Full Disk Access.'
+  'macOS is blocking access to the trash (Doori does not have "Full Disk Access", which only the person can turn on in System Settings > Privacy & Security > Full Disk Access). ' +
+  'Without it the person can put a file back themselves: open the Trash at the end of the Dock, right-click the file and choose "Put Back". A file that was in iCloud Drive or OneDrive may also be in that service\'s "Recently Deleted", which Dool2 can open in the browser.'
 
 /** UTF-16BE text */
 const utf16be = (b: Buffer) => Buffer.from(b).swap16().toString('utf16le')
