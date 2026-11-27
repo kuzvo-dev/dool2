@@ -815,8 +815,12 @@ func printPdf(_ args: [String: Any]) async throws -> [String: Any] {
     try await Task.sleep(nanoseconds: 700_000_000)
   }
   guard let d = dest, let w = win else { return ["opened": false] }
+  // The window with the print window in front, so the first click is a click and not just focus (two Chrome windows
+  // on the test PC: Save was pressed and nothing happened)
   chrome.activate()
-  try await Task.sleep(nanoseconds: 400_000_000)
+  AXUIElementPerformAction(w, kAXRaiseAction as CFString)
+  AXUIElementSetAttributeValue(w, "AXMain" as CFString, kCFBooleanTrue)
+  try await Task.sleep(nanoseconds: 600_000_000)
   // 2. Destination: Save as PDF (a real printer must never get it)
   if !pdfNames.contains(value(d)) {
     clickCenter(d)
@@ -834,16 +838,25 @@ func printPdf(_ args: [String: Any]) async throws -> [String: Any] {
   guard let save = find(w, 0, { s($0, "AXRole") == "AXButton" && saveNames.contains(s($0, "AXTitle")) }) else {
     throw fail("인쇄 창에서 저장 버튼을 찾지 못했어요")
   }
-  clickCenter(save)
-  // 4. The save panel: file name, folder, Save
+  // 4. The save panel: file name, folder, Save. Save is pressed again if no panel came (a click that only focused)
   var field: AXUIElement?
-  let panelBy = Date().addingTimeInterval(10)
+  var panelWin: AXUIElement?
+  let panelBy = Date().addingTimeInterval(12)
+  var tries = 0
   while field == nil && Date() < panelBy {
+    if tries < 3 && (tries == 0 || Date() > panelBy.addingTimeInterval(-12 + Double(tries) * 3)) {
+      clickCenter(save)
+      tries += 1
+    }
     try await Task.sleep(nanoseconds: 500_000_000)
+    // The save panel: a sheet on the window, or Chrome's own small window titled Save, with a name field
     for ww in windows() {
-      if let sheet = find(ww, 0, { s($0, "AXRole") == "AXSheet" }) ?? (s(ww, "AXSubrole") == "AXDialog" ? ww : nil),
-        let f = find(sheet, 0, { s($0, "AXRole") == "AXTextField" && (attr($0, "AXFocused") as? Bool ?? false) })
-      { field = f; break }
+      let panel = find(ww, 0, { s($0, "AXRole") == "AXSheet" }) ?? (saveNames.contains(s(ww, "AXTitle")) ? ww : nil)
+      if let p = panel, let f = find(p, 0, { s($0, "AXRole") == "AXTextField" }) {
+        field = f
+        panelWin = p
+        break
+      }
     }
   }
   guard let f = field else { throw fail("저장 창이 열리지 않았어요") }
@@ -855,7 +868,14 @@ func printPdf(_ args: [String: Any]) async throws -> [String: Any] {
   try await Task.sleep(nanoseconds: 400_000_000)
   try postKey("Enter", [])
   try await Task.sleep(nanoseconds: 900_000_000)
-  try postKey("Enter", [])
+  // The name again (going to the folder can reset it), then the panel's own Save
+  AXUIElementSetAttributeValue(f, "AXValue" as CFString, name as CFString)
+  try await Task.sleep(nanoseconds: 300_000_000)
+  if let p = panelWin, let ok = find(p, 0, { s($0, "AXRole") == "AXButton" && saveNames.contains(s($0, "AXTitle")) }) {
+    AXUIElementPerformAction(ok, kAXPressAction as CFString)
+  } else {
+    try postKey("Enter", [])
+  }
   return ["opened": true, "saved": true]
 }
 
