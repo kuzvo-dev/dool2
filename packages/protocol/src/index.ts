@@ -436,6 +436,8 @@ export const storeExtensionPage = (id: string) => `https://chromewebstore.google
 
 /** The extension version that includes the service tool (connector) engine (extract, find, capture). Below this, service tools are not used */
 export const MIN_CONNECTOR_EXTENSION = '0.2.0'
+/** The extension version that prints a page to PDF (browser_save_pdf) */
+export const PDF_EXTENSION = '0.3.3'
 
 /** Version comparison like "0.10.1" >= "0.2.0" */
 export function versionAtLeast(v: string, min: string): boolean {

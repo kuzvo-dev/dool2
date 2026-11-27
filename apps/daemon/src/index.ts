@@ -70,6 +70,7 @@ import {
   type PaygAccount,
   PaygAccountRequestSchema,
   type PaygProvider,
+  PDF_EXTENSION,
   previewText,
   type Routine,
   type ScreenControlStatus,
@@ -83,6 +84,7 @@ import {
   type TellRecordMessage,
   type ThreadSummary,
   VaultEntryRequestSchema,
+  versionAtLeast,
 } from '@dool2/protocol'
 import type { QuickRecordMessage } from '@dool2/protocol/blocks'
 import {
@@ -757,6 +759,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
       connected: s.connected,
       ...(s.connected ? { version: s.version, browser: s.browser } : {}),
     })
+    if (s.connected && s.version && versionAtLeast(s.version, PDF_EXTENSION)) pdfReady()
   })
   /** Resolves true as soon as the extension connects, false after ms */
   const extensionConnects = (ms: number) =>
@@ -3297,6 +3300,13 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
     })
     return 'asked'
   }
+  // A PDF that could not be saved because the extension was too old (before 0.3.3): kept (it outlives the restarts an
+  // update brings) so the conversation hears when the extension can do it. Dool2 had promised "I'll save it once the
+  // extension updates" with nothing that would remind it (test PC 11-27)
+  browserTools.pdfTooOld = (tabId) => {
+    const host = browserTools.tabHost(tabId)
+    store.setSetting(PDF_WAITING, { at: Date.now(), ...(host ? { host } : {}) })
+  }
   // My info card: receive only once and keep it in the vault, and when saved, tell the chat to continue
   // A page kept as a PDF (browser_save_pdf: certificates and statements in a viewer): the Doori folder and the library
   browserTools.savePdf = async (name, pdf, preview) => {
@@ -3980,6 +3990,30 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
       }
     })().catch(() => {})
     return { queued: false }
+  }
+  /**
+   * The extension now prints PDFs: if a save waited for that (pdfTooOld, within 14 days), tell the conversation once
+   * so Dool2 saves it. Later than the status event, which can come while the daemon is still starting
+   */
+  function pdfReady() {
+    setTimeout(() => {
+      try {
+        if (closing) return
+        const w = store.getSetting(PDF_WAITING) as { at?: number; host?: string } | undefined
+        if (!w) return
+        store.setSetting(PDF_WAITING, undefined)
+        if (!(typeof w.at === 'number' && Date.now() - w.at < 14 * 24 * 3_600_000)) return
+        journal.write('pdf-ready', { waitedMs: Date.now() - w.at })
+        void talk(
+          appNote(
+            forAI(
+              m().pdfReadyNote,
+              `The Chrome extension updated and can save a page as a PDF now (browser_save_pdf). Earlier a PDF${w.host ? ` from ${w.host}` : ''} could not be saved because it was older. If that page is still open (browser_tabs), save it now and tell the user where the file is; if it was closed, say so and offer to open it again.`,
+            ),
+          ),
+        ).catch(() => {})
+      } catch {}
+    }, 3_000).unref?.()
   }
   /** Task titles already pointed to a quick service tool (the second try starts the task) */
   /** Tools (and task titles) the quick-tool pointer pointed to since the person's last message, so it points once */
@@ -6236,6 +6270,8 @@ function json(res: ServerResponse, status: number, body: unknown) {
 
 /** Messages (with photos) are accepted up to the photo size: the image in SendMessageRequestSchema is up to 2,000,000 characters */
 const MESSAGE_MAX = 2_100_000
+/** Setting that keeps a PDF save waiting for a newer extension (pdfTooOld, pdfReady) */
+const PDF_WAITING = 'pdfWaiting'
 
 /** Request bodies already read, so a body can be read twice (the loop guard reads it before the route does) */
 const bodies = new WeakMap<IncomingMessage, string>()

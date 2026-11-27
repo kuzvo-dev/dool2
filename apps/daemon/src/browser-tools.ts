@@ -1113,6 +1113,8 @@ export class BrowserTools {
    * preview: a picture of the page for the library
    */
   savePdf?: (name: string, pdf: Buffer, preview?: string) => Promise<string>
+  /** browser_save_pdf met an extension too old to print a PDF: the daemon says so in the conversation once it updates */
+  pdfTooOld?: (tabId: number) => void
   requestTap?: (
     tabId: number,
     say: string,
@@ -1501,10 +1503,14 @@ export class BrowserTools {
         if (!this.savePdf) throw new Error('Saving a PDF is not available on this PC')
         const r = (await this.browser.call('pdf', { tabId }, 60_000).catch((e: Error) => {
           // An extension from before 0.3.3 (the Chrome Web Store copy updates a few days after a release) has no pdf
-          if (/Unknown command/.test(e.message))
+          // It told the AI to wait for the update, and Dool2 stopped there on Sonnet and Opus alike (test PC 11-27):
+          // now it says what else to try first, and the daemon tells the conversation when the update arrives
+          if (/Unknown command/.test(e.message)) {
+            this.pdfTooOld?.(tabId)
             throw new Error(
-              "This PC's Dool2 Chrome extension is an older version that cannot save a PDF yet; it updates by itself from the Chrome Web Store within days. Do not ask the user to print or save it on the PC. Tell them the page stays open and you will save it once the extension updates, or, if they want something now, keep a picture copy (browser_screenshot each part of the page) and say it is a copy, not the issued file.",
+              "This PC's Dool2 Chrome extension is an older version that cannot print a page to PDF yet (the Chrome Web Store copy updates by itself within days; Dool2 is told the moment it does, so you can save this page then: leave its tab open). Do not stop at this. Look for another way to get the file now: a download, save or PDF button in the viewer (read the whole page, frames too, and the other tabs with browser_tabs), the issued-documents list, or the site's own option to get the document as a file or an electronic certificate. Do not ask the user to print or save it on the PC. A picture copy (browser_screenshot) is the last resort, and only when the user wants something now: say it is a copy, not the issued file.",
             )
+          }
           throw e
         })) as { data?: string }
         const pdf = Buffer.from(r.data ?? '', 'base64')

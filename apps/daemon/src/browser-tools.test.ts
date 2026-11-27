@@ -171,6 +171,26 @@ describe('단계 자세히 (일한 과정 시트)', () => {
 })
 
 describe('브라우저 도구 실행', () => {
+  it('an extension too old to print a PDF: says what else to try, and the daemon hears to come back', async () => {
+    const b = fakeBrowser()
+    const call = b.call
+    b.call = async (cmd, args) => {
+      if (cmd === 'pdf') throw new Error('Unknown command: pdf')
+      return call(cmd, args)
+    }
+    const tools = new BrowserTools(b)
+    tools.savePdf = async () => '/x.pdf'
+    const told: number[] = []
+    tools.pdfTooOld = (tabId) => told.push(tabId)
+    await tools.run('open', { url: 'https://shop.example' })
+    const r = await tools.run('save_pdf', { tabId: 3 })
+    expect(r.isError).toBe(true)
+    // It used to say "tell them you will save it once the extension updates", and Dool2 stopped there (11-27)
+    expect(text(r)).toContain('Do not stop at this')
+    expect(text(r)).toContain('download, save or PDF button')
+    expect(told).toEqual([3])
+  })
+
   it('열면 바로 읽어 돌려준다', async () => {
     const b = fakeBrowser()
     const tools = new BrowserTools(b)

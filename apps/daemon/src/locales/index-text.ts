@@ -19,6 +19,8 @@ export const indexText = messages({
     noAiReply:
       '아직 이 PC에 일할 AI가 연결돼 있지 않아서 답을 못 했어요. PC의 두리 앱에서 **설정 → AI · 브라우저**를 열고 Claude나 ChatGPT에 로그인해 주세요. 구독이 없으면 AI 회사의 API 키를 넣어 쓸 수도 있어요. 연결되면 방금 말씀하신 것부터 바로 이어서 할게요.',
     aiConnectedNote: 'AI가 연결됐어요. 아까 말씀하신 것부터 할게요.',
+    pdfReadyNote:
+      '크롬 확장 프로그램이 업데이트돼서 이제 PDF로 저장할 수 있어요. 아까 못 한 저장부터 할게요.',
     statusUnfinished: '상태 확인이 끝나지 않았어요',
     phoneOnlyService: '이 서비스는 폰에서 켜요',
     extNotConnected: 'Chrome의 두리 확장이 아직 연결되지 않았어요',
@@ -222,6 +224,8 @@ export const indexText = messages({
     noAiReply:
       "No AI is connected on this PC yet, so I could not answer. In the Dool2 app on the PC, open **Settings → AI · Browser** and sign in to Claude or ChatGPT. Without a subscription, you can use an AI company's API key instead. Once one is connected, I'll start with what you just said.",
     aiConnectedNote: "An AI is connected. I'll start with what you said earlier.",
+    pdfReadyNote:
+      "The Chrome extension updated, so I can save PDFs now. I'll start with the one I couldn't save earlier.",
     statusUnfinished: 'The status check did not finish',
     phoneOnlyService: 'Turn this service on from your phone',
     extNotConnected: 'The Doori extension in Chrome is not connected yet',
