@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import {
   askedForAccount,
   BrowserTools,
@@ -221,6 +221,32 @@ describe('브라우저 도구 실행', () => {
     const no = await tools.run('cdp', { tabId: 3, method: 'Network.getCookies' })
     expect(no.isError).toBe(true)
     expect(cdps).toEqual(['Page.printToPDF', 'Page.getResourceTree'])
+  })
+
+  it("a site's print button: Chrome's print window is saved while the click is still held by it", async () => {
+    vi.useFakeTimers()
+    try {
+      const b = fakeBrowser()
+      const call = b.call
+      // window.print holds the page: the click does not come back while the print window is open
+      b.call = (cmd, args) => (cmd === 'click' ? new Promise(() => {}) : call(cmd, args))
+      const tools = new BrowserTools(b)
+      tools.savePdf = async () => '/x.pdf'
+      const names: string[] = []
+      tools.printViaChrome = async (name) => {
+        names.push(name)
+        return { opened: true, path: '~/두리/가게.pdf' }
+      }
+      await tools.run('open', { url: 'https://shop.example' })
+      const pending = tools.run('save_pdf', { tabId: 3, print: 'e2' })
+      await vi.advanceTimersByTimeAsync(10_000)
+      const r = await pending
+      expect(r.isError).toBeFalsy()
+      expect(text(r)).toContain('~/두리/가게.pdf')
+      expect(names).toEqual(['가게'])
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('an extension too old to print a PDF: says what else to try, and the daemon hears to come back', async () => {

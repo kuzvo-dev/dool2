@@ -2367,7 +2367,8 @@ export function pageCursor(x: number, y: number, label: string) {
     host.style.cssText =
       'position:fixed;left:0;top:0;z-index:2147483647;pointer-events:none;transition:transform .18s ease-out,opacity .3s;opacity:0;contain:layout'
     const root = host.attachShadow({ mode: 'closed' })
-    root.innerHTML = `<svg width="22" height="24" viewBox="0 0 22 24" style="display:block;filter:drop-shadow(0 1px 2px rgba(0,0,0,.35))"><path d="M2 2 L2 19 L7 14.5 L10.5 22 L13.5 20.6 L10 13.3 L16.5 13.3 Z" fill="#4cc98f" stroke="#fff" stroke-width="1.6" stroke-linejoin="round"/></svg><span style="position:absolute;left:20px;top:18px;white-space:nowrap;font:600 12px/1.2 -apple-system,'Apple SD Gothic Neo','Malgun Gothic',sans-serif;color:#0b2a1c;background:#4cc98f;border-radius:10px;padding:4px 8px;box-shadow:0 1px 4px rgba(0,0,0,.25)"></span>`
+    // Never printed: a site's print button pressed by Dool2 must give the page alone, not the marker on it
+    root.innerHTML = `<style>@media print{:host{display:none!important}}</style><svg width="22" height="24" viewBox="0 0 22 24" style="display:block;filter:drop-shadow(0 1px 2px rgba(0,0,0,.35))"><path d="M2 2 L2 19 L7 14.5 L10.5 22 L13.5 20.6 L10 13.3 L16.5 13.3 Z" fill="#4cc98f" stroke="#fff" stroke-width="1.6" stroke-linejoin="round"/></svg><span style="position:absolute;left:20px;top:18px;white-space:nowrap;font:600 12px/1.2 -apple-system,'Apple SD Gothic Neo','Malgun Gothic',sans-serif;color:#0b2a1c;background:#4cc98f;border-radius:10px;padding:4px 8px;box-shadow:0 1px 4px rgba(0,0,0,.25)"></span>`
     host.__dool2Label = root.querySelector('span') as HTMLElement
     document.documentElement.append(host)
   }

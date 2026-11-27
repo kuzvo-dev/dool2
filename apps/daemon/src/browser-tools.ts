@@ -3646,14 +3646,22 @@ export class BrowserTools {
    * a print PDF in a hidden frame). Without the PC helper the print window is left for the person
    */
   private async saveSitePrint(tabId: number, ref: string, name: string): Promise<ToolResult> {
-    const pressed = await this.runCall('click', { tabId, ref, __printing: true })
-    if (pressed.isError || !this.printViaChrome) return pressed
-    const page = (await this.browser.call('snapshot', { tabId, maxChars: 200 }).catch(() => undefined)) as
-      | { title?: string }
-      | undefined
+    // The title is read first: once the print window is open the page answers nothing until it closes
+    const page = this.printViaChrome
+      ? ((await this.browser.call('snapshot', { tabId, maxChars: 200 }).catch(() => undefined)) as
+          | { title?: string }
+          | undefined)
+      : undefined
+    const click = this.runCall('click', { tabId, ref, __printing: true })
+    if (!this.printViaChrome) return click
+    // The click itself does not come back while the print window is open (window.print holds the page), so the
+    // print window is handled alongside it. A click that fails at once (a stale ref) is said as it is
+    const early = await Promise.race([click, new Promise<undefined>((res) => setTimeout(res, 2_500))])
+    if (early?.isError) return early
     const r = await this.printViaChrome(name.trim() || page?.title || 'document').catch((e: Error) => ({
       error: e.message,
     }))
+    await Promise.race([click.catch(() => undefined), new Promise((res) => setTimeout(res, 5_000))])
     const text =
       'path' in r && r.path
         ? `Pressed the site's print button and saved its print as a PDF, the way print → Save as PDF does (no paper, nothing sent to a printer): ${r.path}. It is in the library too. Tell the user where it is.`
