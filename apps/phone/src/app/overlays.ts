@@ -10,6 +10,7 @@ import { payPicker, shipPicker } from './approval-cards.js'
 import { approvalSheet } from './approval-sheet.js'
 import { pickPhoto } from './ask.js'
 import { mark, mSet, send, st, type Tab, trail } from './core.js'
+import { dooriMakerSheet } from './doori-maker.js'
 import { lifeAct, lifeCtx } from './lists.js'
 import { connectSheet, infoSheet, loginSheet } from './login-sheets.js'
 import { payAddSheet, paySheet } from './pay.js'
@@ -77,7 +78,9 @@ export function renderOverlay() {
                                       ? payAddSheet()
                                       : ov.kind === 'report'
                                         ? reportSheet()
-                                        : loginSheet(ov.id)
+                                        : ov.kind === 'doori'
+                                          ? dooriMakerSheet()
+                                          : loginSheet(ov.id)
   // While open, this runs every time news arrives from the PC. If the shape is the same, leave it alone:
   // inserting anew replays the rise animation, so sheets and menus bounce two or three times and lose typed text and scroll
   const drawn = body.outerHTML

@@ -46,6 +46,7 @@ import {
   type IconName,
   icon,
   liveDoori,
+  setDooriLook,
   setFileOpener,
   setRich,
   withLogo,
@@ -3125,6 +3126,13 @@ async function main() {
   // Language first (ADR 0029): every load below may render text
   const { settings } = await api<{ settings: Settings }>('/api/settings')
   syncLang(settings.language, settings.region)
+  setDooriLook(settings.dooriLook)
+  // Doori may be dressed on the phone meanwhile: take the look again whenever this window comes back
+  addEventListener('focus', () => {
+    void api<{ settings: Settings }>('/api/settings')
+      .then((r) => setDooriLook(r.settings.dooriLook))
+      .catch(() => {})
+  })
   // First run: keep the language this window settled on, so the daemon (notices, the AI's voice) and the phone agree
   if (!settings.language)
     void api('/api/settings', { method: 'PATCH', body: JSON.stringify({ language: lang }) }).catch(() => {})

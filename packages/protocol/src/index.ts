@@ -3,6 +3,7 @@
 import { LANGS, type Lang, REGIONS } from '@dool2/i18n'
 import { z } from 'zod'
 import type { ConnectionItem, SocialProvider } from './connect.js'
+import { type DooriLook, DooriLookSchema } from './doori-look.js'
 import type { PayMethod, PayMethodInput } from './pay-methods.js'
 
 /** The AIs Dool2 can run. They run on the user's subscription. */
@@ -195,6 +196,8 @@ export const SettingsSchema = z.object({
    * Turned on from the PC settings or the phone (phone changes are signed, see autoApproveSignText)
    */
   autoApprove: z.boolean().optional(),
+  /** How the user dressed Doori (colour, body, eyes, hat…); drawn the same on the phone and PC (doori-look.ts) */
+  dooriLook: DooriLookSchema.optional(),
   /**
    * Keep the AI program running between messages of the conversation (ADR 0035). Empty: on. False: start it for every
    * message, as before (a fallback if the resident session misbehaves)
@@ -1362,6 +1365,8 @@ export type PhoneToPc =
   | { kind: 'conversation'; before?: string; limit?: number }
   /** Stop what is being done in the conversation now */
   | { kind: 'conversation-cancel' }
+  /** Dress Doori (the look is shared with the PC and every phone) */
+  | { kind: 'doori-look'; look: DooriLook }
   /** Take back a message still waiting in line (sent while Dool2 was answering, not yet read by the AI) */
   | { kind: 'conversation-unqueue'; text: string }
   /** Take the draft as the result and stop further rounds of the before-finishing check (ADR 0027) */
@@ -1497,6 +1502,8 @@ export type PcToPhone =
       dev?: boolean
       /** Auto-approve is on (ADR 0030): the phone shows it in settings and sends texts without a card */
       autoApprove?: boolean
+      /** How the user dressed Doori (doori-look.ts) */
+      dooriLook?: DooriLook
       /** This phone's security-chip approval keys are registered (ADR 0043) */
       approveKeys?: boolean
       /** Payment approvals need the phone lock (only when a pay key is registered) */

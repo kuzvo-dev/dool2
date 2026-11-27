@@ -1,4 +1,5 @@
 // Drawing helpers: building elements, line icons, Dool2 replies (paragraphs, lists, bold)
+import { type DooriLook, drawDoori } from '@dool2/protocol/doori-look'
 import { type Inline, richBlocks } from '@dool2/protocol/rich'
 import { lang } from './lang.js'
 import { domText } from './locales/dom.js'
@@ -126,55 +127,60 @@ export function icon(name: IconName, cls = 'i'): SVGSVGElement {
   return svg
 }
 
-/** The Dool2 character (moods: idle, working, asking, done, thinking, sleeping) */
+/**
+ * The look the user dressed Doori in (from the PC). Every Doori on screen is redrawn when it changes, so the header,
+ * cards and sheets match at once
+ */
+let dooriLookNow: DooriLook = {}
+export function setDooriLook(look: DooriLook | undefined) {
+  const next = look ?? {}
+  if (JSON.stringify(next) === JSON.stringify(dooriLookNow)) return
+  dooriLookNow = next
+  for (const el of document.querySelectorAll<HTMLElement>('span.doori')) drawInto(el)
+}
+export function dooriLook(): DooriLook {
+  return dooriLookNow
+}
+const MOODS = ['thinking', 'working', 'asking', 'done', 'sleeping'] as const
+function drawInto(el: HTMLElement) {
+  const mood = MOODS.find((m) => el.classList.contains(m)) ?? 'idle'
+  const dark = matchMedia('(prefers-color-scheme: dark)').matches
+  el.innerHTML = drawDoori({ ...dooriLookNow, mood, ...(dark ? { dotColor: '#eef4f0' } : {}) })
+}
+
+/** The Dool2 character (moods: idle, working, asking, done, thinking, sleeping), drawn as one SVG in its look */
 export function doori(mood = '', size?: number) {
   const s = h('span', { class: `doori ${mood}`.trim() })
   if (size) s.style.setProperty('--s', `${size}px`)
   s.setAttribute('aria-hidden', 'true')
+  drawInto(s)
   return s
 }
 
-/** The animated 3D Dool2 (packages/ui/doori3d.js, bundled separately by the build) */
-interface LiveDoori {
-  setMood(mood: string): void
-  destroy(): void
-}
-type Doori3d = { mountDoori(host: HTMLElement, opts: { mood?: string }): LiveDoori }
-const DOORI3D = './doori3d.js' // Passed as a string so the build does not bundle it into app.js
-let doori3dModule: Promise<Doori3d> | undefined
-const liveSlots = new Map<string, { el: HTMLElement; mood: string; live?: LiveDoori }>()
-const MOOD_CLASSES = ['thinking', 'working', 'asking', 'done', 'sleeping']
+const liveSlots = new Map<string, { el: HTMLElement; mood: string }>()
 
 /**
- * Dool2 in a big spot: shows a still image first, then animates over it once 3D is ready.
- * One per slot, so redraws reuse the same canvas. Devices without 3D keep the still image.
+ * Dool2 in a big spot (the chat header): one per slot, so redraws keep the same element and only its mood changes.
+ * It floats gently while working (CSS .bob)
  */
 export function liveDoori(slot: string, mood: string, size: number): HTMLElement {
   const hit = liveSlots.get(slot)
   if (hit) {
     if (hit.mood !== mood) {
       hit.mood = mood
-      hit.el.classList.remove(...MOOD_CLASSES)
+      hit.el.classList.remove(...MOODS)
       if (mood) hit.el.classList.add(mood)
-      hit.live?.setMood(mood || 'idle')
+      hit.el.classList.toggle('bob', mood === 'working')
+      drawInto(hit.el)
     }
     hit.el.style.setProperty('--s', `${size}px`)
     return hit.el
   }
   const el = doori(mood, size)
+  el.classList.toggle('bob', mood === 'working')
   // Marks a part that is moved on redraw instead of rebuilt (holdLive in main.ts)
   el.dataset.liveSlot = slot
-  const rec: { el: HTMLElement; mood: string; live?: LiveDoori } = { el, mood }
-  liveSlots.set(slot, rec)
-  doori3dModule ??= import(DOORI3D) as Promise<Doori3d>
-  doori3dModule
-    .then((m) => {
-      rec.live = m.mountDoori(el, { mood: rec.mood || 'idle' })
-      el.classList.add('live-ready')
-    })
-    .catch(() => {
-      // No WebGL or the file failed to load: keep the still image
-    })
+  liveSlots.set(slot, { el, mood })
   return el
 }
 

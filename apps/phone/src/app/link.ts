@@ -3,6 +3,7 @@ import type { DaemonStreamEvent, PcToPhone } from '@dool2/protocol'
 import { type Envelope, open, signText } from '@dool2/protocol/e2e'
 import { autoApproveSignText, LinkClient, resetSignText } from '@dool2/protocol/link'
 import { narrationLine, splitPhoto, toolLabel, toolPlace } from '@dool2/protocol/rich'
+import { setDooriLook } from '../dom.js'
 import { lang } from '../lang.js'
 import { mainCore } from '../locales/main-a-core.js'
 import { tReview } from '../locales/review.js'
@@ -169,6 +170,7 @@ export async function handle(msg: PcToPhone) {
       break
     case 'state':
       st.pc = msg
+      setDooriLook(msg.dooriLook)
       // If the PC name was changed on the PC or another phone, follow it
       if (msg.pcName && msg.pcName !== s.pcName) {
         s.pcName = msg.pcName
