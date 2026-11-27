@@ -349,9 +349,11 @@ function chatItems(): Item[] {
     // While the answer is a draft (being written after tools, checked, or continued) it lives in this card too
     const card = st.busy && (st.steps.length || shot || progress)
     if (card) items.push({ key: 'work', sig: '', make: liveLine })
-    // Until the reply text starts streaming, keep "•••" under the work card too, so it feels like it is writing (user request, 11-22)
     if (st.live && !card) items.push({ key: 'live', sig: '', make: liveBubble })
-    else if (!progress && !st.live)
+    // While Dool2 works, something always moves at the bottom: "•••" under the streamed words too, since a reply that
+    // stopped streaming often means it went on to work (user 11-27: "always show it while it is doing something").
+    // The work line has its own spinner
+    if (!progress && !card)
       items.push({
         key: 'typing',
         sig: '',
