@@ -1,6 +1,7 @@
 /*
  * Dool2 desktop app layout. Parts like colors, fonts, buttons and cards live in @dool2/ui (ui.css).
- * Design source: docs/design/screens/soft/pc.png (left menu / center current tab / right assistant panel)
+ * Design source: docs/design/screens/soft/pc.png (left menu / center current tab / right assistant panel), restyled
+ * after the phone's v3 look (glass top bar and input, answers without bubbles, hairline cards): "Clean surfaces" at the end.
  * Only layout (grid, spacing, position) goes here.
  */
 html,
@@ -42,7 +43,7 @@ ol {
   min-height: 0;
   padding: 18px 12px 12px;
   border-right: 1px solid var(--line);
-  background: var(--surface);
+  background: var(--surface-sunken);
   overflow-y: auto;
 }
 .brand {
@@ -168,40 +169,61 @@ ol {
 .main {
   position: relative;
   display: grid;
-  grid-template-rows: minmax(0, 1fr) auto;
+  grid-template-rows: minmax(0, 1fr);
   min-width: 0;
   min-height: 0;
-}
-.main:not([data-view="talk"]):not([data-view="thread"]) {
-  grid-template-rows: minmax(0, 1fr);
 }
 .main:not([data-view="talk"]):not([data-view="thread"]) .composer-dock {
   display: none;
 }
+/* Glass top bar: usage · Dool2 at the top centre (face over name and status) · my PC */
 .head {
   position: absolute;
   inset: 0 0 auto;
   z-index: 5;
   display: flex;
   justify-content: space-between;
-  align-items: flex-start;
-  min-height: 96px;
-  padding: 14px 20px 22px;
-  background: linear-gradient(var(--bg) 58%, color-mix(in srgb, var(--bg) 0%, transparent));
-  pointer-events: none;
-}
-.head > * {
-  pointer-events: auto;
+  align-items: center;
+  height: 96px;
+  padding: 0 20px;
+  border-bottom: 0.5px solid var(--glass-line);
+  background: var(--glass);
+  -webkit-backdrop-filter: var(--glass-blur);
+  backdrop-filter: var(--glass-blur);
 }
 .head .agent {
   position: absolute;
   left: 50%;
-  top: 10px;
+  top: 6px;
   transform: translateX(-50%);
   max-width: 50%;
 }
+/* Inside the glass bar, Dool2, its name and the PC pill need no glass of their own */
+.head .agent-av,
+.head .agent-tag,
+.head .fpill {
+  background: transparent;
+  box-shadow: none;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
 .head .agent-tag {
   max-width: 100%;
+  margin-top: -4px;
+  padding: 0 6px;
+  font: 720 14px / 19px var(--font-sans);
+}
+.head .agent-tag span {
+  font-size: 11.5px;
+  line-height: 15px;
+}
+.head .fpill {
+  padding: 0 8px;
+  color: var(--ink-muted);
+  font-size: 12.5px;
+}
+.head .fpill:hover {
+  color: var(--ink);
 }
 .head .agent-tag span {
   overflow: hidden;
@@ -218,13 +240,9 @@ ol {
 .agent-av {
   transition: transform var(--dur) var(--ease);
 }
-.head-right .fpill {
-  margin-top: 4px;
-}
 .usage {
   display: flex;
   gap: 14px;
-  margin-top: 6px;
 }
 .usage .u {
   display: flex;
@@ -251,10 +269,12 @@ ol {
 .messages {
   min-height: 0;
   overflow-y: auto;
-  padding: 112px max(28px, calc((100% - 760px) / 2)) 20px;
+  /* The input floats over the end of the chat: leave room for it (--dock-h is measured in renderer.ts) */
+  padding: 112px max(32px, calc((100% - 740px) / 2)) calc(var(--dock-h, 110px) + 16px);
+  scroll-padding-bottom: calc(var(--dock-h, 110px) + 16px);
 }
 .main:not([data-view="talk"]):not([data-view="thread"]) .messages {
-  padding: 112px max(32px, calc((100% - 920px) / 2)) 48px;
+  padding: 120px max(32px, calc((100% - 920px) / 2)) 48px;
 }
 
 /* ── Chat ──────────────────────────────────────── */
@@ -262,7 +282,7 @@ ol {
 .live {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 14px;
 }
 .live:not(:empty) {
   margin-top: 12px;
@@ -352,13 +372,28 @@ ol {
   justify-content: center;
   margin-top: 8px;
 }
-/* Floating composer: + · text · send (stop while working) */
+/* Glass composer floating over the end of the chat: + · text · send (stop while working) */
 .composer-dock {
-  padding: 4px max(28px, calc((100% - 760px) / 2)) 16px;
+  position: absolute;
+  inset: auto 0 0;
+  z-index: 5;
+  padding: 0 max(32px, calc((100% - 740px) / 2)) 12px;
+  /* The one line under the input sits on the page colour, so chat text does not run behind it */
+  background: linear-gradient(transparent 62%, var(--bg) 84%);
+  pointer-events: none;
+}
+.composer-dock > * {
+  pointer-events: auto;
 }
 .composer-dock .composer.float {
   align-items: flex-end;
-  padding: 5px 5px 5px 6px;
+  padding: 6px 6px 6px 8px;
+  border: 0.5px solid var(--glass-line);
+  border-radius: 26px;
+  background: var(--glass);
+  -webkit-backdrop-filter: var(--glass-blur);
+  backdrop-filter: var(--glass-blur);
+  box-shadow: 0 8px 24px -14px rgb(0 0 0 / 0.35);
 }
 .composer-dock textarea {
   min-height: 40px;
@@ -366,12 +401,12 @@ ol {
   padding: 9px 4px;
 }
 .composer .cbtn.plus {
-  width: 36px;
-  height: 36px;
-  margin: 2px 0;
+  width: 38px;
+  height: 38px;
+  margin: 1px 0;
   border-radius: var(--radius-full);
-  background: var(--raise);
-  color: var(--ink-muted);
+  background: light-dark(rgb(20 32 25 / 0.06), rgb(255 255 255 / 0.07));
+  color: var(--ink);
 }
 .composer .cbtn.plus:hover {
   color: var(--ink);
@@ -380,10 +415,11 @@ ol {
   flex: none;
   display: grid;
   place-items: center;
-  width: 40px;
-  height: 40px;
+  width: 38px;
+  height: 38px;
+  margin: 1px 0;
   border-radius: var(--radius-full);
-  background: var(--raise);
+  background: light-dark(rgb(20 32 25 / 0.06), rgb(255 255 255 / 0.07));
   color: var(--ink-faint);
   transition:
     background var(--dur) var(--ease),
@@ -392,14 +428,15 @@ ol {
 }
 .send-btn.ready,
 .send-btn.stop {
-  background: var(--ink);
-  color: var(--ink-inverse);
+  background: var(--primary);
+  color: var(--on-primary);
 }
 .send-btn:active {
   transform: scale(0.94);
 }
 .composer-note {
-  margin-top: 8px;
+  margin-top: 6px;
+  color: var(--ink-faint);
   text-align: center;
 }
 
@@ -2580,4 +2617,306 @@ button.lib-thumb:hover .lib-thumb-img {
 }
 .work-sheet .wtl {
   margin: 4px 0;
+}
+
+/* ── Clean surfaces (v3, after the phone, #628): answers without bubbles, hairline cards, deep mint actions ── */
+
+/* Dool2's answers are plain body text with no bubble; my messages stay in a soft mint box */
+.thread .bubble:not(.me),
+.live .bubble:not(.me) {
+  max-width: 100%;
+  padding: 0 2px;
+  border-radius: 0;
+  background: transparent;
+  font: 450 15.3px / 1.72 var(--font-sans);
+}
+.thread .bubble.me,
+.live .bubble.me {
+  max-width: min(78%, 560px);
+  padding: 10px 15px;
+  border-radius: var(--radius-lg);
+  font-weight: 450;
+}
+/* Speaker line over Dool2's answers: small and quiet */
+.thread .who {
+  margin-bottom: -6px;
+  color: var(--ink-muted);
+  font-weight: 600;
+}
+.thread .who .meta {
+  color: var(--ink-faint);
+}
+.answer-tools {
+  margin-left: -8px;
+}
+
+/* Cards: white with a 1px hairline, no shadow (radius 20) */
+.card,
+.task-card,
+.workcard,
+.approve,
+.livecard,
+.done-row {
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  box-shadow: none;
+}
+.card.quiet {
+  background: var(--surface);
+}
+/* Your turn: a soft butter background (no border) and a dark pill button */
+.card.ask,
+.card.dark,
+.task-card.ask,
+.task-card.needs-you {
+  border-color: transparent;
+  background: var(--butter-soft);
+}
+.card.ask .btn,
+.card.ask .btn-small,
+.task-card.ask .btn,
+.task-card.needs-you .btn {
+  border-radius: var(--radius-full);
+  background: var(--ink);
+  color: var(--ink-inverse);
+}
+.card.ask .btn-ghost {
+  border-color: transparent;
+  border-radius: var(--radius-full);
+  background: light-dark(rgb(255 255 255 / 0.7), rgb(255 255 255 / 0.08));
+}
+/* Primary button: deep mint (one per screen) */
+.btn,
+.btn-small {
+  background: var(--primary);
+  color: var(--on-primary);
+}
+/* Chips: white with a hairline; picked ones are deep mint */
+.chip {
+  border-color: var(--line);
+  border-radius: var(--radius-full);
+  background: var(--surface);
+}
+.chip.on,
+.chip[aria-pressed="true"] {
+  border-color: var(--primary);
+  background: var(--primary);
+  color: var(--on-primary);
+}
+/* Quick replies under a question */
+.quick {
+  gap: 8px;
+}
+.quick button {
+  height: 36px;
+  padding: 0 14px;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  box-shadow: none;
+  font: 550 13.5px / 1 var(--font-sans);
+}
+.quick.cb-quick button.main,
+.quick.cb-quick.used button.picked {
+  border-color: var(--primary);
+  background: var(--primary);
+  color: var(--on-primary);
+}
+/* Switches: a light track when off, deep mint when on */
+.switch {
+  background: light-dark(#cbd6cf, #33423a);
+}
+[aria-checked="true"] > .switch {
+  background: var(--primary);
+}
+/* Approval buttons are pills, like the press-and-hold one */
+.approve-actions > button,
+.co-actions > button,
+.btn.hold {
+  border-radius: var(--radius-full);
+}
+/* How it worked: one gray line */
+.thread .wline {
+  font: 500 13px / 18px var(--font-sans);
+  color: var(--ink-faint);
+}
+.thread .wline .wl-text b {
+  color: var(--ink-muted);
+  font-weight: 600;
+}
+.thread .wline.wait {
+  color: var(--ink);
+}
+.thread .wline:hover {
+  background: transparent;
+  color: var(--ink-muted);
+}
+
+/* Left column: the chosen row is a white pill, like the phone's tab bar */
+.side .navi {
+  height: 40px;
+  border-radius: var(--radius-full);
+}
+.side .navi.on,
+.side .navi[aria-current="page"] {
+  background: light-dark(var(--surface), rgb(255 255 255 / 0.08));
+  box-shadow: 0 1px 4px rgb(0 0 0 / 0.06);
+  font-weight: 650;
+}
+.side .navi:hover:not(.on) {
+  background: light-dark(rgb(20 32 25 / 0.04), rgb(255 255 255 / 0.04));
+}
+.side .thread-item {
+  border-radius: var(--radius-full);
+}
+.side-threads,
+.side-foot {
+  border-top-color: transparent;
+}
+.notice {
+  border-radius: var(--radius-lg);
+}
+
+/* Right panel: flat, Dool2 without a ring */
+.panel {
+  border-left-color: var(--line);
+}
+.panel-av {
+  background: transparent;
+  box-shadow: none;
+}
+.panel-close {
+  background: transparent;
+  box-shadow: none;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+.panel-tabs.seg button,
+.seg button {
+  border-radius: var(--radius-full);
+}
+.seg {
+  border-radius: var(--radius-full);
+}
+.seg button[aria-checked="true"],
+.seg button[aria-pressed="true"] {
+  box-shadow: 0 1px 4px rgb(0 0 0 / 0.08);
+}
+
+/* Settings: big page titles, grouped white blocks without borders, rows split by an inset hairline */
+.settings-title {
+  font-size: 28px;
+  font-weight: 760;
+}
+.settings-tab {
+  border-radius: var(--radius-full);
+}
+.settings-tab.on {
+  box-shadow: 0 1px 4px rgb(0 0 0 / 0.06);
+}
+.settings-tab .doori {
+  --s: 22px;
+}
+.settings-content > .page-head .title {
+  font-size: 30px;
+  font-weight: 760;
+  letter-spacing: -0.03em;
+}
+.settings-sec {
+  margin-top: 18px;
+}
+.settings-sec > .over {
+  margin: 0 4px;
+  color: var(--ink-faint);
+  font-size: 12.5px;
+}
+.setup.in-app .checks {
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  box-shadow: none;
+}
+.setup.in-app .checks li {
+  position: relative;
+  background: transparent;
+}
+.setup.in-app .checks li + li {
+  border-top: 0;
+}
+.setup.in-app .checks li + li::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 16px;
+  right: 0;
+  height: 1px;
+  background: var(--line);
+}
+.setup.in-app .toggle-row {
+  padding: 14px 16px;
+  border-radius: inherit;
+}
+.setup.in-app .toggle-row:hover {
+  background: transparent;
+}
+
+/* My Doori (Settings): dressing Doori, like the phone's sheet */
+.dm-stage {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  padding: 24px 0 20px;
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+}
+.dm-actions {
+  display: flex;
+  gap: 8px;
+}
+.dm-actions > button {
+  border-radius: var(--radius-full);
+}
+.dm-opts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.dm-color {
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  border: 2px solid rgb(0 0 0 / 0.06);
+  border-radius: 50%;
+}
+.dm-color.on {
+  outline: 3px solid var(--primary);
+  outline-offset: 2px;
+}
+.dm-pic {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  min-width: 68px;
+  padding: 8px 6px 6px;
+  border: 1.5px solid transparent;
+  border-radius: 16px;
+  background: var(--surface);
+  font-size: 12px;
+  color: var(--ink-muted);
+}
+.dm-pic:hover {
+  border-color: var(--line);
+}
+.dm-pic.on {
+  border-color: var(--primary);
+  color: var(--ink);
+  font-weight: 650;
+}
+.dm-mini {
+  width: 48px;
+  height: 48px;
+}
+.dm-mini > svg {
+  width: 100%;
+  height: 100%;
 }

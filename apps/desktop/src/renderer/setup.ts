@@ -16,9 +16,22 @@ import type {
   Settings,
   VaultEntry,
 } from '@dool2/protocol'
-import { type IconName, icon } from './dom.js'
+import { doori, type IconName, icon, setDooriLook } from './dom.js'
+import {
+  DOORI_BODIES,
+  DOORI_COLORS,
+  DOORI_EYES,
+  DOORI_FACES,
+  DOORI_HATS,
+  DOORI_NECKS,
+  DOORI_PATTERNS,
+  type DooriLook,
+  drawDoori,
+  randomLook,
+} from './doori-draw.js'
 import type { Lang } from './i18n.js'
 import { lang, switchLang } from './lang.js'
+import { dooriText } from './locales/doori-maker.js'
 import { authAppText, LANG_NAMES, profileExamples, profileLabels, setupText } from './locales/setup.js'
 import { AUTH_APPS } from './region/kr/auth-apps.js'
 import { hyphenate } from './rich.js'
@@ -71,7 +84,7 @@ export interface SetupOptions {
 }
 
 /** Sections of the Settings screen */
-export type SettingsTab = 'general' | 'ai' | 'phone' | 'vault' | 'me' | 'apps' | 'about'
+export type SettingsTab = 'general' | 'doori' | 'ai' | 'phone' | 'vault' | 'me' | 'apps' | 'about'
 
 type InstallKind = 'claude' | 'chrome' | 'opencode' | 'codex'
 
@@ -562,6 +575,7 @@ export function runSetup(opts: SetupOptions): {
         const todo = checklist(choice ?? 'both', agents, chrome, extension).filter((x) => !x.ok).length
         const tabs: [SettingsTab, IconName, string, string?][] = [
           ['general', 'gear', m.tabGeneral],
+          ['doori', 'heart', dooriText(lang).myDoori],
           ['ai', 'brain', m.tabAi, !loading && todo ? String(todo) : undefined],
           ['phone', 'phone', m.tabPhone],
           ['vault', 'lock', m.tabVault],
@@ -578,7 +592,8 @@ export function runSetup(opts: SetupOptions): {
             root.scrollTop = 0
             render()
           })
-          b.replaceChildren(icon(ic, 'i md'), el('span', 'grow', label))
+          // My Doori shows Doori itself (in the user's look) instead of a line icon
+          b.replaceChildren(id === 'doori' ? doori('', 22) : icon(ic, 'i md'), el('span', 'grow', label))
           if (badge) b.append(el('span', 'settings-badge', badge))
           if (id === settingsTab) {
             b.classList.add('on')
@@ -694,7 +709,10 @@ export function runSetup(opts: SetupOptions): {
         else if (settingsTab === 'me') body.append(head(m.tabMe, m.meSub), sec(m.secMe, undefined, meBlock()))
         else if (settingsTab === 'apps')
           body.append(head(m.tabApps, m.appsSub), sec(m.secApps, undefined, screenBlock()))
-        else {
+        else if (settingsTab === 'doori') {
+          const d = dooriText(lang)
+          body.append(head(d.title, d.sub), ...dooriBlock())
+        } else {
           const links = el('div', 'about-links')
           for (const [label, url] of [
             [m.siteLink, 'https://dool2.com'],
@@ -1819,6 +1837,111 @@ export function runSetup(opts: SetupOptions): {
       )
       if (statsPreview) box.append(el('pre', 'report-preview', statsPreview))
       return box
+    }
+
+    /** My Doori (Settings): dress Doori like the phone's sheet (apps/phone/src/app/doori-maker.ts). Each pick
+     * redraws every Doori in this window at once and is kept in settings (dooriLook), which tells the phones too */
+    const dooriBlock = (): HTMLElement[] => {
+      const d = dooriText(lang)
+      const look: DooriLook = current.dooriLook ?? {}
+      const names: Record<string, string> = {
+        'body:square': d.bodySquare,
+        'body:round': d.bodyRound,
+        'body:tall': d.bodyTall,
+        'body:wide': d.bodyWide,
+        'body:bean': d.bodyBean,
+        'eyes:pill': d.eyesPill,
+        'eyes:sparkle': d.eyesSparkle,
+        'eyes:dot': d.eyesDot,
+        'eyes:wink': d.eyesWink,
+        'eyes:sleepy': d.eyesSleepy,
+        'hat:beret': d.hatBeret,
+        'hat:cap': d.hatCap,
+        'hat:beanie': d.hatBeanie,
+        'hat:crown': d.hatCrown,
+        'hat:chef': d.hatChef,
+        'hat:grad': d.hatGrad,
+        'hat:sprout': d.hatSprout,
+        'hat:headset': d.hatHeadset,
+        'hat:bow': d.hatBow,
+        'face:round': d.faceRound,
+        'face:square': d.faceSquare,
+        'face:sun': d.faceSun,
+        'face:mono': d.faceMono,
+        'neck:tie': d.neckTie,
+        'neck:scarf': d.neckScarf,
+        'neck:bandana': d.neckBandana,
+        'neck:badge': d.neckBadge,
+        'pattern:spots': d.patSpots,
+        'pattern:belly': d.patBelly,
+        'pattern:stripe': d.patStripe,
+      }
+      const apply = (next: DooriLook) => {
+        setDooriLook(next)
+        current = { ...current, dooriLook: next }
+        void save({ dooriLook: next })
+      }
+      const stage = el('div', 'dm-stage')
+      const actions = el('div', 'dm-actions')
+      actions.append(
+        button('btn-small', d.random, () => apply(randomLook())),
+        button('btn-ghost sm', d.reset, () => apply({})),
+      )
+      stage.append(doori('', 150), actions)
+      const group = (title: string, ...items: HTMLElement[]) => {
+        const box = el('section', 'settings-sec')
+        const opts = el('div', 'dm-opts')
+        opts.append(...items)
+        box.append(el('h2', 'over', title), opts)
+        return box
+      }
+      const colors = Object.entries(DOORI_COLORS).map(([k, v]) => {
+        const b = button(`dm-color${(look.color ?? 'mint') === k ? ' on' : ''}`, '', () =>
+          apply({ ...look, color: k }),
+        )
+        b.setAttribute('aria-label', k)
+        b.style.background = v
+        return b
+      })
+      type Part = 'body' | 'eyes' | 'hat' | 'face' | 'neck'
+      // Picture options: each shows Doori wearing it
+      const pics = (part: Part, values: readonly string[], withNone: boolean) =>
+        [...(withNone ? [''] : []), ...values].map((v) => {
+          const cur = look[part] ?? (part === 'body' ? 'square' : part === 'eyes' ? 'pill' : '')
+          const preview: DooriLook = {
+            ...look,
+            [part]: v,
+            ...(part === 'body' || part === 'eyes' ? { hat: '', face: '', neck: '' } : {}),
+          }
+          const b = button(`dm-pic${cur === v ? ' on' : ''}`, '', () => apply({ ...look, [part]: v }))
+          const mini = el('span', 'dm-mini')
+          mini.innerHTML = drawDoori(preview)
+          b.append(mini, el('span', undefined, v ? (names[`${part}:${v}`] ?? v) : d.none))
+          return b
+        })
+      const chip = (label: string, on: boolean, onClick: () => void) => {
+        const b = button(`chip quiet${on ? ' on' : ''}`, label, onClick)
+        b.setAttribute('aria-pressed', String(on))
+        return b
+      }
+      return [
+        stage,
+        group(d.color, ...colors),
+        group(d.body, ...pics('body', Object.keys(DOORI_BODIES), false)),
+        group(d.eyes, ...pics('eyes', DOORI_EYES, false)),
+        group(
+          d.extra,
+          chip(d.cheeks, look.cheeks === true, () => apply({ ...look, cheeks: !look.cheeks })),
+          ...['', ...DOORI_PATTERNS].map((p) =>
+            chip(p ? (names[`pattern:${p}`] ?? p) : d.noPattern, (look.pattern ?? '') === p, () =>
+              apply({ ...look, pattern: p }),
+            ),
+          ),
+        ),
+        group(d.hat, ...pics('hat', DOORI_HATS, true)),
+        group(d.face, ...pics('face', DOORI_FACES, true)),
+        group(d.neck, ...pics('neck', DOORI_NECKS, true)),
+      ]
     }
 
     /** One on/off row */
