@@ -33,6 +33,8 @@ export const ON_DEMAND_TOOLS = [
   'browser_eval',
   // DevTools that read or produce (ADR 0045): tool_find("devtools"), ("archive") or ("resource") brings it
   'browser_cdp',
+  // Code in a sandbox (ADR 0045): tool_find("code"), ("calculate") or ("convert") brings it
+  'code_run',
   'show_route',
   'goal_delete',
   // PC app control (screen_*, 5 to 47 calls each). One tool_find("screen") brings the whole group
