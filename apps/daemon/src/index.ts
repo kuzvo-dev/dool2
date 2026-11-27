@@ -84,6 +84,7 @@ import {
   type TaskRecordMessage,
   type TellRecordMessage,
   type ThreadSummary,
+  UseAgentRequestSchema,
   VaultEntryRequestSchema,
   versionAtLeast,
 } from '@dool2/protocol'
@@ -104,7 +105,7 @@ import {
   withoutPhotoMark,
 } from '@dool2/protocol/rich'
 import { Store } from '@dool2/store'
-import { aiAccountText } from './ai-account.js'
+import { aiAccountText, aiUseText, cannotUse, effectiveAgent } from './ai-account.js'
 import type { sendAppPush } from './apppush.js'
 import type { Approvals } from './approvals.js'
 import { AutoApprover, autoCovers } from './auto-approve.js'
@@ -152,6 +153,7 @@ import { Journal, KEEP_DAYS, noteResultChars, SHOT_DAYS, scrubText, scrubUrl } f
 import { userLang } from './lang.js'
 import { Life, routineAsk, tellDelay, watchPrompt } from './life.js'
 import { PhoneLink } from './link.js'
+import { aiAccountCopy } from './locales/ai-account.js'
 import { forAI, indexText } from './locales/index-text.js'
 import { TASKS_TEXT } from './locales/tasks-text.js'
 import { LoopGuard } from './loop-guard.js'
@@ -1381,6 +1383,24 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
     if (ids[0]) return ids[0]
     throw new Error(m().noAgent)
   }
+  /**
+   * Switches the AI Dool2 runs on (PC settings, phone settings, ai_use), only to a connected one. The conversation's
+   * next turn picks it (pickAgent) and opens a new segment on it with the recent messages carried over
+   * (conversation.prepare, reason 'agent'); the chat history stays. Running tasks finish on their own AI
+   */
+  const useAgent = async (want: AgentId, via: 'pc' | 'phone' | 'ai') => {
+    const agents = await detectAll()
+    const before = effectiveAgent(readSettings().defaultAgent, agents)
+    const why = cannotUse(want, agents)
+    journal.write('use-agent', { want, via, ...(before ? { before } : {}), ...(why ? { why } : {}) })
+    if (why) return { ok: false as const, why, before, agents }
+    store.setSetting('defaultAgent', want)
+    const settings = readSettings()
+    events.emit('settings', settings)
+    // The phones show which AI is in use
+    void link.resync().catch(() => {})
+    return { ok: true as const, before, agents, settings }
+  }
   // Service connections (ADR 0014): shared by the PC screen (HTTP) and the phone (link)
   // Watches the tab opened for connecting, and when text only a signed-in person sees shows up, marks it connected on its own (no AI)
   const loginWatch = new LoginWatch({
@@ -2516,6 +2536,10 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
         store.setSetting('autoApprove', on)
         events.emit('settings', readSettings())
         journal.write('auto-approve-set', { on, from: 'phone', phone })
+      },
+      useAgent: async (agent) => {
+        const r = await useAgent(agent, 'phone')
+        return r.ok ? { ok: true } : { ok: false, message: aiAccountCopy(lang()).notConnected }
       },
       caps: (phone, caps) => {
         phoneCaps.set(phone, caps)
@@ -5313,6 +5337,16 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
         )
         return json(res, 200, { content: [{ type: 'text', text }] })
       }
+      // Switch the AI Dool2 runs on, among the connected ones (the same check as the PC and phone settings). Not
+      // approval-gated: it is undone just as easily, and it never touches a key or a sign-in
+      if (req.method === 'POST' && b === 'life' && c === 'ai_use' && !d) {
+        const parsed = UseAgentRequestSchema.safeParse(await readJson(req))
+        if (!parsed.success)
+          return json(res, 200, toolText('agent must be "claude", "codex" or "opencode".', true))
+        const r = await useAgent(parsed.data.agent, 'ai')
+        const text = aiUseText({ want: parsed.data.agent, before: r.before, agents: r.agents }, lang())
+        return json(res, 200, toolText(text, !r.ok))
+      }
       // View the vault (ADR 0011): only which sites have a sign-in. Passwords are left out (vault.list) and IDs are masked
       if (req.method === 'POST' && b === 'life' && c === 'vault_find' && !d) {
         const args = ((await readJson(req)) ?? {}) as { site?: unknown }
@@ -5589,6 +5623,14 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
       return json(res, 200, {
         agents: list.map((x) => (x.id === 'opencode' && x.installed && spent ? { ...x, spent } : x)),
       })
+    }
+
+    // The AI Dool2 runs on (PC settings), only one that is connected
+    if (req.method === 'PUT' && a === 'agents' && b === 'default' && !c) {
+      const { agent } = UseAgentRequestSchema.parse(await readJson(req))
+      const r = await useAgent(agent, 'pc')
+      if (!r.ok) return json(res, 409, { error: aiAccountCopy(lang()).notConnected })
+      return json(res, 200, { settings: r.settings })
     }
 
     // Codex: downloaded from the official npm registry on first use and verified with a pinned SHA-512 (download.ts)

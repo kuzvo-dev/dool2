@@ -913,6 +913,98 @@ describe('설정', () => {
   })
 })
 
+describe('the AI Dool2 uses', () => {
+  /** Codex that answers in its own words, and can be signed out */
+  class CodexEcho implements AgentRuntime {
+    readonly id = 'codex' as const
+    inputs: TurnInput[] = []
+    signedIn = true
+    async detect(): Promise<AgentStatus> {
+      return { id: 'codex', installed: true, loggedIn: this.signedIn }
+    }
+    async *runTurn(input: TurnInput): AsyncGenerator<AgentEvent> {
+      this.inputs.push(input)
+      yield { type: 'started', resumeId: 'c1', tools: ['mcp__dool2__status'] }
+      yield { type: 'text', delta: `codex: ${input.text.split('\n\n').at(-1)}` }
+      yield { type: 'done', resumeId: 'c1', text: `codex: ${input.text.split('\n\n').at(-1)}` }
+    }
+  }
+  class ClaudeEcho extends EchoRuntime {
+    inputs: string[] = []
+    override async *runTurn(input: TurnInput): AsyncGenerator<AgentEvent> {
+      this.inputs.push(input.text)
+      yield* super.runTurn(input)
+    }
+  }
+  type State = { messages: { role: string; text: string }[]; busy: boolean }
+  const until = async (f: () => Promise<boolean>) => {
+    for (let i = 0; i < 300; i++) {
+      if (await f()) return
+      await new Promise((r) => setTimeout(r, 10))
+    }
+    throw new Error('waited too long')
+  }
+
+  it('switches only to a connected AI, and the next message runs on it with the chat kept', async () => {
+    const claude = new ClaudeEcho()
+    const codex = new CodexEcho()
+    const { api } = await boot(claude, { runtimes: { claude, codex } })
+    const state = async () => (await (await api('/api/conversation')).json()) as State
+    const ask = async (text: string, n: number) => {
+      await api('/api/conversation/messages', { method: 'POST', body: JSON.stringify({ text }) })
+      await until(async () => {
+        const s = await state()
+        return s.messages.filter((x) => x.role === 'user').length === n && !s.busy
+      })
+    }
+    await ask('hello', 1)
+    expect(codex.inputs).toHaveLength(0)
+
+    // Not on this PC (no runner) or signed out: refused, nothing changes
+    const none = await api('/api/agents/default', { method: 'PUT', body: '{"agent":"opencode"}' })
+    expect(none.status).toBe(409)
+    codex.signedIn = false
+    expect((await api('/api/agents/default', { method: 'PUT', body: '{"agent":"codex"}' })).status).toBe(409)
+    expect(daemon?.settings().defaultAgent).toBeUndefined()
+    codex.signedIn = true
+
+    const ok = await api('/api/agents/default', { method: 'PUT', body: '{"agent":"codex"}' })
+    expect(ok.status).toBe(200)
+    expect(((await ok.json()) as { settings: { defaultAgent?: string } }).settings.defaultAgent).toBe('codex')
+    await ask('now on codex', 2)
+    expect(codex.inputs.some((x) => x.text.includes('now on codex'))).toBe(true)
+    expect(claude.inputs.some((x) => x.includes('now on codex'))).toBe(false)
+    // A fresh Codex session carries the recent chat, and the history on screen stays whole
+    expect(codex.inputs.find((x) => !x.sideJob)?.systemPrompt ?? '').toContain('hello')
+    const texts = (await state()).messages.map((x) => x.text)
+    expect(texts).toEqual(expect.arrayContaining(['hello', '받았어요: hello', 'now on codex']))
+    expect(texts.some((t) => t.startsWith('codex: '))).toBe(true)
+
+    // The AI can switch it in conversation too, through the same check (ai_use)
+    const toolToken = codex.inputs.find((x) => !x.sideJob)?.mcpServers[0]?.env?.DOOL2_TOOL_TOKEN ?? ''
+    const tool = async (args: unknown) => {
+      const r = await fetch(`${daemon?.url}/api/tools/life/ai_use`, {
+        method: 'POST',
+        headers: { authorization: `Bearer ${toolToken}`, 'content-type': 'application/json' },
+        body: JSON.stringify(args),
+      })
+      return (await r.json()) as { content: { text: string }[]; isError?: boolean }
+    }
+    const refused = await tool({ agent: 'opencode' })
+    expect(refused.isError).toBe(true)
+    expect(refused.content[0]?.text).toContain('Not switched: API key (pay-as-you-go) is not installed')
+    expect(refused.content[0]?.text).toContain('Connected now: Claude Code, Codex')
+    const back = await tool({ agent: 'claude' })
+    expect(back.isError).toBeUndefined()
+    expect(back.content[0]?.text).toContain(
+      "Switched: from the user's next message Dool2 runs on Claude Code (it was Codex)",
+    )
+    expect(daemon?.settings().defaultAgent).toBe('claude')
+    await ask('back to claude', 3)
+    expect(claude.inputs.some((x) => x.includes('back to claude'))).toBe(true)
+  })
+})
+
 describe('Claude 로그인', () => {
   it('설치돼 있지 않으면 설치부터 안내한다', async () => {
     const { api } = await boot()

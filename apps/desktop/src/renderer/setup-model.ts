@@ -71,6 +71,40 @@ export function pickDefault(choice: AiChoice, agents: AgentStatus[]): AgentId | 
   return neededAgents(choice).find((id) => ready(agents.find((a) => a.id === id)))
 }
 
+/** One AI in Settings' "the AI Dool2 uses": connected ones can be picked, the rest show how to connect them */
+export interface AiPick {
+  id: AgentId
+  ready: boolean
+  /** The one the next message runs on (the chosen one when connected, else the first connected, like the daemon) */
+  chosen: boolean
+  /** For one not connected yet: what is missing, and the button that connects it */
+  detail?: string
+  action?: CheckAction
+}
+
+/** Claude Code, Codex and the pay-as-you-go key, in that order (the daemon's pickAgent agrees on the chosen one) */
+export function aiPicks(agents: AgentStatus[], defaultAgent: AgentId | undefined): AiPick[] {
+  const m = setupModelText(lang)
+  const ids: AgentId[] = ['claude', 'codex', 'opencode']
+  const firstReady = ids.find((id) => ready(agents.find((a) => a.id === id)))
+  const now = defaultAgent && ready(agents.find((a) => a.id === defaultAgent)) ? defaultAgent : firstReady
+  return ids.map((id): AiPick => {
+    const a = agents.find((x) => x.id === id)
+    if (ready(a)) return { id, ready: true, chosen: id === now }
+    if (id === 'claude')
+      return a?.installed
+        ? { id, ready: false, chosen: false, detail: m.claudeLoginTodo, action: 'claude-login' }
+        : { id, ready: false, chosen: false, detail: m.notOnPc, action: 'claude-install' }
+    if (id === 'codex')
+      return a?.installed
+        ? { id, ready: false, chosen: false, detail: m.chatgptLoginTodo, action: 'codex-login' }
+        : { id, ready: false, chosen: false, detail: m.firstDownload(120), action: 'codex-install' }
+    return a?.installed
+      ? { id, ready: false, chosen: false, detail: m.apiKeyTodo, action: 'payg-key' }
+      : { id, ready: false, chosen: false, detail: m.firstDownload(110), action: 'opencode-install' }
+  })
+}
+
 /**
  * "Not sure" found no subscription on this PC (no Claude or Codex signed in): the wizard offers the
  * pay-as-you-go API key instead of only listing installs and sign-ins (people without either subscription

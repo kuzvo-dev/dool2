@@ -37,6 +37,7 @@ import { AUTH_APPS } from './region/kr/auth-apps.js'
 import { hyphenate } from './rich.js'
 import {
   aiChoiceLabel,
+  aiPicks,
   type CheckAction,
   checkHeadline,
   checklist,
@@ -216,6 +217,8 @@ export function runSetup(opts: SetupOptions): {
   let shareStats = current.usageStats ?? true
   let statsPreview: string | undefined
   let sending = false
+  // Switching the AI Dool2 uses (Settings → AI): waiting for the PC, or why it did not switch
+  const useAi: { busy: boolean; error?: string } = { busy: false }
   let pollTimer: ReturnType<typeof setTimeout> | undefined
   // Section shown on the Settings screen (the phone section when opened from the pair button)
   let settingsTab: SettingsTab =
@@ -698,6 +701,7 @@ export function runSetup(opts: SetupOptions): {
           )
           body.append(
             head(m.tabAi, todo ? m.todoLeft(todo) : m.aiReady),
+            sec(m.secUseAi, undefined, ...useAiBlock()),
             sec(m.secReady, undefined, ...checksBlock(choice ?? 'both')),
             ai,
             sec(m.secChrome, undefined, chromeRows),
@@ -1957,6 +1961,115 @@ export function runSetup(opts: SetupOptions): {
       return li
     }
 
+    /** The button that installs, signs in or adds a key (ok: already done, so a key reads "Change") */
+    const actionButton = (action: CheckAction, ok: boolean) => {
+      const label =
+        action === 'claude-install' ||
+        action === 'chrome-install' ||
+        action === 'opencode-install' ||
+        action === 'codex-install'
+          ? m.install
+          : action === 'payg-key'
+            ? ok
+              ? m.changeKey
+              : m.addKey
+            : action === 'extension-install'
+              ? m.howToAdd
+              : action === 'codex-login'
+                ? m.chatgptSignIn
+                : m.signIn
+      const b = button('btn-small', label, () => void act(action))
+      if (action === 'claude-login' && login.state === 'waiting') {
+        b.textContent = m.signingIn
+        b.disabled = true
+      }
+      const kind: InstallKind | undefined =
+        action === 'claude-install'
+          ? 'claude'
+          : action === 'chrome-install'
+            ? 'chrome'
+            : action === 'opencode-install'
+              ? 'opencode'
+              : action === 'codex-install'
+                ? 'codex'
+                : undefined
+      if (kind && installs[kind].state === 'running') {
+        b.textContent = m.installingBtn
+        b.disabled = true
+      }
+      return b
+    }
+
+    const aiName = (id: AgentId) => (id === 'claude' ? 'Claude Code' : id === 'codex' ? 'Codex' : m.paygAi)
+
+    /** Switches the AI Dool2 uses; the daemon takes only a connected one (PUT /api/agents/default) */
+    const pickAi = async (id: AgentId) => {
+      if (useAi.busy) return
+      useAi.busy = true
+      useAi.error = undefined
+      render()
+      const r = await opts
+        .api<{ settings: Settings }>('/api/agents/default', {
+          method: 'PUT',
+          body: JSON.stringify({ agent: id }),
+        })
+        .catch((e: Error) => {
+          useAi.error = e.message
+          return undefined
+        })
+      useAi.busy = false
+      if (r) current = r.settings
+      else agents = await opts.loadAgents()
+      render()
+    }
+
+    /**
+     * The AI Dool2 uses: the connected ones as one choice, and the ones not connected with the button that connects
+     * them (unless the status list below already shows it)
+     */
+    const useAiBlock = (): HTMLElement[] => {
+      const picks = aiPicks(agents, current.defaultAgent)
+      const ok = picks.filter((p) => p.ready)
+      const parts: HTMLElement[] = []
+      if (ok.length) {
+        const seg = el('div', 'seg')
+        seg.setAttribute('role', 'radiogroup')
+        seg.setAttribute('aria-label', m.secUseAi)
+        for (const p of ok) {
+          const b = button('', aiName(p.id), () => {
+            if (!p.chosen) void pickAi(p.id)
+          })
+          b.setAttribute('role', 'radio')
+          b.setAttribute('aria-checked', String(p.chosen))
+          b.disabled = useAi.busy
+          seg.append(b)
+        }
+        parts.push(seg)
+      }
+      parts.push(el('p', 'setup-hint', ok.length > 1 ? m.useAiHint : ok.length ? m.useAiOne : m.useAiNone))
+      if (useAi.error) parts.push(el('p', 'login-error', useAi.error))
+      // Rows of the status list are named after their AI (claude-app, codex-login, opencode-app, payg-key)
+      const shown = new Set(
+        checklist(choice ?? 'both', agents, undefined, undefined, { withKey: true }).map((i) =>
+          i.id.startsWith('payg') ? 'opencode' : i.id.split('-')[0],
+        ),
+      )
+      const rest = picks.filter((p) => !p.ready && !shown.has(p.id))
+      if (rest.length) {
+        const list = el('ul', 'checks')
+        for (const p of rest) {
+          const li = el('li', 'todo')
+          const text = el('div', 'text')
+          text.append(el('strong', undefined, aiName(p.id)), el('span', undefined, p.detail ?? ''))
+          li.append(el('span', 'mark'), text)
+          if (p.action) li.append(actionButton(p.action, false))
+          list.append(li)
+        }
+        parts.push(list)
+      }
+      return parts
+    }
+
     /** Readiness list plus any install or sign-in panels in progress */
     const checksBlock = (choice: AiChoice): HTMLElement[] => {
       const parts: HTMLElement[] = []
@@ -1967,44 +2080,7 @@ export function runSetup(opts: SetupOptions): {
         const text = el('div', 'text')
         text.append(el('strong', undefined, item.label), el('span', undefined, item.detail))
         li.append(mark, text)
-        if (item.action) {
-          const label =
-            item.action === 'claude-install' ||
-            item.action === 'chrome-install' ||
-            item.action === 'opencode-install' ||
-            item.action === 'codex-install'
-              ? m.install
-              : item.action === 'payg-key'
-                ? item.ok
-                  ? m.changeKey
-                  : m.addKey
-                : item.action === 'extension-install'
-                  ? m.howToAdd
-                  : item.action === 'codex-login'
-                    ? m.chatgptSignIn
-                    : m.signIn
-          const action = item.action
-          const b = button('btn-small', label, () => void act(action))
-          if (action === 'claude-login' && login.state === 'waiting') {
-            b.textContent = m.signingIn
-            b.disabled = true
-          }
-          const kind: InstallKind | undefined =
-            action === 'claude-install'
-              ? 'claude'
-              : action === 'chrome-install'
-                ? 'chrome'
-                : action === 'opencode-install'
-                  ? 'opencode'
-                  : action === 'codex-install'
-                    ? 'codex'
-                    : undefined
-          if (kind && installs[kind].state === 'running') {
-            b.textContent = m.installingBtn
-            b.disabled = true
-          }
-          li.append(b)
-        }
+        if (item.action) li.append(actionButton(item.action, item.ok))
         list.append(li)
       }
       parts.push(list)

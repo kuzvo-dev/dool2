@@ -1328,6 +1328,10 @@ button.side-row:hover {
 .settings-sec > .over {
   padding: 0;
 }
+/* The AI Dool2 uses: the choice keeps its own width */
+.settings-sec > .seg {
+  align-self: flex-start;
+}
 .about-links {
   display: flex;
   flex-wrap: wrap;

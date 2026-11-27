@@ -117,6 +117,12 @@ export const setupText = messages({
     todoLeft: (n: number) => `할 일이 ${n}개 남았어요. 아래 버튼으로 마저 준비해요.`,
     aiReady: '두리가 일할 준비가 다 됐어요.',
     secReady: '준비 상태',
+    secUseAi: '두리가 쓰는 AI',
+    /** The pay-as-you-go AI's name in that choice (Claude Code and Codex keep their names) */
+    paygAi: 'API 키 (종량제)',
+    useAiHint: '고른 AI가 다음 말부터 답해요. 대화는 그대로 이어지고, 하던 일은 원래 AI로 마저 끝내요.',
+    useAiOne: '연결된 AI가 하나예요. 다른 AI도 연결하면 여기서 바꿀 수 있어요.',
+    useAiNone: '아직 연결된 AI가 없어요. 아래에서 먼저 연결해 주세요.',
     secChrome: 'Chrome',
     chromeAutoOpen: 'Chrome 자동으로 열기',
     chromeAutoOpenOn:
@@ -411,6 +417,12 @@ export const setupText = messages({
         : `${n} things left. Use the buttons below to finish.`,
     aiReady: 'Dool2 is ready to work.',
     secReady: 'Status',
+    secUseAi: 'The AI Dool2 uses',
+    paygAi: 'API key (pay-as-you-go)',
+    useAiHint:
+      'The one you pick answers from your next message. The chat carries on, and tasks already running finish on the AI they started with.',
+    useAiOne: 'One AI is connected. Connect another and you can switch here.',
+    useAiNone: 'No AI is connected yet. Connect one below first.',
     secChrome: 'Chrome',
     chromeAutoOpen: 'Open Chrome automatically',
     chromeAutoOpenOn:
