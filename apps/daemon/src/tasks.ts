@@ -589,7 +589,18 @@ export function taskListText(
       .filter(Boolean)
       .join('\n')
   }
-  return `${views.map(line).join('\n')}\nSteer a running or waiting task with task_steer, stop one with task_stop.`
+  // The conversation read an old task's "blocked, the user must update the extension" and said it again without
+  // trying, after the cause had been fixed (test PC 11-27): an ended result is how it was then
+  const ended = views.some((v) => (v.status === 'done' || v.status === 'stopped') && results.has(v.id))
+  return [
+    views.map(line).join('\n'),
+    ended
+      ? 'A result above that says something blocked it tells how it was then; blockers change (a fix, an update, a sign-in, a page reopened). When the user asks for it again, start a new task and try, instead of repeating the old blocker or the steps it asked of the user.'
+      : '',
+    'Steer a running or waiting task with task_steer, stop one with task_stop.',
+  ]
+    .filter(Boolean)
+    .join('\n')
 }
 
 /** What a task waiting for the user waits on: its open cards, else its last step */
