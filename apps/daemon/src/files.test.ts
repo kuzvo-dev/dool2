@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, readFileSync, symlinkSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, realpathSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { deflateSync } from 'node:zlib'
@@ -53,6 +53,20 @@ describe('PC 파일 도구', () => {
     expect((await tools.run('file_read', { path: '~/Desktop/link/a.txt' })).isError).toBe(true)
     expect((await tools.run('file_read', { path: '~/Documents/id_rsa' })).isError).toBe(true)
     expect((await tools.run('file_read', { path: '~/Documents/NPKI/signPri.key' })).isError).toBe(true)
+  })
+
+  it('on macOS keeps what Dool2 makes in the home folder, which needs no permission window', async () => {
+    const home = mkdtempSync(join(tmpdir(), 'dool2-files-'))
+    mkdirSync(join(home, 'Documents'))
+    const tools = new FileTools({ desktop: [], documents: [join(home, 'Documents')], downloads: [] }, home, {
+      dooriInHome: true,
+    })
+    const r = text(await tools.run('file_write', { name: '메모', kind: 'txt', text: 'a' }))
+    expect(r).toContain('메모.txt')
+    expect(readFileSync(join(home, '두리', '메모.txt'), 'utf8')).toBe('a')
+    // Still inside the fence: it can be read, linked and sent to the phone
+    expect(tools.readable(join(home, '두리', '메모.txt'))).toBe(true)
+    expect(tools.dooriDir()).toBe(join(realpathSync(home), '두리'))
   })
 
   it('replace: 두리 폴더의 같은 이름 파일은 고쳐 쓰고, 사용자가 고른 폴더는 그래도 덮어쓰지 않는다', async () => {

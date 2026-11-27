@@ -40,3 +40,15 @@ What is blocked:
 - We added **Pictures and Movies (Videos on Windows)** to the folders that can be seen. The fences are the same: check the real path, exclude hidden folders, certificates, keys and password files. App bundle folders such as the Photos library (.photoslibrary and so on) are skipped when searching
 - `browser_upload`: puts a file from these folders into a web page's file field (blog photos, Shorts, civil complaints, insurance documents). Because it sends my file to that site, **the first time needs an approval card (file name, size, site, screen)**, and the same file to the same site is not asked again for 30 minutes after approval. It only attaches; posting or submitting is separate (the send and submit buttons go through the existing approval gate)
 - The extension puts the path in as is through Chrome DevTools (`DOM.setFileInputFiles`), and for sites that create the field when clicked it intercepts the file chooser dialog (`Page.setInterceptFileChooserDialog`) so no dialog appears on the PC. If file access is off for the extension, Chrome blocks it, so the daemon sends the file in 600 KB pieces and builds it into a file inside the page (up to 300 MB in total on this route)
+
+## Update 2026-11-27: on macOS, Dool2's own folder lives in the home folder
+
+What Dool2 makes (documents, PDFs from `browser_save_pdf`, pictures, videos) went to `Documents/두리`. On macOS,
+Documents, Desktop and Downloads open a permission window that only someone at the PC can answer. On the test PC a
+certificate PDF waited on it while the person was away, and Dool2 asked them to change System Settings from the phone.
+
+- On macOS the folder is now `~/두리` in the home folder, which needs no permission. Windows and Linux keep
+  `Documents/두리`.
+- `~/두리` is inside the fence like the user folders: files there can be read, linked and sent to the phone.
+- Reading the person's own files (`file_find` in Desktop, Documents, Downloads) still needs their permission; that
+  stays a step on the PC.

@@ -139,7 +139,7 @@ import { ConnectorHealth } from './connector-health.js'
 import { Connectors } from './connectors.js'
 import { EXEC_EXT } from './download.js'
 import { cleanName, freeName } from './file-names.js'
-import { DOORI_FOLDER, ensureLocal, FileTools, htmlText, type UserFolders } from './files.js'
+import { ensureLocal, FileTools, htmlText, type UserFolders } from './files.js'
 import { FINISH_CHECK_ON, FinishCheck, JUDGE_SYSTEM } from './finish-check.js'
 import { handBack, waitsForPerson } from './hand-back.js'
 import { type HandsCaller, HandsProcess } from './hands.js'
@@ -847,6 +847,8 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
   // PC file tools (ADR 0022·0024). Tests can change the folders. Moving (several files) and printing use the same approval card
   const fileTools = new FileTools(opts.fileFolders, undefined, {
     lang,
+    // On macOS what Dool2 makes goes in ~/DOORI_FOLDER, which needs no permission window (tests that give folders keep theirs)
+    dooriInHome: !opts.fileFolders && process.platform === 'darwin',
     approvals: browserTools.approvals,
     movesLog: join(paths.dataDir, 'file-moves.json'),
     // Looks at what Doori was doing before sleep (answering chats, service connections). It is built below, so it is read when called
@@ -868,10 +870,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
       const r = await fileTools.uploadable(list)
       return 'error' in r ? r : r.files.map((f) => f.path)
     },
-    saveDir: () => {
-      const docs = fileTools.dir('documents')
-      return docs ? join(docs, DOORI_FOLDER) : undefined
-    },
+    saveDir: () => fileTools.dooriDir(),
     show: (p) => fileTools.shown(p),
     onMade: (f) => fileTools.onWritten?.(f),
     ...(opts.shrinkImage
@@ -885,10 +884,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
       const r = await fileTools.uploadable(list)
       return 'error' in r ? r : r.files.map((f) => f.path)
     },
-    saveDir: () => {
-      const docs = fileTools.dir('documents')
-      return docs ? join(docs, DOORI_FOLDER) : undefined
-    },
+    saveDir: () => fileTools.dooriDir(),
     show: (p) => fileTools.shown(p),
     onMade: (f) => fileTools.onWritten?.(f),
     ...(opts.shrinkImage
@@ -908,10 +904,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
       })
     },
     downloadsDir: () => fileTools.dir('downloads'),
-    saveDir: () => {
-      const docs = fileTools.dir('documents')
-      return docs ? join(docs, DOORI_FOLDER) : undefined
-    },
+    saveDir: () => fileTools.dooriDir(),
     show: (p) => fileTools.shown(p),
     onMade: (f) => fileTools.onWritten?.(f),
     // Picture shown in the chat bubble: kept in the same place as sent photos (photos/) and the phone and PC fetch it as "photo:name"
@@ -935,10 +928,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
       })
     },
     downloadsDir: () => fileTools.dir('downloads'),
-    saveDir: () => {
-      const docs = fileTools.dir('documents')
-      return docs ? join(docs, DOORI_FOLDER) : undefined
-    },
+    saveDir: () => fileTools.dooriDir(),
     show: (p) => fileTools.shown(p),
     onMade: (f) => fileTools.onWritten?.(f),
     // One frame sheet per second (Doori looks at it to check) and a first-frame preview — only when the video component is present
@@ -3310,11 +3300,8 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
   // My info card: receive only once and keep it in the vault, and when saved, tell the chat to continue
   // A page kept as a PDF (browser_save_pdf: certificates and statements in a viewer): the Doori folder and the library
   browserTools.savePdf = async (name, pdf, preview) => {
-    const docs = fileTools.dir('documents')
-    // Documents first; macOS may not have let Dool2 into it yet, then Downloads
-    const dirs = [docs ? join(docs, DOORI_FOLDER) : undefined, fileTools.dir('downloads')].filter(
-      (d): d is string => Boolean(d),
-    )
+    // Dool2's folder first (on macOS it needs no permission), then Downloads
+    const dirs = [fileTools.dooriDir(), fileTools.dir('downloads')].filter((d): d is string => Boolean(d))
     let path = ''
     let file = ''
     for (const dir of dirs) {
