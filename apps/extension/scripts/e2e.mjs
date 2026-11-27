@@ -423,6 +423,23 @@ try {
     await assert.rejects(call('type', { tabId, ref: ref(/\[(e\d+) 비밀번호칸/), text: 'x' }), /vault/)
   })
 
+  await step('A page script reads and computes, and cannot act (ADR 0045)', async () => {
+    const r = await call('eval', {
+      tabId,
+      expression: "[...document.querySelectorAll('li b')].map((b) => b.textContent)",
+    })
+    assert.deepEqual(r.value, ['9,900원', '15,000원'])
+    const act = await call('eval', { tabId, expression: "document.querySelector('li button').click()" })
+    assert.match(String(act.error), /side.?effect/i)
+    assert.equal((await call('snapshot', { tabId })).title, '두리 시험 가게')
+  })
+
+  await step('DevTools: print to PDF is on the list, cookies are not', async () => {
+    const r = await call('cdp', { tabId, method: 'Page.printToPDF', params: {} })
+    assert.ok(Buffer.from(r.data, 'base64').subarray(0, 5).toString('latin1') === '%PDF-')
+    await assert.rejects(call('cdp', { tabId, method: 'Network.getCookies', params: {} }), /not on the list/)
+  })
+
   await step('Type and press Enter', async () => {
     const r = await call('type', { tabId, ref: ref(/\[(e\d+) 입력칸 "검색어"/), text: '사과', submit: true })
     assert.match(r.url, /\/search\?q=%EC%82%AC%EA%B3%BC/)

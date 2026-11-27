@@ -441,6 +441,10 @@ export const storeExtensionPage = (id: string) => `https://chromewebstore.google
 export const MIN_CONNECTOR_EXTENSION = '0.2.0'
 /** The extension version that prints a page to PDF (browser_save_pdf) */
 export const PDF_EXTENSION = '0.3.3'
+/** The extension version with side-effect-free page scripts and the read-only DevTools list (ADR 0045) */
+export const EVAL_EXTENSION = '0.3.4'
+
+export { READ_CDP_METHODS } from './cdp.js'
 
 /** Version comparison like "0.10.1" >= "0.2.0" */
 export function versionAtLeast(v: string, min: string): boolean {
@@ -497,6 +501,8 @@ export const BrowserCommandSchema = z.enum([
   'hover',
   /** The tab printed as a PDF {tabId} → {data: base64}, the way Chrome prints it (certificates in a viewer) */
   'pdf',
+  'eval',
+  'cdp',
   /**
    * Excludes tabs waiting for a person or approval from tab cleanup (sleeping, closing) for a set time (ms: 0 releases).
    * Only 3 tabs are kept, and a tab waiting for payment approval was closed when another tab opened (measured: Lotte Cinema)

@@ -3305,27 +3305,29 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
   }
   // My info card: receive only once and keep it in the vault, and when saved, tell the chat to continue
   // A page kept as a PDF (browser_save_pdf: certificates and statements in a viewer): the Doori folder and the library
-  browserTools.savePdf = async (name, pdf, preview) => {
-    // Dool2's folder first (on macOS it needs no permission), then Downloads
+  // Files made from a page (browser_save_pdf, browser_cdp): Dool2's folder first (on macOS it needs no permission),
+  // then Downloads, and the library
+  const keepPageFile = async (name: string, ext: string, data: Buffer, tool: string, preview?: string) => {
     const dirs = [fileTools.dooriDir(), fileTools.dir('downloads')].filter((d): d is string => Boolean(d))
     let path = ''
     let file = ''
     for (const dir of dirs) {
       try {
         await mkdir(dir, { recursive: true })
-        file = freeName(dir, `${cleanName(name).slice(0, 80) || 'document'}.pdf`)
-        await writeFile(join(dir, file), pdf)
+        file = freeName(dir, `${cleanName(name).slice(0, 80) || 'document'}.${ext}`)
+        await writeFile(join(dir, file), data)
         path = join(dir, file)
         break
       } catch {}
     }
-    if (!path)
-      throw new Error('Could not write to Documents or Downloads (macOS may not have allowed it yet)')
+    if (!path) throw new Error("Could not write to Dool2's folder or Downloads")
     const shown = fileTools.shown(path)
-    fileTools.onWritten?.({ name: file, kind: 'pdf', path: shown, ...(preview ? { image: preview } : {}) })
-    journal.write('file-tool', { tool: 'browser_save_pdf', ok: true })
+    fileTools.onWritten?.({ name: file, kind: ext, path: shown, ...(preview ? { image: preview } : {}) })
+    journal.write('file-tool', { tool, ok: true })
     return shown
   }
+  browserTools.savePdf = (name, pdf, preview) => keepPageFile(name, 'pdf', pdf, 'browser_save_pdf', preview)
+  browserTools.saveFile = (name, ext, data) => keepPageFile(name, ext, data, 'browser_cdp')
   browserTools.requestCode = (tabId, field, label, hint, host, kind, firstRef, image) => {
     const threadId = workingThread()
     // The last digits of the ID number: not stored, only put into this field

@@ -530,6 +530,8 @@ describe('tools on demand (ADR 0033)', () => {
       'browser_hover',
       'browser_upload',
       'browser_save_pdf',
+      'browser_eval',
+      'browser_cdp',
       'show_route',
       'goal_delete',
       'screen_status',
