@@ -42,11 +42,7 @@ import {
   pageMutRead,
   pageOptionPoint,
   pagePrintCleanup,
-  pagePrintFrameCopy,
-  pagePrintHook,
   pagePrintPrepare,
-  pagePrintTake,
-  pagePrintUnhook,
   pageReadOpens,
   pageRememberShown,
   pageRemoteInfo,
@@ -2591,68 +2587,6 @@ async function run(cmd: BrowserCommand, a: Record<string, unknown>): Promise<unk
         }
       } finally {
         if (prepared.count) await inPage(tabId, pagePrintCleanup).catch(() => undefined)
-      }
-    }
-    case 'printhook': {
-      // Before pressing the site's own print button: catch the print it asks for (pagePrintHook), every frame
-      const tabId = await ownedTab(a)
-      await chrome.scripting.executeScript({
-        target: { tabId, allFrames: true },
-        world: 'MAIN',
-        func: pagePrintHook,
-      })
-      return { ok: true }
-    }
-    case 'printtake': {
-      // After pressing it: wait for the print the site asked for, and bring back what it would print
-      const tabId = await ownedTab(a)
-      const until = Date.now() + Math.min(Math.max(Number(a.waitMs) || 30_000, 1_000), 60_000)
-      for (;;) {
-        const runs = await chrome.scripting
-          .executeScript({ target: { tabId, allFrames: true }, world: 'MAIN', func: pagePrintTake })
-          .catch(() => [])
-        const hit = runs.find((r) => r.result && r.result.calls > 0)
-        const got = hit ? { ...hit.result, frameId: hit.frameId } : undefined
-        if (got) {
-          await chrome.scripting
-            .executeScript({ target: { tabId, allFrames: true }, world: 'MAIN', func: pagePrintUnhook })
-            .catch(() => undefined)
-          if (got.via === 'page' && !got.frameId) {
-            // The site printed its page itself: the same print Chrome's "Save as PDF" makes, with the site's print styles
-            const r = await cdp<{ data: string }>(tabId, 'Page.printToPDF', {
-              printBackground: true,
-              preferCSSPageSize: true,
-            })
-            return { via: 'page', data: r.data, calls: got.calls }
-          }
-          // A frame printed itself: print its document, copied with its own styles into the page (Chrome prints only
-          // the top page)
-          if (got.via === 'page') {
-            const href = await chrome.scripting
-              .executeScript({ target: { tabId, frameIds: [got.frameId] }, func: () => location.href })
-              .then((r) => String(r[0]?.result ?? ''))
-              .catch(() => '')
-            const copied = href ? await inPage(tabId, pagePrintFrameCopy, href).catch(() => false) : false
-            if (!copied) return { ...got, via: 'frame-page' }
-            try {
-              const r = await cdp<{ data: string }>(tabId, 'Page.printToPDF', {
-                printBackground: true,
-                preferCSSPageSize: true,
-              })
-              return { via: 'frame', data: r.data, type: 'application/pdf', calls: got.calls }
-            } finally {
-              await inPage(tabId, pagePrintCleanup).catch(() => undefined)
-            }
-          }
-          return got
-        }
-        if (Date.now() > until) {
-          await chrome.scripting
-            .executeScript({ target: { tabId, allFrames: true }, world: 'MAIN', func: pagePrintUnhook })
-            .catch(() => undefined)
-          return { calls: 0 }
-        }
-        await sleep(800)
       }
     }
     case 'eval': {

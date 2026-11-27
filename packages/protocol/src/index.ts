@@ -506,8 +506,6 @@ export const BrowserCommandSchema = z.enum([
   'eval',
   'cdp',
   'update',
-  'printhook',
-  'printtake',
   /**
    * Excludes tabs waiting for a person or approval from tab cleanup (sleeping, closing) for a set time (ms: 0 releases).
    * Only 3 tabs are kept, and a tab waiting for payment approval was closed when another tab opened (measured: Lotte Cinema)

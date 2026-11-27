@@ -39,6 +39,11 @@ also grew narrow tools whose texts decide for the AI, and each gap became a new 
    - **Code in a sandbox** (`code_run`): JavaScript in a WebAssembly engine with no access to the PC, the network
      or secrets, with time and memory limits. For computing, converting and shaping data when no tool does it.
      Its output goes back to the AI, and files are made with `file_write`.
+   - **A site's own print, saved as a PDF** (`browser_save_pdf` with `print`, or `browser_click` on a print
+     button): Dool2 presses the site's print button, and the daemon's Mac helper picks "Save as PDF" in Chrome's print
+     window and saves into Dool2's folder. Certificates and receipts are printed the way the site lays them out,
+     not captured from the screen. Chrome stays refused to the AI's own PC hands (T20); this one fixed sequence is
+     the daemon's, and it only chooses the PDF destination and the save place (no printer, nothing sent out).
    - **Wider PC keys** (`screen_key`): letters, digits and function keys with modifiers in allowed apps. Combos
      that delete or quit are refused.
 2. **Tools are shortcuts.** Service tools (connectors), lookups and recipes stay the fast path. They are tried first,
