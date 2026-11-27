@@ -51,8 +51,8 @@ The store listing text is Korean data (the listing is Korean-language). It is ke
 | 0.3.3 | 2026-11-27 | Published (same day). Contents: `pdf` prints a tab as a PDF through the existing `debugger` permission (Page.printToPDF) so certificates and statements in a viewer can be kept as files (#617); no new permission |
 | 0.3.4 | 2026-11-27 | Published (same day). Contents: `eval` runs a side-effect-free script on a Dool2 tab (Runtime.evaluate with throwOnSideEffect) and `cdp` calls a fixed list of read-only DevTools methods (print to PDF, page archive, full capture, accessibility tree, loaded resources), both through the existing `debugger` permission (ADR 0045); no new permission |
 | 0.3.5 | 2026-11-27 | Published (same day). Contents: 0.3.4 plus `update`, which asks Chrome for a newer store version now (`runtime.requestUpdateCheck`) and reloads when it is ready, asked by the daemon only while idle; and site alerts a popup showed right before closing go to the tab that opened it (a verification window's "details do not match"). No new permission |
-| 0.3.6 | 2026-11-27 | Submitted, publishes itself after review. Contents: `pdf` prints only the document a viewer shows (its page canvases, images or SVGs, one per A4 sheet) instead of the whole tab with the viewer's toolbar and buttons; `only: 'page'` keeps the whole tab. No new permission |
-| 0.3.7 | 2026-11-27 | To submit. Contents: Dool2's on-page cursor marker is hidden in print, so a site's print saved through Chrome's print window holds the page alone. The unused print hook is removed. |
+| 0.3.6 | 2026-11-27 | Published (same day). Contents: `pdf` prints only the document a viewer shows (its page canvases, images or SVGs, one per A4 sheet) instead of the whole tab with the viewer's toolbar and buttons; `only: 'page'` keeps the whole tab. No new permission |
+| 0.3.7 | 2026-11-27 | Submitted, publishes itself after review. Contents: Dool2's on-page cursor marker is hidden in print, so a site's print saved through Chrome's print window holds the page alone. The unused print hook is removed. |
 
 ### Permission reason (Privacy practices tab)
 
