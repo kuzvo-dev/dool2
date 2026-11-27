@@ -3209,12 +3209,13 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
   const infoRequests = new InfoRequests()
   infoRequests.onCreate = (request) => {
     void link.broadcast({ kind: 'info-request', request })
+    if (request.quiet) return
     void link
       .notify({
         title:
           request.field === 'form'
             ? m().infoFormTitle
-            : `${request.site}: ${request.field === 'otp' ? m().needCode : request.field === 'tap' ? m().needTap : m().needInput}`,
+            : `${request.site}: ${request.field === 'otp' ? m().needCode : request.field === 'tap' ? m().needTap : request.field === 'choice' ? m().needChoice : m().needInput}`,
         body: request.hint ?? request.label,
         tag: `info-${request.id}`,
         url: '',
@@ -3754,9 +3755,18 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
   browserTools.notifyUser = (title, body) =>
     void link.notify({ title, body, tag: 'auth-wait', url: '#tab=chat' }).catch(() => {})
   // Waiting for verification approval: when [I verified] is tapped on the phone card, Doori presses the site's [Verified] once
-  browserTools.askAuthDone = (host, label, hint) => {
+  browserTools.askAuthDone = (host, label, hint, site) => {
     const answer = infoRequests.ask(
-      { site: host || m().siteEasyAuth, host, field: 'choice', label, hint, options: [m().easyAuthDone] },
+      {
+        site: site || host || m().siteEasyAuth,
+        host,
+        field: 'choice',
+        label,
+        hint,
+        options: [m().easyAuthDone],
+        // browser_wait_auth already sent the one notification for this request
+        quiet: true,
+      },
       200_000,
     )
     const id = infoRequests.pending().at(-1)?.id
