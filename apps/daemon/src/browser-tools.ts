@@ -1539,18 +1539,28 @@ export class BrowserTools {
       }
       case 'save_pdf': {
         if (!this.savePdf) throw new Error('Saving a PDF is not available on this PC')
-        const r = (await this.browser.call('pdf', { tabId }, 60_000).catch((e: Error) => {
-          // An extension from before 0.3.3 (the Chrome Web Store copy updates a few days after a release) has no pdf
-          // It told the AI to wait for the update, and Dool2 stopped there on Sonnet and Opus alike (test PC 11-27):
-          // now it says what else to try first, and the daemon tells the conversation when the update arrives
-          if (/Unknown command/.test(e.message)) {
-            this.pdfTooOld?.(tabId)
-            throw new Error(
-              "This PC's Dool2 Chrome extension is an older version that cannot print a page to PDF yet (the Chrome Web Store copy updates by itself within days; Dool2 is told the moment it does, so you can save this page then: leave its tab open). Do not stop at this. Look for another way to get the file now: a download, save or PDF button in the viewer (read the whole page, frames too, and the other tabs with browser_tabs), the issued-documents list, or the site's own option to get the document as a file or an electronic certificate. Do not ask the user to print or save it on the PC, and never send them to chrome://extensions, developer mode or an update button: the store copy cannot be hurried and updating Dool2 is not their job. Saving needs no folder permission (it goes to the Dool2 folder). Other requests that end in a PDF (another certificate) are still worth doing up to the open document: say the PDF follows by itself once the extension updates. A picture copy (browser_screenshot) is the last resort, and only when the user wants something now: say it is a copy, not the issued file.",
-            )
-          }
-          throw e
-        })) as { data?: string }
+        const r = (await this.browser
+          .call(
+            'pdf',
+            {
+              tabId,
+              ...(typeof a.ref === 'string' ? { ref: a.ref } : {}),
+              ...(a.whole === true ? { only: 'page' } : {}),
+            },
+            60_000,
+          )
+          .catch((e: Error) => {
+            // An extension from before 0.3.3 (the Chrome Web Store copy updates a few days after a release) has no pdf
+            // It told the AI to wait for the update, and Dool2 stopped there on Sonnet and Opus alike (test PC 11-27):
+            // now it says what else to try first, and the daemon tells the conversation when the update arrives
+            if (/Unknown command/.test(e.message)) {
+              this.pdfTooOld?.(tabId)
+              throw new Error(
+                "This PC's Dool2 Chrome extension is an older version that cannot print a page to PDF yet (the Chrome Web Store copy updates by itself within days; Dool2 is told the moment it does, so you can save this page then: leave its tab open). Do not stop at this. Look for another way to get the file now: a download, save or PDF button in the viewer (read the whole page, frames too, and the other tabs with browser_tabs), the issued-documents list, or the site's own option to get the document as a file or an electronic certificate. Do not ask the user to print or save it on the PC, and never send them to chrome://extensions, developer mode or an update button: the store copy cannot be hurried and updating Dool2 is not their job. Saving needs no folder permission (it goes to the Dool2 folder). Other requests that end in a PDF (another certificate) are still worth doing up to the open document: say the PDF follows by itself once the extension updates. A picture copy (browser_screenshot) is the last resort, and only when the user wants something now: say it is a copy, not the issued file.",
+              )
+            }
+            throw e
+          })) as { data?: string; part?: string; pages?: number }
         const pdf = Buffer.from(r.data ?? '', 'base64')
         // A blank print (a viewer that draws into a plugin or blocks printing) is a few KB of empty pages
         if (pdf.length < 3_000)
@@ -1569,7 +1579,11 @@ export class BrowserTools {
           content: [
             {
               type: 'text',
-              text: `Saved the page as a PDF (${Math.round(pdf.length / 1024)} KB, the way Chrome prints it): ${path}. It is in the library too. Tell the user where it is; no print window and no printer were used.`,
+              text: `${
+                r.part === 'document'
+                  ? `Saved only the document as a PDF (${r.pages} A4 page${r.pages === 1 ? '' : 's'}, without the viewer's toolbar and buttons)`
+                  : "Saved the whole page as a PDF the way Chrome prints it (nothing on it looked like a document's pages; if the viewer's toolbar is in it, call again with ref set to the document element)"
+              } (${Math.round(pdf.length / 1024)} KB): ${path}. It is in the library too. Tell the user where it is; no print window and no printer were used.`,
             },
           ],
         }

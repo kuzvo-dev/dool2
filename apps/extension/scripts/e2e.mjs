@@ -37,6 +37,12 @@ const PAGES = {
 <div class="hidden"><button>숨은 버튼</button></div>
 
 </body></html>`,
+  '/viewer': `<!doctype html><html lang="ko"><head><meta charset="utf-8"><title>증명서 보기</title></head><body style="margin:0;background:#888">
+<div id="bar" style="height:40px;background:#eee">TOOLBAR <button>인쇄</button></div>
+<canvas id="doc" width="714" height="1010" style="display:block;margin:10px auto;background:#fff"></canvas>
+<button id="close">닫기</button>
+<script>const c=document.getElementById('doc').getContext('2d');c.fillStyle='#fff';c.fillRect(0,0,714,1010);c.fillStyle='#000';c.font='40px sans-serif';c.fillText('CERTIFICATE',200,200)</script>
+</body></html>`,
   '/login': `<!doctype html><title>로그인</title><h1>로그인</h1>
 <form action="/welcome" method="get"><label>아이디 <input name="id"></label> <label>비밀번호 <input type="password" name="pw"></label> <button>로그인</button></form>`,
   '/popup': '<!doctype html><title>새 창</title><h1>새 창이에요</h1>',
@@ -432,6 +438,23 @@ try {
     const act = await call('eval', { tabId, expression: "document.querySelector('li button').click()" })
     assert.match(String(act.error), /side.?effect/i)
     assert.equal((await call('snapshot', { tabId })).title, '두리 시험 가게')
+  })
+
+  await step('Saving a viewer as PDF prints only the document, not its toolbar (0.3.6)', async () => {
+    const v = await call('open', { url: `${base}/viewer` })
+    const r = await call('pdf', { tabId: v.tabId })
+    assert.equal(r.part, 'document')
+    assert.equal(r.pages, 1)
+    assert.ok(Buffer.from(r.data, 'base64').subarray(0, 5).toString('latin1') === '%PDF-')
+    // Nothing is left on the page afterwards
+    assert.equal(
+      (await call('eval', { tabId: v.tabId, expression: "!!document.getElementById('dool2-print-only')" }))
+        .value,
+      false,
+    )
+    const whole = await call('pdf', { tabId: v.tabId, only: 'page' })
+    assert.equal(whole.part, 'page')
+    await call('close', { tabId: v.tabId })
   })
 
   await step('Asking Chrome for an update answers with a status (0.3.5)', async () => {
