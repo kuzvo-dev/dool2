@@ -5,6 +5,7 @@ import {
   claimsDone,
   donePage,
   FinishCheck,
+  JUDGE_SYSTEM,
   judgePrompt,
   parseVerdict,
   sameBlocker,
@@ -108,6 +109,12 @@ describe('끝내기 전 검사', () => {
       kind: 'stop',
       reason: 'rounds',
     })
+  })
+
+  it("never counts keeping Dool2 itself working as the person's part", () => {
+    // 11-27: "open chrome://extensions, turn on developer mode and press update" was passed as done
+    expect(JUDGE_SYSTEM).toContain("Keeping Dool2 itself working is never the person's part")
+    expect(JUDGE_SYSTEM).toContain('chrome://')
   })
 
   it('keeps going while the judge gives a way not tried yet, and says when a turn tried nothing', async () => {

@@ -188,6 +188,9 @@ describe('브라우저 도구 실행', () => {
     // It used to say "tell them you will save it once the extension updates", and Dool2 stopped there (11-27)
     expect(text(r)).toContain('Do not stop at this')
     expect(text(r)).toContain('download, save or PDF button')
+    // The certificate run sent the person to chrome://extensions developer mode, and said Documents blocked saving
+    expect(text(r)).toContain('never send them to chrome://extensions')
+    expect(text(r)).toContain('does not need the Documents folder')
     expect(told).toEqual([3])
   })
 
