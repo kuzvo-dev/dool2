@@ -447,11 +447,11 @@ try {
     assert.equal(r.pages, 1)
     assert.ok(Buffer.from(r.data, 'base64').subarray(0, 5).toString('latin1') === '%PDF-')
     // Nothing is left on the page afterwards
-    assert.equal(
-      (await call('eval', { tabId: v.tabId, expression: "!!document.getElementById('dool2-print-only')" }))
-        .value,
-      false,
-    )
+    const left = await call('eval', {
+      tabId: v.tabId,
+      expression: "document.querySelectorAll('#dool2-print-only, #dool2-print-style').length",
+    })
+    assert.equal(left.value, 0, left.error)
     const whole = await call('pdf', { tabId: v.tabId, only: 'page' })
     assert.equal(whole.part, 'page')
     await call('close', { tabId: v.tabId })
