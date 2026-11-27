@@ -6,6 +6,7 @@ import { spawn } from 'node:child_process'
 import { randomBytes } from 'node:crypto'
 import { existsSync } from 'node:fs'
 import { mkdir } from 'node:fs/promises'
+import { join } from 'node:path'
 import { type AgentRuntime, runOnce, type TurnInput } from '@dool2/engine'
 import type { Lang } from '@dool2/i18n'
 import type { AgentEvent, AgentStatus } from '@dool2/protocol'
@@ -69,6 +70,39 @@ export class OpenCodeRuntime implements AgentRuntime {
       status.plan = `${account.provider} · ${account.model}`
     } else status.problem = t.needKey
     return status
+  }
+
+  /**
+   * The models this runner can use, per provider (`opencode models`), for the model list on the key form. Listing
+   * needs no real key (each provider is given a placeholder so it is listed); undefined when the runner is not
+   * installed or cannot tell
+   */
+  async models(): Promise<Record<string, string[]> | undefined> {
+    const bin = this.bin()
+    if (!bin) return undefined
+    const home = join(this.opts.dir, 'models-home')
+    await mkdir(home, { recursive: true }).catch(() => undefined)
+    const base = buildOpenCodeEnv({
+      home,
+      password: 'list-only',
+      config: {},
+      provider: 'openrouter',
+      apiKey: 'list-only',
+    })
+    const env = { ...base, ...Object.fromEntries(Object.values(PROVIDER_ENV).map((k) => [k, 'list-only'])) }
+    const r = await runOnce(bin, ['models', '--standalone'], { env, cwd: home, timeoutMs: 45_000 }).catch(
+      () => undefined,
+    )
+    if (!r) return undefined
+    const out: Record<string, string[]> = {}
+    for (const line of r.stdout.split('\n')) {
+      const m = /^([a-z0-9-]+)\/(\S+)$/.exec(line.trim())
+      if (!m?.[1] || !m[2] || !PROVIDER_ENV[m[1]]) continue
+      const list = out[m[1]] ?? []
+      list.push(m[2])
+      out[m[1]] = list
+    }
+    return Object.keys(out).length ? out : undefined
   }
 
   async *runTurn(input: TurnInput): AsyncGenerator<AgentEvent> {

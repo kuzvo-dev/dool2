@@ -49,6 +49,11 @@ describe('auto-approve', () => {
     expect(isPayment({ kind: 'money' })).toBe(true)
     expect(isPayment({ kind: 'contact', amount: '15,900원' })).toBe(true)
     expect(isPayment({ kind: 'contact' })).toBe(false)
+    // A free item with "free" or "0 won" in the amount is not a payment
+    expect(isPayment({ kind: 'contact', amount: '무료' })).toBe(false)
+    expect(isPayment({ kind: 'contact', amount: '0원' })).toBe(false)
+    expect(isPayment({ kind: 'contact', amount: '$0.00' })).toBe(false)
+    expect(isPayment({ kind: 'contact', amount: '1,000원' })).toBe(true)
     expect(autoCovers(true, { kind: 'money' })).toBe(false)
     expect(autoCovers(false, { kind: 'contact' })).toBe(false)
   })

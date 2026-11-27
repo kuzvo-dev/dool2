@@ -31,6 +31,7 @@ Note: the JSON examples and Korean strings in this guide are service text and ke
 | `signedIn` | (Optional) 1 to 5 phrases visible only to logged-in people. If these phrases are visible while connecting, it counts as login finished |
 | `account` | (Optional) Where the signed-in account shows ([ADR 0041](../docs/decisions/0041-connection-is-an-account.md)): `url` a page that shows it (`{{account}}` becomes the account, for services that keep several accounts side by side), `pattern` a regular expression whose group 1 is the account as typed on the sign-in form, `pick` (Google-style services) the provider's account chooser, so the person picks or adds an account there instead of typing a password. Fill it only after seeing the real signed-in page |
 | `hints` | (Optional) 1 to 3 short lines of tips for working in the browser while no connector exists yet (search addresses and so on). Remove them once a connector exists |
+| `aliases` | (Optional) Up to 10 words people use for the service without naming it, in the card's language (`비행기` "flight" for a flight search, `운송장` "tracking number" for parcels). A request with one of them goes to the service's lookup tool at once instead of a browser task |
 | `regions` | Where the service is for: `KR`, `JP`, `TW`, or `global` for services that work anywhere with the same account. Omitted = `KR`. The connect screen lists the user's region and `global` first, and the rest under "Other regions" ([ADR 0029](../docs/decisions/0029-language-and-region.md)) |
 | `i18n.en` | English for the people-facing fields: `name` (official brand spelling), `login`, `summary`, `example`, and `abilities` (`title`, `say` only, same number and order as `abilities`). Write the Korean card first; maintainers can fill the English if you only write Korean |
 
@@ -80,7 +81,7 @@ Write this for each tool. The AI sees only the name, description, input fields, 
 
 Filling: `{{keyword}}`, only when there is a value `{{#max_price}}&toPrice={{max_price}}{{/max_price}}`, only when there is none `{{^id}}…{{/id}}` (a group can contain groups of other names), filters `|url` `|digits` `|json` `|re` `|yymmdd` (261127) `|yyyy` `|mm`·`|m` (03·3) `|dd`·`|d` (07·7) `|ms` (milliseconds of Korean midnight that day) `|mmdd` (11.27) `|dow` (금, Friday) `|kday` (오늘·내일·11.27: today, tomorrow, 11.27) `|ampm` (오후 7:30: 7:30 PM) `|dec` (subtract 1 from a number: `{{today|yyyy|dec}}` = last year). The always-present name is `today`.
 
-Every action can take an `if`: if the filled text is empty, that step is skipped. Example: `"if": "{{#item}}{{^found.0}}1{{/found.0}}{{/item}}"` = only when there is a search term and nothing was found earlier (Coupang order search looks through the last 6 months → this year → last year … and stops at the year where it finds it).
+Every action can take an `if`: if the filled text is empty, that step is skipped. With `ifMatch` (a regular expression) the step also needs the filled text to match it: `"if": "{{invoice|digits}}", "ifMatch": "^\\d{13}$"` runs only for 13-digit numbers (parcel tracking opens only the carriers whose numbers have that length). Example: `"if": "{{#item}}{{^found.0}}1{{/found.0}}{{/item}}"` = only when there is a search term and nothing was found earlier (Coupang order search looks through the last 6 months → this year → last year … and stops at the year where it finds it).
 
 ## Safety rules (checked by tests)
 
@@ -186,8 +187,11 @@ Of 95 services and 332 tools, **113 tools have been verified on real sites**. Th
 | Telecom | [KT M Mobile](kt-mmobile/tools.json) | 5 | `plans` |
 | Telecom | [LG U+](lguplus/tools.json) | 5 | `plans` |
 | Telecom | [SKT T World](skt/tools.json) | 5 | `plans` |
+| Travel | [Naver Flights](naver-flight/tools.json) | 1 | `search` |
 | Life | [CJ Logistics](cj-logistics/tools.json) | 1 | `track` |
-| Life | [Naver](naver/tools.json) | 5 | `news`, `shopping`, `stock`, `orders`, `bookings` |
+| Life | [Parcel tracking (any carrier)](parcel/tools.json) | 1 | `track` |
+| Life | [Weather](weather/tools.json) | 1 | `forecast` |
+| Life | [Naver](naver/tools.json) | 6 | `news`, `shopping`, `stock`, `crypto`, `orders`, `bookings` |
 | Life | [Donghaeng Lottery](dhlottery/tools.json) | 4 | `results` |
 | Life | [Revu](revu/tools.json) | 4 | `trending` |
 | Life | [Non-covered medical fees (HIRA)](hira/tools.json) | 1 | `nonpay` |

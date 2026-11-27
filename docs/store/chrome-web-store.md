@@ -47,7 +47,10 @@ The store listing text is Korean data (the listing is Korean-language). It is ke
 | 0.2.0 | 2026-11-17 | Published (confirmed 2026-11-23) |
 | 0.3.0 | 2026-11-23 | Published, unlisted (confirmed 2026-11-24). Contents: screen viewing, mouse, tab cleanup, build fingerprint, artwork tile slot (@center), new permission `contentSettings` |
 | 0.3.1 | 2026-11-24 | Published, unlisted (confirmed 2026-11-25). Contents: a page is ready when its content shows, not after every ad (#437); no new permission |
-| 0.3.2 | 2026-11-25 | Submitted, pending review (auto-publish after passing). Contents: `open` can open a tab in the background, so a lookup task reads beside a running task without bringing its tab to the front (#525); no new permission |
+| 0.3.2 | 2026-11-25 | Published (installed from the store on the test PC, confirmed 2026-11-27). Contents: `open` can open a tab in the background, so a lookup task reads beside a running task without bringing its tab to the front (#525); no new permission |
+| 0.3.3 | 2026-11-27 | Published (same day). Contents: `pdf` prints a tab as a PDF through the existing `debugger` permission (Page.printToPDF) so certificates and statements in a viewer can be kept as files (#617); no new permission |
+| 0.3.4 | 2026-11-27 | Published (same day). Contents: `eval` runs a side-effect-free script on a Dool2 tab (Runtime.evaluate with throwOnSideEffect) and `cdp` calls a fixed list of read-only DevTools methods (print to PDF, page archive, full capture, accessibility tree, loaded resources), both through the existing `debugger` permission (ADR 0045); no new permission |
+| 0.3.5 | 2026-11-27 | Submitted, publishes itself after review. Contents: 0.3.4 plus `update`, which asks Chrome for a newer store version now (`runtime.requestUpdateCheck`) and reloads when it is ready, asked by the daemon only while idle; and site alerts a popup showed right before closing go to the tab that opened it (a verification window's "details do not match"). No new permission |
 
 ### Permission reason (Privacy practices tab)
 

@@ -17,9 +17,12 @@ import {
   route,
   TRIM_EVERY,
 } from './core.js'
+import { handlePush } from './push.js'
 
 export interface Env {
   ROOMS: DurableObjectNamespace<RelayRoom>
+  /** Firebase service account JSON for store app notifications (ADR 0042). `wrangler secret put FCM_SERVICE_ACCOUNT` */
+  FCM_SERVICE_ACCOUNT?: string
 }
 
 /** Room name (PC id) is 16 bytes of the signing public key hash in base64url -> 22 chars */
@@ -29,6 +32,7 @@ export default {
   async fetch(req: Request, env: Env): Promise<Response> {
     const url = new URL(req.url)
     if (url.pathname === '/healthz') return new Response('ok')
+    if (url.pathname === '/push') return handlePush(req, { account: env.FCM_SERVICE_ACCOUNT })
     if (url.pathname !== '/link') return new Response('Not found', { status: 404 })
     if (req.headers.get('upgrade')?.toLowerCase() !== 'websocket')
       return new Response('WebSocket only', { status: 426 })

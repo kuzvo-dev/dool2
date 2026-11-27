@@ -47,6 +47,25 @@ describe('task specs', () => {
     ).toMatchObject({ browser: true, lookup: true })
   })
 
+  it('a second try of a stopped job starts from what the first found', () => {
+    const b = new TaskBoard()
+    const t = b.create('th', 'seg', spec())
+    expect(taskBrief(t, 'en')).not.toContain('earlier try')
+    t.earlier = { id: 't12', status: 'stopped', answer: "Stopped: the site needs the father's name." }
+    const brief = taskBrief(t, 'en')
+    expect(brief).toContain('An earlier try of this job (t12, stopped)')
+    expect(brief).toContain("the site needs the father's name")
+    expect(brief).toContain('ask for that first')
+  })
+
+  it('a browser task hears which basic items of my info are not saved, never their values', () => {
+    const t = new TaskBoard().create('th', 'seg', spec())
+    t.missingInfo = ['birth', 'carrier']
+    const brief = taskBrief(t, 'en')
+    expect(brief).toContain('My info has nothing saved yet for: birth, carrier')
+    expect(brief).toContain('browser_request_profile')
+  })
+
   it('the brief shows only its title to people and gives the AI the whole spec', () => {
     const b = new TaskBoard()
     const t = b.create('th', 'seg', spec({ known: ['2 adults'], avoid: ['over 100,000 won'] }))
@@ -230,6 +249,9 @@ describe('notes passed on while a task works', () => {
     expect(text).toContain('t1 "Train": working')
     expect(text).toContain('t2 "Hotel": done 1 min ago')
     expect(text).toContain('do not say it is missing): Booked hotel X')
+    // An ended result is how it was then: asked again, try again instead of repeating its blocker (11-27)
+    expect(text).toContain('start a new task and try')
+    expect(taskListText(b, new Map(), 61_000)).not.toContain('start a new task and try')
   })
 
   it('task_list names the card a waiting task has open, or its last step', () => {

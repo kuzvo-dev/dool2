@@ -11,7 +11,10 @@ export const CLAIM_KR = new RegExp(
   [
     `${ACT_KR}\\s*(?:을|를|도)?\\s*(?:했|해\\s*(?:뒀|두었|드렸|놨|놓았)|마쳤|끝냈|완료(?:했|됐|되었))(?:어요|습니다|어|다)`,
     `${ACT_KR}\\s*(?:이|가|은|는)?\\s*(?:완료|접수|처리)\\s*(?:됐|되었)(?:어요|습니다|어|다)`,
-    '(?:보냈|부쳤|넣었|걸어\\s*(?:뒀|두었))(?:어요|습니다|어|다)',
+    '(?:보냈|부쳤|걸어\\s*(?:뒀|두었))(?:어요|습니다|어|다)',
+    // "넣었어요" alone is also "I put it in the dining group" (a card summary was sent back for it, test PC 11-27):
+    // only an application, order or booking put in counts
+    `${ACT_KR}(?:서)?\\s*(?:을|를)?\\s*넣었(?:어요|습니다|어|다)`,
   ].join('|'),
 )
 

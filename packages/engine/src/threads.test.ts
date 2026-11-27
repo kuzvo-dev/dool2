@@ -405,6 +405,34 @@ describe('ThreadService', () => {
   })
 })
 
+describe('단계 자세히가 기록에 실린다', () => {
+  it('describe가 준 자세히를 단계에 싣고, 같은 줄이 이어지면 덧붙인다', () => {
+    let t = 0
+    const log = new WorkLog(
+      () => t,
+      undefined,
+      undefined,
+      'ko',
+      (name) =>
+        name.endsWith('open')
+          ? [{ k: 'url', v: 'a.example' }]
+          : name.endsWith('click')
+            ? [{ k: 'press', v: '다음' }]
+            : undefined,
+    )
+    log.tool('mcp__dool2__browser_open', '', { url: 'https://a.example' })
+    expect(log.lastDetail()).toEqual([{ k: 'url', v: 'a.example' }])
+    t = 10
+    log.tool('mcp__dool2__browser_click', '', { tabId: 1 })
+    t = 20
+    const steps = log.record()?.steps ?? []
+    expect(steps.flatMap((s) => s.detail ?? [])).toEqual([
+      { k: 'url', v: 'a.example' },
+      { k: 'press', v: '다음' },
+    ])
+  })
+})
+
 describe('일한 과정 기록 (WorkLog)', () => {
   it('혼잣말 한 줄, 없으면 도구 이름으로 단계를 쌓고 걸린 시간을 잰다', () => {
     let t = 1000

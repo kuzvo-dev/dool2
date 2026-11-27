@@ -27,6 +27,14 @@ export const ON_DEMAND_TOOLS = [
   'pc_screen',
   'browser_hover',
   'browser_upload',
+  // A page kept as a PDF (certificates and statements in a viewer): tool_find("pdf") or ("save") brings it
+  'browser_save_pdf',
+  // A script that reads and computes on a page (ADR 0045): a long read's note names it; tool_find("script") brings it
+  'browser_eval',
+  // DevTools that read or produce (ADR 0045): tool_find("devtools"), ("archive") or ("resource") brings it
+  'browser_cdp',
+  // Code in a sandbox (ADR 0045): tool_find("code"), ("calculate") or ("convert") brings it
+  'code_run',
   'show_route',
   'goal_delete',
   // PC app control (screen_*, 5 to 47 calls each). One tool_find("screen") brings the whole group
@@ -53,6 +61,8 @@ export const ON_DEMAND_TOOLS = [
   'idea_suggest',
   // Which AI and API key Dool2 runs on: asked about now and then, changed only in the PC settings
   'ai_account_view',
+  // Forgetting remembered steps (ADR 0044): only when the user asks
+  'recipe_forget',
 ] as const
 
 interface Held {

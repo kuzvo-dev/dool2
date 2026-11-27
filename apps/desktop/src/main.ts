@@ -23,6 +23,7 @@ import {
   Menu,
   nativeImage,
   nativeTheme,
+  powerMonitor,
   powerSaveBlocker,
   safeStorage,
   shell,
@@ -372,6 +373,9 @@ app.whenReady().then(async () => {
       : {}),
   })
   daemon = d
+  // Sleep and wake: the phones hear it at once ("the PC went to sleep") instead of guessing why it went quiet
+  powerMonitor.on('suspend', () => d.setSleeping(true))
+  powerMonitor.on('resume', () => d.setSleeping(false))
   // For tests: write the daemon address and window token to a file (0600) to drive the packaged app from outside. Only with this env var
   if (process.env.DOOL2_API_INFO)
     await writeFile(process.env.DOOL2_API_INFO, JSON.stringify({ url: d.url, token: d.token }), {

@@ -9,6 +9,18 @@
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
     },
+    "./cdp": {
+      "types": "./dist/cdp.d.ts",
+      "default": "./dist/cdp.js"
+    },
+    "./doori-draw": {
+      "types": "./dist/doori-draw.d.ts",
+      "default": "./dist/doori-draw.js"
+    },
+    "./doori-look": {
+      "types": "./dist/doori-look.d.ts",
+      "default": "./dist/doori-look.js"
+    },
     "./e2e": {
       "types": "./dist/e2e.d.ts",
       "default": "./dist/e2e.js"

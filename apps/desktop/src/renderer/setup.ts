@@ -10,14 +10,28 @@ import type {
   LinkStatus,
   PairStatus,
   PaygAccount,
+  PaygModel,
   PaygProvider,
   ScreenControlStatus,
   Settings,
   VaultEntry,
 } from '@dool2/protocol'
-import { type IconName, icon } from './dom.js'
+import { doori, type IconName, icon, setDooriLook } from './dom.js'
+import {
+  DOORI_BODIES,
+  DOORI_COLORS,
+  DOORI_EYES,
+  DOORI_FACES,
+  DOORI_HATS,
+  DOORI_NECKS,
+  DOORI_PATTERNS,
+  type DooriLook,
+  drawDoori,
+  randomLook,
+} from './doori-draw.js'
 import type { Lang } from './i18n.js'
 import { lang, switchLang } from './lang.js'
+import { dooriText } from './locales/doori-maker.js'
 import { authAppText, LANG_NAMES, profileExamples, profileLabels, setupText } from './locales/setup.js'
 import { AUTH_APPS } from './region/kr/auth-apps.js'
 import { hyphenate } from './rich.js'
@@ -29,6 +43,7 @@ import {
   choices,
   noSubscriptionFound,
   pickDefault,
+  priceLabel,
   SETUP_STEPS,
   type SetupStep,
   type UpdateInfo,
@@ -69,7 +84,7 @@ export interface SetupOptions {
 }
 
 /** Sections of the Settings screen */
-export type SettingsTab = 'general' | 'ai' | 'phone' | 'vault' | 'me' | 'apps' | 'about'
+export type SettingsTab = 'general' | 'doori' | 'ai' | 'phone' | 'vault' | 'me' | 'apps' | 'about'
 
 type InstallKind = 'claude' | 'chrome' | 'opencode' | 'codex'
 
@@ -175,6 +190,8 @@ export function runSetup(opts: SetupOptions): {
     opencode: { state: 'idle' },
     codex: { state: 'idle' },
   }
+  /** When each download's percent was first seen, for the time left (installPanel) */
+  const seen = new Map<InstallKind, { at: number; pct: number }>()
   const installTimers: Partial<Record<InstallKind, ReturnType<typeof setTimeout>>> = {}
   let codeDraft = ''
   // Pay-as-you-go API key input
@@ -189,6 +206,8 @@ export function runSetup(opts: SetupOptions): {
     account?: PaygAccount | null
     /** Asking "remove the saved key?" */
     removing?: boolean
+    /** Words typed to narrow a long model list */
+    find?: string
   } = { open: false, providers: [], provider: 'anthropic', model: '', key: '', saving: false }
   // Choices on the "keep Dool2 running" step (both on by default, the user can turn them off)
   let awakeWorking = current.keepAwake ? current.keepAwake !== 'off' : true
@@ -556,6 +575,7 @@ export function runSetup(opts: SetupOptions): {
         const todo = checklist(choice ?? 'both', agents, chrome, extension).filter((x) => !x.ok).length
         const tabs: [SettingsTab, IconName, string, string?][] = [
           ['general', 'gear', m.tabGeneral],
+          ['doori', 'heart', dooriText(lang).myDoori],
           ['ai', 'brain', m.tabAi, !loading && todo ? String(todo) : undefined],
           ['phone', 'phone', m.tabPhone],
           ['vault', 'lock', m.tabVault],
@@ -572,7 +592,8 @@ export function runSetup(opts: SetupOptions): {
             root.scrollTop = 0
             render()
           })
-          b.replaceChildren(icon(ic, 'i md'), el('span', 'grow', label))
+          // My Doori shows Doori itself (in the user's look) instead of a line icon
+          b.replaceChildren(id === 'doori' ? doori('', 22) : icon(ic, 'i md'), el('span', 'grow', label))
           if (badge) b.append(el('span', 'settings-badge', badge))
           if (id === settingsTab) {
             b.classList.add('on')
@@ -688,7 +709,10 @@ export function runSetup(opts: SetupOptions): {
         else if (settingsTab === 'me') body.append(head(m.tabMe, m.meSub), sec(m.secMe, undefined, meBlock()))
         else if (settingsTab === 'apps')
           body.append(head(m.tabApps, m.appsSub), sec(m.secApps, undefined, screenBlock()))
-        else {
+        else if (settingsTab === 'doori') {
+          const d = dooriText(lang)
+          body.append(head(d.title, d.sub), ...dooriBlock())
+        } else {
           const links = el('div', 'about-links')
           for (const [label, url] of [
             [m.siteLink, 'https://dool2.com'],
@@ -1680,15 +1704,43 @@ export function runSetup(opts: SetupOptions): {
         render()
       }
       const prov = payg.providers.find((p) => p.id === payg.provider)
+      // Each model with its price per million tokens, in won for Korean (people paying per use pick by price)
+      const money = (usd: number) => (usd === 0 ? m.modelFree : priceLabel(usd))
+      const optionText = (x: PaygModel) =>
+        [
+          x.recommended && !x.label.includes(m.modelPick) ? `${x.label} · ${m.modelPick}` : x.label,
+          x.inPerM !== undefined && x.outPerM !== undefined
+            ? m.modelPrice(money(x.inPerM), money(x.outPerM))
+            : '',
+        ]
+          .filter(Boolean)
+          .join(' — ')
+      const find = (payg.find ?? '').trim().toLowerCase()
+      const models = (prov?.models ?? []).filter(
+        (x) => !find || x.id === payg.model || `${x.label} ${x.id}`.toLowerCase().includes(find),
+      )
       const modelSel = el('select')
-      for (const m of prov?.models ?? []) {
-        const o = el('option', undefined, m.label)
-        o.value = m.id
-        o.selected = m.id === payg.model
+      for (const x of models) {
+        const o = el('option', undefined, optionText(x))
+        o.value = x.id
+        o.selected = x.id === payg.model
         modelSel.append(o)
       }
       modelSel.onchange = () => {
         payg.model = modelSel.value
+      }
+      const findBox = el('input')
+      findBox.type = 'search'
+      findBox.placeholder = m.modelFind
+      findBox.value = payg.find ?? ''
+      findBox.oninput = () => {
+        payg.find = findBox.value
+        const first = (prov?.models ?? []).find((x) =>
+          `${x.label} ${x.id}`.toLowerCase().includes(findBox.value.trim().toLowerCase()),
+        )
+        if (first && findBox.value.trim()) payg.model = first.id
+        render()
+        document.querySelector<HTMLInputElement>('.key-form input[type=search]')?.focus()
       }
       const key = el('input')
       key.id = 'payg-key'
@@ -1707,7 +1759,14 @@ export function runSetup(opts: SetupOptions): {
         l.append(input)
         return l
       }
-      form.append(label(m.aiCompany, provSel), label(m.model, modelSel), label(m.apiKey, key))
+      const long = (prov?.models.length ?? 0) > 12
+      form.append(
+        label(m.aiCompany, provSel),
+        ...(long ? [findBox] : []),
+        label(m.model, modelSel),
+        el('p', 'setup-hint', m.modelPriceHint),
+        label(m.apiKey, key),
+      )
       form.onsubmit = (e) => {
         e.preventDefault()
         void savePayg()
@@ -1780,6 +1839,111 @@ export function runSetup(opts: SetupOptions): {
       return box
     }
 
+    /** My Doori (Settings): dress Doori like the phone's sheet (apps/phone/src/app/doori-maker.ts). Each pick
+     * redraws every Doori in this window at once and is kept in settings (dooriLook), which tells the phones too */
+    const dooriBlock = (): HTMLElement[] => {
+      const d = dooriText(lang)
+      const look: DooriLook = current.dooriLook ?? {}
+      const names: Record<string, string> = {
+        'body:square': d.bodySquare,
+        'body:round': d.bodyRound,
+        'body:tall': d.bodyTall,
+        'body:wide': d.bodyWide,
+        'body:bean': d.bodyBean,
+        'eyes:pill': d.eyesPill,
+        'eyes:sparkle': d.eyesSparkle,
+        'eyes:dot': d.eyesDot,
+        'eyes:wink': d.eyesWink,
+        'eyes:sleepy': d.eyesSleepy,
+        'hat:beret': d.hatBeret,
+        'hat:cap': d.hatCap,
+        'hat:beanie': d.hatBeanie,
+        'hat:crown': d.hatCrown,
+        'hat:chef': d.hatChef,
+        'hat:grad': d.hatGrad,
+        'hat:sprout': d.hatSprout,
+        'hat:headset': d.hatHeadset,
+        'hat:bow': d.hatBow,
+        'face:round': d.faceRound,
+        'face:square': d.faceSquare,
+        'face:sun': d.faceSun,
+        'face:mono': d.faceMono,
+        'neck:tie': d.neckTie,
+        'neck:scarf': d.neckScarf,
+        'neck:bandana': d.neckBandana,
+        'neck:badge': d.neckBadge,
+        'pattern:spots': d.patSpots,
+        'pattern:belly': d.patBelly,
+        'pattern:stripe': d.patStripe,
+      }
+      const apply = (next: DooriLook) => {
+        setDooriLook(next)
+        current = { ...current, dooriLook: next }
+        void save({ dooriLook: next })
+      }
+      const stage = el('div', 'dm-stage')
+      const actions = el('div', 'dm-actions')
+      actions.append(
+        button('btn-small', d.random, () => apply(randomLook())),
+        button('btn-ghost sm', d.reset, () => apply({})),
+      )
+      stage.append(doori('', 150), actions)
+      const group = (title: string, ...items: HTMLElement[]) => {
+        const box = el('section', 'settings-sec')
+        const opts = el('div', 'dm-opts')
+        opts.append(...items)
+        box.append(el('h2', 'over', title), opts)
+        return box
+      }
+      const colors = Object.entries(DOORI_COLORS).map(([k, v]) => {
+        const b = button(`dm-color${(look.color ?? 'mint') === k ? ' on' : ''}`, '', () =>
+          apply({ ...look, color: k }),
+        )
+        b.setAttribute('aria-label', k)
+        b.style.background = v
+        return b
+      })
+      type Part = 'body' | 'eyes' | 'hat' | 'face' | 'neck'
+      // Picture options: each shows Doori wearing it
+      const pics = (part: Part, values: readonly string[], withNone: boolean) =>
+        [...(withNone ? [''] : []), ...values].map((v) => {
+          const cur = look[part] ?? (part === 'body' ? 'square' : part === 'eyes' ? 'pill' : '')
+          const preview: DooriLook = {
+            ...look,
+            [part]: v,
+            ...(part === 'body' || part === 'eyes' ? { hat: '', face: '', neck: '' } : {}),
+          }
+          const b = button(`dm-pic${cur === v ? ' on' : ''}`, '', () => apply({ ...look, [part]: v }))
+          const mini = el('span', 'dm-mini')
+          mini.innerHTML = drawDoori(preview)
+          b.append(mini, el('span', undefined, v ? (names[`${part}:${v}`] ?? v) : d.none))
+          return b
+        })
+      const chip = (label: string, on: boolean, onClick: () => void) => {
+        const b = button(`chip quiet${on ? ' on' : ''}`, label, onClick)
+        b.setAttribute('aria-pressed', String(on))
+        return b
+      }
+      return [
+        stage,
+        group(d.color, ...colors),
+        group(d.body, ...pics('body', Object.keys(DOORI_BODIES), false)),
+        group(d.eyes, ...pics('eyes', DOORI_EYES, false)),
+        group(
+          d.extra,
+          chip(d.cheeks, look.cheeks === true, () => apply({ ...look, cheeks: !look.cheeks })),
+          ...['', ...DOORI_PATTERNS].map((p) =>
+            chip(p ? (names[`pattern:${p}`] ?? p) : d.noPattern, (look.pattern ?? '') === p, () =>
+              apply({ ...look, pattern: p }),
+            ),
+          ),
+        ),
+        group(d.hat, ...pics('hat', DOORI_HATS, true)),
+        group(d.face, ...pics('face', DOORI_FACES, true)),
+        group(d.neck, ...pics('neck', DOORI_NECKS, true)),
+      ]
+    }
+
     /** One on/off row */
     const toggleRow = (label: string, detail: string, on: boolean, onClick: () => void) => {
       const li = el('li', on ? 'ok' : 'todo')
@@ -1797,7 +1961,7 @@ export function runSetup(opts: SetupOptions): {
     const checksBlock = (choice: AiChoice): HTMLElement[] => {
       const parts: HTMLElement[] = []
       const list = el('ul', 'checks')
-      for (const item of checklist(choice, agents, chrome, extension)) {
+      for (const item of checklist(choice, agents, chrome, extension, { withKey: step === 'settings' })) {
         const li = el('li', item.ok ? 'ok' : 'todo')
         const mark = el('span', 'mark')
         const text = el('div', 'text')
@@ -1926,8 +2090,29 @@ export function runSetup(opts: SetupOptions): {
       return panel
     }
 
+    /**
+     * Minutes left of a download, from how fast its percent moved since it was first seen (120 MB took 5 minutes on a
+     * slow line with only a percent shown, first-run test 11-26). Undefined until there is enough to tell
+     */
+    const st0 = (kind: InstallKind): number | undefined => {
+      const st = installs[kind]
+      if (st.state !== 'running' || st.phase !== 'download' || st.percent === undefined) {
+        seen.delete(kind)
+        return undefined
+      }
+      const first = seen.get(kind)
+      if (!first) {
+        seen.set(kind, { at: Date.now(), pct: st.percent })
+        return undefined
+      }
+      const moved = st.percent - first.pct
+      const secs = (Date.now() - first.at) / 1000
+      if (moved < 3 || secs < 10) return undefined
+      return Math.floor(((100 - st.percent) * secs) / moved / 60)
+    }
     /** Install progress for a component (Claude Code, Chrome) */
     const installPanel = (kind: InstallKind) => {
+      const left = st0(kind)
       const info = INSTALLS[kind]
       const st = installs[kind]
       const panel = el('div', 'login-panel')
@@ -1944,7 +2129,7 @@ export function runSetup(opts: SetupOptions): {
       if (st.state !== 'running') return panel
       const label: Record<string, string> = {
         prepare: m.phasePrepare,
-        download: m.phaseDownload(st.percent),
+        download: m.phaseDownload(st.percent, left),
         verify: m.phaseVerify,
         setup: m.phaseSetup,
       }

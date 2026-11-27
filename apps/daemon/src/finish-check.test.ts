@@ -5,6 +5,7 @@ import {
   claimsDone,
   donePage,
   FinishCheck,
+  JUDGE_SYSTEM,
   judgePrompt,
   parseVerdict,
   sameBlocker,
@@ -110,6 +111,34 @@ describe('끝내기 전 검사', () => {
     })
   })
 
+  it("never counts keeping Dool2 itself working as the person's part", () => {
+    // 11-27: "open chrome://extensions, turn on developer mode and press update" was passed as done
+    expect(JUDGE_SYSTEM).toContain("Keeping Dool2 itself working is never the person's part")
+    expect(JUDGE_SYSTEM).toContain('chrome://')
+  })
+
+  it('keeps going while the judge gives a way not tried yet, and says when a turn tried nothing', async () => {
+    // The family certificate (test PC 11-27): same blocker, no new tool, but each verdict had another way to try
+    const blocked = 'PDF가 아직 저장되지 않았고 저장 경로도 알리지 못했어요'
+    const v = (next: string) => JSON.stringify({ done: false, why: blocked, next })
+    const j = say(
+      v('증명서 창의 인쇄 화면에서 PDF로 저장을 시도해요'),
+      v('문서 폴더 대신 다운로드 폴더에 저장해 봐요'),
+      v('발급 화면에서 전자증명서로 받는 길을 찾아봐요'),
+      v('발급 화면에서 전자증명서로 받는 길을 찾아봐요'),
+    )
+    const c = new FinishCheck({ ask: j.ask, baseCycles: 2, maxCycles: 6 })
+    c.begin('t', '가족관계증명서 PDF로 저장해줘')
+    expect((await c.check('t', { answer: 'a', tools: ['browser_save_pdf'] })).kind).toBe('again')
+    const second = await c.check('t', { answer: 'b', tools: [] })
+    expect(second.kind).toBe('again')
+    // That turn called no tool: the next note says nothing was tried
+    expect(second.kind === 'again' && second.note).toContain('called no tool')
+    expect((await c.check('t', { answer: 'c', tools: ['browser_read'] })).kind).toBe('again')
+    // The same way again and no new tool: nothing left to try
+    expect((await c.check('t', { answer: 'd', tools: ['browser_read'] })).kind).toBe('stop')
+  })
+
   it('같은 이유로 두 번 막히면 멈춘다', async () => {
     const v = '{"done":false,"why":"통신사를 몰라 약정 만료일을 못 봤어요"}'
     const j = say(v, v)
@@ -210,6 +239,7 @@ describe('false completion, caught by code (no judge)', () => {
       '결제 완료했어요',
       '엄마에게 문자 보냈어요.',
       '예약이 완료됐어요',
+      '신청서를 넣었어요',
       'I booked a table for two at 7.',
       "I've sent the message to Mina.",
       'Your order has been placed.',
@@ -222,6 +252,8 @@ describe('false completion, caught by code (no judge)', () => {
       '문자는 안 보냈어요',
       '예약하지 않았어요. 시간을 골라 주세요.',
       '3곳을 비교했어요.',
+      // A card summary, not an action (test PC 11-27)
+      '쿠팡이츠는 배달이라 식당으로 넣었어요.',
       'I could not book it: the site asks for a phone check.',
       'Shall I order it?',
     ])

@@ -84,6 +84,10 @@ export function sameSignIn(typed: string, shown: string): boolean {
  * Opens the card's account page and reads who is signed in. With `expected`, says whether it is that account.
  * Closes the tab it opened
  */
+/** Addresses of sign-in pages a signed-out visit is sent to */
+const SIGN_IN_PAGE =
+  /[/.?=](login|signin|sign-in|sign_in|auth|nidlogin|accountlogin)[/.?&=#]|ServiceLogin|AccountChooser/i
+
 export async function readAccount(
   browser: AccountBrowser,
   card: Card,
@@ -103,6 +107,8 @@ export async function readAccount(
         text: string
       }
       who = accountIn(card, page)
+      // Sent to a sign-in page: nobody is signed in, no need to look again
+      if (!who && SIGN_IN_PAGE.test(page.url)) break
     }
     if (!who) return expected && perAccount(card) ? { state: 'none' } : { state: 'unknown' }
     if (!expected || sameSignIn(expected, who)) return { state: 'match', who }

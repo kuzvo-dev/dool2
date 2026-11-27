@@ -1,5 +1,13 @@
 import { describe, expect, it } from 'vitest'
-import { checkConnector, checkInput, connectorToolName, fill, fillValue, onSite } from './connector.js'
+import {
+  checkConnector,
+  checkInput,
+  connectorTips,
+  connectorToolName,
+  fill,
+  fillValue,
+  onSite,
+} from './connector.js'
 
 const tool = (over: Record<string, unknown> = {}) => ({
   name: 'search',
@@ -102,6 +110,29 @@ describe('커넥터 검사', () => {
     expect(p).toMatch(/example 1 is missing keyword/)
     expect(p).toMatch(/wrong in example 1 is not an input field/)
     expect(p).toMatch(/extra in result is not in output/)
+  })
+
+  it('사람을 사이트로 보내는 말은 잡고, 그러지 않는다는 말은 둔다', () => {
+    const sends = (over: Record<string, unknown>) =>
+      check([tool(over)])
+        .filter((x) => /sends the person to the site/.test(x))
+        .join('\n')
+    expect(sends({ next: '마음에 들면 사이트에서 직접 예매하세요.' })).toMatch(/next sends/)
+    expect(sends({ next: 'Then book it on the site.' })).toMatch(/next sends/)
+    expect(
+      sends({
+        steps: [{ open: 'https://www.demo.co.kr/' }, { stop_if: '{{x}}', say: '앱에서 확인해 주세요.' }],
+      }),
+    ).toMatch(/step 2 say sends/)
+    expect(sends({ next: '예약 준비를 제안해요. 사이트에서 직접 하라고 하지 않아요.' })).toBe('')
+    expect(sends({ next: '예약은 korail_prepare_booking으로 준비하고 승인을 받아요.' })).toBe('')
+  })
+
+  it('조회 도구가 있는데 aliases가 없으면 팁만 준다', () => {
+    const c = { id: 'demo', tools: [tool()] }
+    expect(connectorTips({}, c).join('\n')).toMatch(/no aliases/)
+    expect(connectorTips({ aliases: ['데모'] }, c)).toEqual([])
+    expect(connectorTips({}, { id: 'demo', tools: [tool({ login: true })] })).toEqual([])
   })
 })
 

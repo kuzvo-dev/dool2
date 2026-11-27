@@ -959,5 +959,38 @@ export function memorySeg(ctx: LifeCtx): HTMLElement[] {
         ),
       )
   }
+  // Steps remembered for requests asked more than once (ADR 0044)
+  const recipes = ctx.life?.recipes ?? []
+  if (recipes.length) {
+    out.push(h('p', { class: 'meta seg-note', text: L.recipesNote }))
+    for (const r of recipes)
+      out.push(
+        h(
+          'div',
+          { class: 'act-row' },
+          h('span', { class: 'tile sm amber' }, icon('list', 'i')),
+          h(
+            'span',
+            { class: 'row-text' },
+            h('span', { class: 'row-t', text: r.ask }),
+            h('span', {
+              class: 'row-d',
+              text: [r.steps.join(' → '), L.recipeTimes(r.ok), shortTime(r.lastAt)]
+                .filter(Boolean)
+                .join(' · '),
+            }),
+          ),
+          h(
+            'button',
+            {
+              class: 'fbtn small',
+              label: L.delete,
+              onclick: () => ctx.act({ action: 'recipe-delete', id: r.id }),
+            },
+            icon('trash'),
+          ),
+        ),
+      )
+  }
   return out
 }

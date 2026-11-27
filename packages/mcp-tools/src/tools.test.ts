@@ -529,6 +529,10 @@ describe('tools on demand (ADR 0033)', () => {
       'pc_screen',
       'browser_hover',
       'browser_upload',
+      'browser_save_pdf',
+      'browser_eval',
+      'browser_cdp',
+      'code_run',
       'show_route',
       'goal_delete',
       'screen_status',
@@ -550,6 +554,7 @@ describe('tools on demand (ADR 0033)', () => {
       'feed_post',
       'idea_suggest',
       'ai_account_view',
+      'recipe_forget',
     ])
   })
 

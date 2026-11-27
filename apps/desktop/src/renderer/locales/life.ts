@@ -274,6 +274,9 @@ export const lifeText = messages({
     knowDone: '끝남',
     knowNext: (when: string) => `${when} 챙김`,
     knowOngoing: '진행 중',
+    recipesAbout:
+      '여러 번 해 본 부탁이에요. 비슷한 부탁이 오면 이 순서대로 해서 더 빨리 끝내요. 이 PC에만 저장돼요.',
+    recipeTimes: (n: number) => `${n}번 해 봄`,
     loading: ' 받는 중…',
     activityEmpty: '아직 한 일이 없어요',
   },
@@ -436,6 +439,9 @@ export const lifeText = messages({
     knowDone: 'Done',
     knowNext: (when: string) => `Check ${when}`,
     knowOngoing: 'In progress',
+    recipesAbout:
+      'Requests Dool2 has done more than once. When you ask something like them, it follows the same steps to finish faster. Stored only on this PC.',
+    recipeTimes: (n: number) => `Done ${n} times`,
     loading: ' Loading…',
     activityEmpty: 'Nothing done yet',
   },

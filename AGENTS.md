@@ -55,8 +55,10 @@ Details are in [docs/architecture.md](docs/architecture.md) and [docs/open-sourc
 - **It must be easy for users.** If a terminal, admin rights or developer jargon reaches the user, redesign it.
 - **Never get blocked in the browser.** Use the real Chrome at human speed, and hand CAPTCHAs and identity
   checks to the person. Never try to get around them.
-- **The AI uses only Dool2 tools.** The agent's shell, file and web features are off, and `pay` and `contact`
-  run only with a signature from the phone.
+- **The AI works through Dool2 tools, and those tools are broad.** The agent's own shell, file and web
+  features are off, and `pay` and `contact` run only with a signature from the phone. Dool2's hands are general
+  (reading and producing from pages, code in a sandbox, PC apps) so it can find its own way; safety sits at the
+  actions that are hard to undo, not at what it may try ([ADR 0045](docs/decisions/0045-tools-are-shortcuts.md)).
 - **Run official programs unmodified.** Dool2 does not handle Claude Code sign-in or tokens.
 - User-facing copy follows the Dool2 persona ([docs/persona.md](docs/persona.md)) in every language, in plain
   words people already use.
@@ -74,12 +76,15 @@ Details are in [docs/architecture.md](docs/architecture.md) and [docs/open-sourc
   screen, and the security boundaries stay the same. Secrets such as passwords and card numbers are never given
   to the AI, only masked values or names. Things that are hard to undo (money, contacting people, deleting)
   go through approval.
-- **Fix by sharpening tools, not by adding instructions.** When Dool2 gets something wrong, do not add a rule
-  to the global prompt (`prompts/persona.md`, ADR 0040). First ask: "Which tool would have let the AI get this
-  right on its own?" Then build or improve that tool. Tool descriptions say when to use the tool. Input fields
-  hold what is easy to forget (deadlines, conditions). Results say what to do next, why something got blocked
-  and what was not seen. Domain tips live in that tool's or service card's description. Keep code that forces
-  behavior minimal, and shrink the global prompt over time. Confirm the effect by rerunning only the failures
-  you fixed, before and after.
+- **Dool2 thinks; tools are shortcuts, not limits** ([ADR 0045](docs/decisions/0045-tools-are-shortcuts.md)).
+  When Dool2 gets something wrong or gives up, do not add a rule to the global prompt (`prompts/persona.md`,
+  ADR 0040). First ask: "What would have let Dool2 find its own way?" Usually that is a broad capability it lacked,
+  or a fact a result left out. Add a narrow tool when it makes a common path faster, and make it fall back to the
+  broad hands when it fails. Tool results state what happened, why, and what is possible next; they never say
+  "stop", "do not try other ways" or "tell the user to do it" (only the safety orders: approvals, hand-offs for
+  CAPTCHAs and identity checks, secrets). Tool descriptions say when to use the tool, and input fields hold what is
+  easy to forget. Domain tips live in that tool's or service card's description. Keep the global prompt small, and
+  never let Dool2 get slower unmeasured: rerun the failures you fixed, before and after, for how often it gave up
+  and how long it took.
 - Changes to the architecture come with an [architecture decision record (ADR)](docs/decisions/README.md). If a security
   assumption changes, update the [threat model](docs/security/threat-model.md) too.

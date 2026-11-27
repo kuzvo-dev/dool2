@@ -58,6 +58,18 @@ export interface HarnessNumbers {
   }
   approvals: { asked: number; askedInTasks: number; auto: number; autoHeld: number }
   handoffs: { made: number; notMade: number; used?: number }
+  /**
+   * Recipes (ADR 0044): requests that ended done, split by how many times their steps had got a request done before
+   * (first = new steps, again = seen before, offered = a recipe was on the message), with time and tool calls per request
+   */
+  recipes: {
+    first: { ms: Dist; tools: Dist }
+    again: { ms: Dist; tools: Dist }
+    offered: { ms: Dist; tools: Dist }
+    followed: number
+    offers: number
+    forgot: number
+  }
 }
 
 /** Tools that put an approval card in front of the person */
@@ -139,6 +151,11 @@ export function aggregateHarness(entries: JournalEntry[]): HarnessNumbers {
   }
   const approvals = { asked: 0, askedInTasks: 0, auto: 0, autoHeld: 0 }
   const handoffs: HarnessNumbers['handoffs'] = { made: 0, notMade: 0 }
+  const req = { first: [[], []], again: [[], []], offered: [[], []] } as Record<
+    'first' | 'again' | 'offered',
+    [number[], number[]]
+  >
+  const recipeCounts = { followed: 0, offers: 0, forgot: 0 }
   let from: string | undefined
   let to: string | undefined
 
@@ -237,6 +254,21 @@ export function aggregateHarness(entries: JournalEntry[]): HarnessNumbers {
         else handoffs.notMade++
         break
       }
+      case 'recipe': {
+        if (e.event === 'offered') recipeCounts.offers++
+        else if (e.event === 'forgot') recipeCounts.forgot++
+        else if (e.event === 'done') {
+          const ms = num(e.ms)
+          const tools = num(e.tools)
+          if (ms === undefined || tools === undefined) break
+          const before = num(e.before) ?? -1
+          const k = (num(e.offered) ?? 0) > 0 ? 'offered' : before > 0 ? 'again' : 'first'
+          req[k][0].push(ms)
+          req[k][1].push(tools)
+          if (e.followed === true) recipeCounts.followed++
+        }
+        break
+      }
       case 'segment': {
         if (e.handoff === 'ready') handoffs.used = (handoffs.used ?? 0) + 1
         else handoffs.used ??= 0
@@ -285,6 +317,12 @@ export function aggregateHarness(entries: JournalEntry[]): HarnessNumbers {
     finish,
     approvals,
     handoffs,
+    recipes: {
+      first: { ms: dist(req.first[0]), tools: dist(req.first[1]) },
+      again: { ms: dist(req.again[0]), tools: dist(req.again[1]) },
+      offered: { ms: dist(req.offered[0]), tools: dist(req.offered[1]) },
+      ...recipeCounts,
+    },
   }
 }
 
@@ -482,5 +520,20 @@ export function renderHarness(n: HarnessNumbers, s: HarnessStatic, o: RenderOpti
     `  made ${h.made} · not made ${h.notMade} · used ${h.used ?? 'n/a'}` +
       ` · made but never used ${h.used === undefined ? 'n/a (no segment records yet)' : Math.max(0, h.made - h.used)}`,
   )
+
+  out.push('')
+  out.push('Recipes (requests that ended done, ADR 0044)')
+  const r = n.recipes
+  if (r) {
+    for (const [k, label] of [
+      ['first', 'new steps'],
+      ['again', 'seen before'],
+      ['offered', 'recipe offered'],
+    ] as const) {
+      out.push(`  ${label.padEnd(15)} time: ${distLine(r[k].ms, secs)}`)
+      out.push(`  ${''.padEnd(15)} tool calls: ${distLine(r[k].tools)}`)
+    }
+    out.push(`  offered on ${r.offers} messages · followed ${r.followed} · forgotten ${r.forgot}`)
+  } else out.push('  n/a')
   return out.join('\n')
 }

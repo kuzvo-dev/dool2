@@ -3,6 +3,7 @@
 // - It only touches tabs Dool2 opened. Tabs the user opened are left alone
 // - Clicks and typing go through chrome.debugger (CDP Input), the same as real input
 import type { BridgeRequest, BrowserCommand } from '@dool2/protocol'
+import { READ_CDP_METHODS } from '@dool2/protocol/cdp'
 import { type FrameNode, layoutFrames, screenOrder } from './frames.js'
 import { staleBuild } from './fresh.js'
 import { keyDef, pickPath, safeUrl } from './keys.js'
@@ -459,13 +460,37 @@ chrome.tabs.onReplaced.addListener((added, removed) => {
     if (s.owned.includes(removed)) s.owned = [...s.owned.filter((t) => t !== removed), added]
   })
 })
+/** The daemon asked for an update (command update): apply it as soon as Chrome has it */
+let updateWanted = false
+chrome.runtime.onUpdateAvailable.addListener(() => {
+  if (updateWanted) chrome.runtime.reload()
+})
+/** Which tab opened which (popups such as a verification window): a closed popup's site alerts go to its opener */
+const openers = new Map<number, number>()
 chrome.webNavigation.onCreatedNavigationTarget.addListener((d) => {
+  openers.set(d.tabId, d.sourceTabId)
   adopt(d.sourceTabId, d.tabId)
 })
 chrome.tabs.onCreated.addListener((tab) => {
-  if (tab.id !== undefined && tab.openerTabId !== undefined) adopt(tab.openerTabId, tab.id)
+  if (tab.id !== undefined && tab.openerTabId !== undefined) {
+    openers.set(tab.id, tab.openerTabId)
+    adopt(tab.openerTabId, tab.id)
+  }
 })
 chrome.tabs.onRemoved.addListener(async (tabId) => {
+  // Alerts a popup showed right before it closed (a verification window saying the details did not match) were lost
+  // with it, and Dool2 asked for the same verification three times (test PC 11-27): hand them to the opener tab
+  const opener = openers.get(tabId)
+  openers.delete(tabId)
+  const left = dialogNotes.get(tabId)
+  if (opener !== undefined && left?.length)
+    dialogNotes.set(
+      opener,
+      [
+        ...(dialogNotes.get(opener) ?? []),
+        ...left.map((d) => ({ ...d, message: `(in the window that closed) ${d.message}` })),
+      ].slice(-5),
+    )
   let had = false
   await update((s) => {
     had = s.owned.includes(tabId)
@@ -1872,6 +1897,17 @@ async function run(cmd: BrowserCommand, a: Record<string, unknown>): Promise<unk
       setTimeout(() => chrome.runtime.reload(), 200)
       return { ok: true }
     }
+    case 'update': {
+      // The store copy asks Chrome for a newer version now instead of waiting for Chrome's own check every few hours
+      // (11-27: the store had 0.3.3 for hours while the test PC still ran 0.3.2). The daemon asks only while idle; when
+      // the download is ready the extension reloads itself and greets the daemon again
+      updateWanted = true
+      const r = (await chrome.runtime.requestUpdateCheck()) as unknown as {
+        status?: string
+        version?: string
+      }
+      return { status: r?.status ?? 'unknown', ...(r?.version ? { version: r.version } : {}) }
+    }
     case 'open': {
       const url = safeUrl(a.url)
       if (!url) throw new Error('Only http and https addresses can be opened')
@@ -2522,6 +2558,68 @@ async function run(cmd: BrowserCommand, a: Record<string, unknown>): Promise<unk
         if (shot) shots.push({ what: r.what, data: shot.data })
       }
       return { shots }
+    }
+    case 'pdf': {
+      // The page as a PDF, the way Chrome prints it (certificates and statements open in a viewer page): Dool2 keeps
+      // it as a file. Only a tab Dool2 opened
+      const tabId = await ownedTab(a)
+      const r = await cdp<{ data: string }>(tabId, 'Page.printToPDF', {
+        printBackground: true,
+        preferCSSPageSize: true,
+      })
+      return { data: r.data }
+    }
+    case 'eval': {
+      // A script on a page Dool2 opened, evaluated side-effect free by V8 (ADR 0045, T31): it can read and compute,
+      // and throws if it would click, type, change the page, store anything or call the network
+      const tabId = await ownedTab(a)
+      const expression = String(a.expression ?? '')
+      if (!expression.trim() || expression.length > 20_000)
+        throw new Error('Give a script of up to 20,000 characters')
+      // Never hand a password field's value to the AI (T15): only while none holds one
+      const pw = await cdp<{ result: { value?: unknown } }>(tabId, 'Runtime.evaluate', {
+        expression: `[...document.querySelectorAll('input[type=password]')].some((i) => i.value !== '')`,
+        returnByValue: true,
+        throwOnSideEffect: true,
+      }).catch(() => ({ result: { value: true } }))
+      if (pw.result.value !== false)
+        throw new Error('A password field on this page holds a value, so scripts do not run here')
+      const r = await cdp<{
+        result: { type: string; value?: unknown; description?: string }
+        exceptionDetails?: { text?: string; exception?: { description?: string } }
+      }>(tabId, 'Runtime.evaluate', {
+        expression,
+        returnByValue: true,
+        throwOnSideEffect: true,
+        awaitPromise: false,
+        userGesture: false,
+        includeCommandLineAPI: false,
+        timeout: 5_000,
+      })
+      if (r.exceptionDetails)
+        return {
+          error: (r.exceptionDetails.exception?.description ?? r.exceptionDetails.text ?? 'Error').slice(
+            0,
+            1_000,
+          ),
+        }
+      return {
+        type: r.result.type,
+        value: r.result.value,
+        ...(r.result.description ? { description: r.result.description } : {}),
+      }
+    }
+    case 'cdp': {
+      // A DevTools method from the read-only list (ADR 0045, T31), on a page Dool2 opened
+      const tabId = await ownedTab(a)
+      const method = String(a.method ?? '')
+      if (!(READ_CDP_METHODS as readonly string[]).includes(method))
+        throw new Error(`${method} is not on the list of DevTools methods that only read or produce`)
+      const params =
+        a.params && typeof a.params === 'object' ? { ...(a.params as Record<string, unknown>) } : {}
+      // Always return the data, never a stream handle (IO.* is not on the list)
+      delete params.transferMode
+      return await cdp(tabId, method, params)
     }
     case 'screenshot': {
       const tabId = await ownedTab(a)

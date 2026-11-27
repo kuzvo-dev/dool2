@@ -15,6 +15,7 @@ import {
   type LifeAction,
   type LifeState,
   type MemoryItem,
+  type RecipeView,
   type Routine,
   type RoutineCheck,
   type RoutineSchedule,
@@ -53,7 +54,7 @@ export function readRun(r: Pick<Routine, 'notify' | 'until'>, answer: string) {
 export function routineAsk(r: Pick<Routine, 'prompt' | 'notify' | 'until' | 'lastTold'>): string {
   const lines = [
     r.prompt,
-    'If the task covers several things, split the answer into "Done" (one or two lines of result per item) and "Needs your decision" (what the user must choose or confirm; leave it out if nothing).',
+    'If the task covers several things, split the answer into two parts: what was done (one or two lines of result per item) and what the user must choose or confirm (leave it out if nothing). Write both headings in the language of the answer, never in English unless the answer is in English.',
   ]
   if (r.notify === 'when_found') {
     lines.push(
@@ -217,6 +218,9 @@ export class Life {
   onWatch?: (lastAt?: string) => void
   /** When a look-ahead item was posted to the feed (the daemon notifies the phone) */
   onTell?: (f: FeedItem) => void
+  /** Remembered steps for the memory screen, and deleting one (ADR 0044; the daemon attaches its recipe book) */
+  recipes?: () => RecipeView[]
+  recipeForget?: (id: string) => void
   watchBusy = false
   /** How many were posted in this look (so not too many are announced at once) */
   private told = 0
@@ -890,6 +894,10 @@ export class Life {
       libraryCount: { made: lib.length - fileCount, files: fileCount },
       memory: this.memory(),
       know: this.know().slice(0, 100),
+      ...(() => {
+        const recipes = this.recipes?.() ?? []
+        return recipes.length ? { recipes } : {}
+      })(),
       feed: feed.items,
       ...(feed.next ? { feedNext: feed.next } : {}),
       feedDays: this.feedDays(60, all),
@@ -964,6 +972,10 @@ export class Life {
         return
       case 'know-delete':
         this.knowForget(a.id)
+        return
+      case 'recipe-delete':
+        this.recipeForget?.(a.id)
+        this.onChange?.()
         return
       case 'ideas-refresh':
         this.refreshIdeas()
@@ -1306,6 +1318,14 @@ export class Life {
           })
           if (!k) return bad('No such item. Check the id with know_find')
           return ok(`Updated: ${knowLine(k)}`)
+        }
+        case 'recipe_forget': {
+          const id = String(a.id ?? '')
+          if (!this.recipes?.().some((r) => r.id === id) || !this.recipeForget)
+            return bad('No such remembered steps. Use the id from the [k…] line.')
+          this.recipeForget(id)
+          this.onChange?.()
+          return ok(`Forgot the steps ${id}. Requests like it are worked out as usual from now on.`)
         }
         case 'memory_forget': {
           const q = String(a.text ?? a.id ?? '')

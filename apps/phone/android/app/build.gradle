@@ -7,8 +7,9 @@ android {
         applicationId "com.dool2.app"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 65
-        versionName "0.2.0"
+        // A release build can set these from outside: -PversionCode=70 -PversionName=0.3.0 (CI does)
+        versionCode((project.findProperty("versionCode") ?: "76") as Integer)
+        versionName((project.findProperty("versionName") ?: "0.2.0") as String)
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
@@ -16,8 +17,23 @@ android {
             ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
         }
     }
+    // Release signing (the upload key; Google Play re-signs for users). Read from the environment so the key and its
+    // password never live in the repo: DOOL2_ANDROID_KEYSTORE (path to the .jks), DOOL2_ANDROID_KEYSTORE_PASSWORD,
+    // DOOL2_ANDROID_KEY_ALIAS (default dool2-upload). Without them a release build comes out unsigned
+    def ks = System.getenv("DOOL2_ANDROID_KEYSTORE")
+    signingConfigs {
+        if (ks) {
+            release {
+                storeFile file(ks)
+                storePassword System.getenv("DOOL2_ANDROID_KEYSTORE_PASSWORD")
+                keyAlias System.getenv("DOOL2_ANDROID_KEY_ALIAS") ?: "dool2-upload"
+                keyPassword System.getenv("DOOL2_ANDROID_KEYSTORE_PASSWORD")
+            }
+        }
+    }
     buildTypes {
         release {
+            if (ks) signingConfig signingConfigs.release
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
         }
@@ -37,6 +53,9 @@ dependencies {
     implementation "androidx.core:core-splashscreen:$coreSplashScreenVersion"
     // 폰 잠금 확인 (금고 비밀번호 보기, ADR 0026)
     implementation "androidx.biometric:biometric:1.1.0"
+    // 스토어 앱 알림 (ADR 0042). google-services.json 이 없으면 알림만 꺼진 채로 빌드된다
+    implementation platform("com.google.firebase:firebase-bom:34.6.0")
+    implementation "com.google.firebase:firebase-messaging"
     implementation project(':capacitor-android')
     testImplementation "junit:junit:$junitVersion"
     androidTestImplementation "androidx.test.ext:junit:$androidxJunitVersion"

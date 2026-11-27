@@ -13,6 +13,7 @@ import { homedir, tmpdir } from 'node:os'
 import { basename, extname, join, relative, resolve, sep } from 'node:path'
 import { inflateRawSync } from 'node:zlib'
 import type { Lang } from '@dool2/i18n'
+import { runCode } from './code-run.js'
 import { applyLook, DOC_LOOKS, type DocLook } from './doc-kit.js'
 import { FileOps, type FileOpsOptions } from './file-ops.js'
 import { filesCopy } from './locales/files.js'
@@ -95,9 +96,30 @@ export const UPLOAD_MAX_BYTES = 4 * 1024 ** 3
 /** File names in a comparable form (macOS stores Korean names as separate jamo: normalize to NFC) */
 const norm = (s: string) => s.normalize('NFC').toLowerCase().replace(/\s+/g, '')
 
+/** code_run (ADR 0045, T32): the sandbox's printed text and value, cut to what the AI can read */
+async function codeRun(args: Record<string, unknown>): Promise<FileToolResult> {
+  const code = String(args.code ?? '')
+  if (!code.trim()) return fail('Give the code to run.')
+  const r = await runCode(code, args.input)
+  const out = [
+    r.printed.length ? `Printed:\n${r.printed.join('\n')}` : '',
+    r.ok
+      ? r.value !== undefined
+        ? `Value: ${JSON.stringify(r.value, null, 1)}`
+        : 'Ran (no value: end with an expression to return one).'
+      : `Error: ${r.error} (the sandbox has no files, network, require or timers; pass data in as input)`,
+  ]
+    .filter(Boolean)
+    .join('\n')
+  const text = out.length > 20_000 ? `${out.slice(0, 20_000)}\n… (cut at 20,000 characters)` : out
+  return r.ok ? { content: [{ type: 'text', text }] } : fail(text)
+}
+
 export class FileTools {
   private readonly folders: Record<FolderKey, string[]>
   private readonly home: string
+  /** Dool2's own folder in the home folder (macOS), see dooriDir */
+  private readonly doori?: string
   /** Language of the text people read. Korean when not given */
   private readonly lang: () => Lang
   /** Move, photo conversion, printing (approval through opts.approvals) */
@@ -124,7 +146,14 @@ export class FileTools {
   }) => void
   /** How long a folder may take before file_find says macOS has not let Dool2 read it (shorter in tests) */
   waitMs = 8_000
-  constructor(folders?: UserFolders, home = homedir(), opts: FileOpsOptions = {}) {
+  constructor(
+    folders?: UserFolders,
+    home = homedir(),
+    opts: FileOpsOptions & {
+      /** Keep what Dool2 makes in ~/DOORI_FOLDER instead of Documents/DOORI_FOLDER (the daemon on macOS) */
+      dooriInHome?: boolean
+    } = {},
+  ) {
     this.lang = opts.lang ?? (() => 'ko')
     // Use real paths (macOS has shortcuts like /var → /private/var)
     const real = (p: string) => {
@@ -143,6 +172,7 @@ export class FileTools {
       movies: (f.movies ?? []).map(real),
     }
     this.home = real(home)
+    if (opts.dooriInHome) this.doori = join(this.home, DOORI_FOLDER)
     this.ops = new FileOps(
       {
         inside: (p) => this.inside(p),
@@ -161,7 +191,19 @@ export class FileTools {
   }
 
   private roots() {
-    return Object.values(this.folders).flat()
+    return [...Object.values(this.folders).flat(), ...(this.doori ? [this.doori] : [])]
+  }
+
+  /**
+   * Where Dool2 keeps what it makes (documents, PDFs, pictures, videos). On macOS a folder in the home folder:
+   * Documents, Desktop and Downloads open a permission window that only someone at the PC can answer, and a saved
+   * certificate PDF waited on it while the person was away (test PC 11-27). The home folder needs no permission.
+   * Elsewhere Documents/DOORI_FOLDER
+   */
+  dooriDir(): string | undefined {
+    if (this.doori) return this.doori
+    const docs = this.folders.documents?.[0]
+    return docs ? join(docs, DOORI_FOLDER) : undefined
   }
 
   /**
@@ -289,6 +331,7 @@ export class FileTools {
           String(args.query ?? ''),
           args.folder as FolderKey | undefined,
           Number(args.limit ?? 0) || undefined,
+          args.sort === 'size' ? 'size' : 'recent',
         )
       if (tool === 'file_read') return await this.read(String(args.path ?? ''), Number(args.from ?? 0) || 0)
       if (tool === 'file_write')
@@ -301,6 +344,7 @@ export class FileTools {
           ...(DOC_LOOKS.includes(args.look as DocLook) ? { look: args.look as DocLook } : {}),
           ...(args.replace === true ? { replace: true } : {}),
         })
+      if (tool === 'code_run') return await codeRun(args)
       if (tool === 'file_move') return await this.ops.move(args)
       if (tool === 'file_convert') return await this.ops.convert(args)
       if (tool === 'file_print') return await this.ops.print(args)
@@ -339,7 +383,12 @@ export class FileTools {
    * Find by name: Desktop, Documents, Downloads, Pictures, Movies (up to 4 levels down), most recently changed
    * first, 30 (up to 300 with limit)
    */
-  async find(query: string, folder?: FolderKey, limit = 30): Promise<FileToolResult> {
+  async find(
+    query: string,
+    folder?: FolderKey,
+    limit = 30,
+    sort: 'recent' | 'size' = 'recent',
+  ): Promise<FileToolResult> {
     const max = Math.min(Math.max(Math.floor(limit), 1), 300)
     const words = norm(query)
       .split(/[,·]/)
@@ -373,9 +422,10 @@ export class FileTools {
       ])
       if (!done) blocked.push(basename(r))
     }
-    hits.sort((a, b) => b.mtime - a.mtime)
+    // Biggest first for "what takes the space" (11-26: ten calls by file type to find the 5 biggest in Downloads)
+    hits.sort((a, b) => (sort === 'size' ? b.size - a.size : b.mtime - a.mtime))
     const ask = blocked.length
-      ? `\nmacOS has not let Dool2 read ${blocked.join(', ')} yet: a permission window ("would like to access files in your ${blocked[0]} folder") is probably waiting on the PC screen, or it was turned off. Tell the user in one sentence: on the PC, press Allow, or turn Dool2 on under System Settings > Privacy & Security > Files and Folders. Do not try other ways (browser, apps, screen); call file_find again once they did.`
+      ? `\nmacOS has not let Dool2 read ${blocked.join(', ')} yet: a permission window ("would like to access files in your ${blocked[0]} folder") is probably waiting on the PC screen, or it was turned off. Only someone at the PC can allow it (press Allow, or turn Dool2 on under System Settings > Privacy & Security > Files and Folders); the other folders were searched. What else is possible: the file may also be in the library, in mail (an attachment) or in Dool2's own folder, which needs no permission. If the person is needed, say it in one sentence and carry on with the rest of the request.`
       : ''
     if (!hits.length && blocked.length) return fail(ask.trim())
     if (!hits.length) return ok(`Found no file with "${query}" in ${FOLDERS_TEXT}.`)
@@ -390,7 +440,7 @@ export class FileTools {
         minute: '2-digit',
       })
     return ok(
-      `${hits.length > max ? `Latest ${max} of ${hits.length}` : `${hits.length}`}:\n` +
+      `${hits.length > max ? `${sort === 'size' ? 'Biggest' : 'Latest'} ${max} of ${hits.length}` : `${hits.length}`}${sort === 'size' ? ', biggest first' : ''}:\n` +
         hits
           .slice(0, max)
           .map((h) => `- ${this.show(h.path)}${h.dir ? sep : ` (${kb(h.size)}, ${day(h.mtime)})`}`)
@@ -555,7 +605,7 @@ export class FileTools {
     kind: string
     text?: string
     rows?: unknown[][]
-    /** Empty means Dool2's folder (Documents/DOORI_FOLDER) */
+    /** Empty means Dool2's folder (dooriDir) */
     folder?: FolderKey
     /** Design template for html documents (doc-kit.ts) */
     look?: DocLook
@@ -566,9 +616,10 @@ export class FileTools {
     if (!['md', 'txt', 'csv', 'xlsx', 'html'].includes(kind))
       return fail('Only md, txt, csv, xlsx and html can be made.')
     // What Dool2 makes goes in Dool2's folder (so the desktop stays tidy), or the folder the user picked
-    const docs = this.folders.documents?.[0]
-    const dir = o.folder ? this.folders[o.folder]?.[0] : docs ? join(docs, DOORI_FOLDER) : undefined
-    const where = o.folder ? FOLDER_LABEL[o.folder] : `the Documents/${DOORI_FOLDER} folder`
+    const dir = o.folder ? this.folders[o.folder]?.[0] : this.dooriDir()
+    const where = o.folder
+      ? FOLDER_LABEL[o.folder]
+      : `Dool2's folder (${this.doori ? `~/${DOORI_FOLDER}` : `Documents/${DOORI_FOLDER}`})`
     if (!dir)
       return fail(
         `Could not find the ${o.folder ? (FOLDER_LABEL[o.folder] ?? o.folder) : 'Documents'} folder.`,

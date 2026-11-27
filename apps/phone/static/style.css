@@ -28,6 +28,13 @@ body {
 button {
   text-align: inherit;
 }
+/* Long press on a message opens Dool2's own menu (save, copy, report): no web text selection bar over it */
+.bubble,
+.bubble * {
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+}
 [hidden] {
   display: none !important;
 }
@@ -287,6 +294,18 @@ button {
 }
 .queued .bubble {
   opacity: 0.6;
+}
+.queued > .meta {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.queued > .meta .btn-text {
+  padding: 4px 2px;
+  min-height: 32px;
+}
+.queued.unsent > .meta {
+  color: var(--warn, #f0b35a);
 }
 .step {
   display: flex;
@@ -4333,4 +4352,239 @@ textarea.ghosting {
   padding: 4px 8px;
   font-size: 13px;
   color: var(--ink-muted);
+}
+
+/* Keyboard up: the tab bar steps aside so the input sits right on the keyboard (main.ts kb-open) */
+.kb-open .app-tabs {
+  visibility: hidden;
+}
+.kb-open .app-composer {
+  bottom: 8px;
+}
+
+/* Demo (review.ts): a slim bar on top with the way out */
+.demo-bar {
+  position: fixed;
+  top: calc(112px + env(safe-area-inset-top));
+  left: 50%;
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 8px 6px 14px;
+  border-radius: var(--radius-full);
+  background: var(--glass);
+  -webkit-backdrop-filter: blur(20px);
+  backdrop-filter: blur(20px);
+  box-shadow: var(--shadow-float);
+  color: var(--ink-muted);
+  font: var(--text-caption);
+  transform: translateX(-50%);
+  white-space: nowrap;
+}
+/* AI consent (review.ts), once before the first use */
+.consent-page .steps li {
+  text-align: left;
+}
+
+/* A waiting input card that was closed (threads.ts infoWaitBar): a pill right above the composer to reopen it.
+   It lived inside the composer row with no style, squeezed to the left of the + button (measured 11-26) */
+.info-wait-slot {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: calc(100% + 8px);
+  display: flex;
+  justify-content: center;
+  pointer-events: none;
+}
+.info-wait-slot:empty {
+  display: none;
+}
+.info-wait-bar {
+  pointer-events: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  max-width: 100%;
+  padding: 8px 10px 8px 16px;
+  border-radius: var(--radius-full);
+  background: var(--glass);
+  -webkit-backdrop-filter: blur(20px);
+  backdrop-filter: blur(20px);
+  box-shadow: var(--shadow-float);
+  color: var(--ink);
+  font: var(--text-caption);
+}
+.info-wait-bar span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.info-wait-bar strong {
+  flex: none;
+  padding: 4px 12px;
+  border-radius: var(--radius-full);
+  background: var(--ink);
+  color: var(--ink-inverse);
+}
+
+/* The running task above the composer (shell.ts nowBar): same pill as the waiting-input bar, with a live dot */
+.now-bar .now-dot {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--mint, #3ccf91);
+  animation: now-pulse 1.4s ease-in-out infinite;
+}
+.now-bar.ask .now-dot {
+  background: var(--butter, #f5c84c);
+}
+@keyframes now-pulse {
+  50% {
+    opacity: 0.35;
+  }
+}
+
+/* The "how it worked" sheet on the phone (work-line.ts); the line and the timeline are in ui.css */
+.work-sheet {
+  max-height: 78vh;
+  overflow-y: auto;
+}
+.work-sheet .ws-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--line);
+}
+.work-sheet .ws-head h3 {
+  flex: 1;
+  margin: 0;
+  font: var(--text-title-2);
+}
+.work-sheet .ws-meta {
+  color: var(--ink-muted);
+  font-variant-numeric: tabular-nums;
+  font-size: 14px;
+}
+.work-sheet .ws-stop {
+  padding: 7px 12px;
+  border-radius: var(--radius-full);
+  background: var(--danger-soft);
+  color: var(--danger);
+  font-weight: 600;
+  font-size: 14px;
+}
+.work-sheet .wc-draft,
+.work-sheet .wp-take,
+.work-sheet > .btn-ghost.wide {
+  margin-top: 10px;
+}
+
+/* ── Kept from the v3 redesign (#628): Dool2's answers without bubbles, work lines as one gray line ── */
+.chat-list > .bubble:not(.me) {
+  max-width: 100%;
+  padding: 0 2px;
+  border-radius: 0;
+  background: transparent;
+  font: 450 15.3px / 1.72 var(--font-sans);
+}
+.chat-list > * + .bubble.me {
+  margin-top: 6px;
+}
+/* Time under Dool2's answer, as a small line */
+.chat-list > .bubble:not(.me)[data-time] {
+  max-width: 100%;
+}
+.chat-list > .bubble:not(.me)[data-time]::after {
+  position: static;
+  display: block;
+  margin-top: 2px;
+}
+.chat-list .wline {
+  font: 500 13px / 18px var(--font-sans);
+  color: var(--ink-faint);
+}
+.chat-list .wline .wl-text b {
+  color: var(--ink-muted);
+  font-weight: 600;
+}
+.chat-list .wline.wait {
+  color: var(--ink);
+}
+
+/* ── My Doori: dressing Doori (app/doori-maker.ts) ── */
+.set-row.my-doori {
+  margin: 4px 0 14px;
+  background: var(--surface);
+  border-radius: 20px;
+  padding: 12px 14px;
+}
+.doori-maker {
+  max-height: 88vh;
+  overflow-y: auto;
+}
+.dm-stage {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  padding: 18px 0 8px;
+  background: radial-gradient(circle at 50% 40%, var(--surface), var(--bg));
+  border-radius: 22px;
+  margin: 10px 0 4px;
+}
+.dm-actions {
+  display: flex;
+  gap: 8px;
+}
+.dm-h {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--ink-muted);
+  margin: 16px 2px 8px;
+}
+.dm-opts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.dm-color {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  border: 2px solid rgba(0, 0, 0, 0.06);
+  padding: 0;
+}
+.dm-color.on {
+  outline: 3px solid var(--primary, #13885a);
+  outline-offset: 2px;
+}
+.dm-pic {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  min-width: 60px;
+  padding: 6px 4px 5px;
+  border: 1.5px solid var(--line);
+  border-radius: 14px;
+  background: var(--surface);
+  font-size: 11.5px;
+  color: var(--ink-muted);
+}
+.dm-pic.on {
+  border-color: var(--primary, #13885a);
+  color: var(--ink);
+  font-weight: 650;
+}
+.dm-mini {
+  width: 46px;
+  height: 46px;
+}
+.dm-mini > svg {
+  width: 100%;
+  height: 100%;
 }

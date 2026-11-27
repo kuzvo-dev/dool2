@@ -183,3 +183,30 @@ And the check uses what the code already knows:
 
 The rule for removing the check stays as written: replay the same recorded requests with the check off; if A+B with it
 off comes close to A+B with it on, remove it or keep only the code check. That needs the real-app run (round 2, WP7).
+
+## Update 2026-11-26: one answer per question in the conversation
+
+The test PC loop (11-26) counted the replies people see. In 10 questions, 4 got two to four replies: the first answer
+showed, the judge sent it back, and Dool2 answered again or handed a browser task over ("reading it now", then the
+result). Two of the four send-backs were wrong (a pre-market stock price, a booking-rate answer to "box office"), and
+the other two first answers were already useful, with the rest better asked than added.
+
+- **In the conversation session, the judge no longer sends an answer back.** What it finds left becomes a quick reply
+  under that one answer (`offer` in the verdict, written as the person would say it). The log says `offered`.
+- **Tasks still go round** (ADR 0038): their result is one task card, and "done" there must be seen on screen. The code
+  check that catches a claimed action with nothing behind it still sends back everywhere.
+- **A hand-over reply is replaced by the task's result** on screen (`interimAnswers`): "I'm looking it up" folds under
+  the answer that the task brought back, as earlier answers did.
+- The global instructions stay as they are (ADR 0040): the button comes from the verdict, not from a new rule.
+
+## Update 2026-11-27: keep going while a way is left
+
+The family certificate task on the test PC (11-27) stopped after 2 rounds on Sonnet and on Opus alike. The judge's last
+verdict said "saving to Downloads instead of Documents is still left", and the turn before it had called no tool and
+only rewritten the answer. The person asked that Dool2 keep trying until there really is no way left.
+
+- **A new way counts as progress.** When the judge gives a way to try (`next`) that it has not given before, the
+  request goes on to the maximum, even after a turn with no new tool, and a repeated blocker does not stop it then.
+- **The maximum is 6 rounds** (was 4). The 10-minute limit still ends a request that goes in circles.
+- **A turn that tried nothing is told so.** If the answer after a send-back called no tool, the next note says nothing
+  new was tried, to try the way now, and that "everything was tried" holds only when each way was tried and failed.

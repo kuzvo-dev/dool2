@@ -12,6 +12,12 @@ public class MainActivity extends BridgeActivity {
         registerPlugin(FileSavePlugin.class);
         // Send a text from my number (only what was approved on an approval card)
         registerPlugin(SmsPlugin.class);
+        // Store app notifications: FCM token, this phone's notification key, taps (ADR 0042)
+        registerPlugin(PushPlugin.class);
+        // Approval keys in the security chip; payments sign only after the phone lock (ADR 0043)
+        registerPlugin(ApproveKeyPlugin.class);
+        // The phone's own haptics (navigator.vibrate does nothing in the app)
+        registerPlugin(HapticsPlugin.class);
         super.onCreate(savedInstanceState);
     }
 }

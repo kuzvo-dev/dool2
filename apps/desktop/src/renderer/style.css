@@ -2554,3 +2554,140 @@ button.lib-thumb:hover .lib-thumb-img {
   margin: 4px 0 -2px;
   color: var(--ink-muted);
 }
+
+/* Work as one line in the chat and its timeline in the panel's Screen tab (line and timeline styles: ui.css) */
+.wline > svg:last-child,
+.wtl-act > svg:last-child {
+  flex: none;
+  width: 14px;
+  height: 14px;
+  color: var(--ink-faint);
+  transition: transform var(--dur) var(--ease);
+}
+.wtl-act.open > svg:last-child {
+  transform: rotate(90deg);
+}
+.wline:hover {
+  background: var(--raise);
+}
+.work-sheet .ws-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.work-sheet .ws-head b {
+  flex: 1;
+}
+.work-sheet .wtl {
+  margin: 4px 0;
+}
+
+/* ── Kept from the v3 redesign (#630): Dool2's answers without bubbles, work lines as one gray line ── */
+/* Dool2's answers are plain body text with no bubble; my messages stay in a soft mint box */
+.thread .bubble:not(.me),
+.live .bubble:not(.me) {
+  max-width: 100%;
+  padding: 0 2px;
+  border-radius: 0;
+  background: transparent;
+  font: 450 15.3px / 1.72 var(--font-sans);
+}
+.thread .bubble.me,
+.live .bubble.me {
+  max-width: min(78%, 560px);
+  padding: 10px 15px;
+  border-radius: var(--radius-lg);
+  font-weight: 450;
+}
+/* Speaker line over Dool2's answers: small and quiet */
+.thread .who {
+  margin-bottom: -6px;
+  color: var(--ink-muted);
+  font-weight: 600;
+}
+.thread .who .meta {
+  color: var(--ink-faint);
+}
+.answer-tools {
+  margin-left: -8px;
+}
+
+/* How it worked: one gray line */
+.thread .wline {
+  font: 500 13px / 18px var(--font-sans);
+  color: var(--ink-faint);
+}
+.thread .wline .wl-text b {
+  color: var(--ink-muted);
+  font-weight: 600;
+}
+.thread .wline.wait {
+  color: var(--ink);
+}
+.thread .wline:hover {
+  background: transparent;
+  color: var(--ink-muted);
+}
+
+/* My Doori (Settings): dressing Doori, like the phone's sheet */
+.dm-stage {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  padding: 24px 0 20px;
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+}
+.dm-actions {
+  display: flex;
+  gap: 8px;
+}
+.dm-actions > button {
+  border-radius: var(--radius-full);
+}
+.dm-opts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.dm-color {
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  border: 2px solid rgb(0 0 0 / 0.06);
+  border-radius: 50%;
+}
+.dm-color.on {
+  outline: 3px solid var(--primary);
+  outline-offset: 2px;
+}
+.dm-pic {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  min-width: 68px;
+  padding: 8px 6px 6px;
+  border: 1.5px solid transparent;
+  border-radius: 16px;
+  background: var(--surface);
+  font-size: 12px;
+  color: var(--ink-muted);
+}
+.dm-pic:hover {
+  border-color: var(--line);
+}
+.dm-pic.on {
+  border-color: var(--primary);
+  color: var(--ink);
+  font-weight: 650;
+}
+.dm-mini {
+  width: 48px;
+  height: 48px;
+}
+.dm-mini > svg {
+  width: 100%;
+  height: 100%;
+}

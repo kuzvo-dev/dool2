@@ -167,7 +167,7 @@ export async function download(
     stop()
     return {
       kind: 'fail',
-      text: `At ${(size / (1 << 30)).toFixed(1)}GB it is too big (up to 2GB). Tell the user to download it directly in the browser.`,
+      text: `At ${(size / (1 << 30)).toFixed(1)}GB it is too big (up to 2GB). Downloading it in the browser instead (its download button or link) has no size limit.`,
     }
   }
   // Name: given by the user (extension from the site) > given by the site > end of the address
