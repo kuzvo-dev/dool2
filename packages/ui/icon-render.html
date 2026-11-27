@@ -58,7 +58,7 @@ function tile(size, { inset = 0, radius = 0.225, shadow = false, circle = false 
     g.shadowColor = 'rgba(10,40,25,0.28)'
     g.shadowBlur = size * 0.03
     g.shadowOffsetY = size * 0.012
-    g.fillStyle = '#2fc48d'
+    g.fillStyle = '#4cc98f'
     g.fill(path)
     g.restore()
   }
@@ -72,7 +72,7 @@ function tile(size, { inset = 0, radius = 0.225, shadow = false, circle = false 
 /** Android splash screen: rounded icon centered on a light background */
 function splash(w, h) {
   const [c, g] = canvas(w, h)
-  g.fillStyle = '#f2fbf6'
+  g.fillStyle = '#f5f8f6'
   g.fillRect(0, 0, w, h)
   const s = Math.round(Math.min(w, h) * 0.3)
   g.drawImage(tile(s), (w - s) / 2, (h - s) / 2, s, s)
