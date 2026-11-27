@@ -15,6 +15,11 @@ import { CLAIM_KR, DENIAL_KR, DONE_PAGE_KR } from './region/kr/finish-claims.js'
  * keep the answer as a draft in the progress card until the verdict, so no answer the person saw is taken back
  */
 export const FINISH_CHECK_ON = true
+/**
+ * Most rounds sent back while there is progress (a new tool, or a way not tried yet). Was 4; raised so Dool2 goes on
+ * until no way is left, the 10-minute limit still ends a request that goes in circles
+ */
+export const MAX_CYCLES = 6
 
 /** Why work was sent back, as a fixed list so the reasons can be counted per week (scripts/finish-reasons.mjs) */
 export const SEND_BACK_KINDS = [
@@ -99,6 +104,8 @@ interface AskState {
   calls: number
   lookups: number
   whys: string[]
+  /** Ways the judge gave to try so far (a new one keeps the request going, see check) */
+  nexts: string[]
   /** A task's done-when conditions (ADR 0038) */
   doneWhen?: string[]
 }
@@ -292,6 +299,7 @@ export class FinishCheck {
       calls: 0,
       lookups: 0,
       whys: [],
+      nexts: [],
       ...(o.doneWhen?.length ? { doneWhen: o.doneWhen } : {}),
     })
   }
@@ -347,8 +355,6 @@ export class FinishCheck {
     // A request that took one or two lookups and nothing else is a simple answer: not judged
     if (!v && s.cycles === 0 && s.calls <= 2 && s.lookups >= s.calls)
       return { kind: 'skip', reason: 'simple' }
-    // With progress (a tool not used before) go up to the maximum, otherwise up to the default rounds
-    const limit = fresh.length > 0 ? (this.opts.maxCycles ?? 4) : (this.opts.baseCycles ?? 2)
     if (!v) {
       const ac = new AbortController()
       this.judging.set(threadId, ac)
@@ -394,10 +400,20 @@ export class FinishCheck {
         ms,
       }
     }
+    // A way the judge has not given before is still untried: the request goes on with it, even after a turn that
+    // used no new tool or hit the same blocker. The family certificate task stopped at 2 rounds while the judge said
+    // "saving to Downloads instead is still left" (test PC 11-27, on both Sonnet and Opus)
+    const newWay = !!v.next && !s.nexts.some((n) => sameBlocker(n, v.next ?? ''))
+    // With progress (a tool not used before, or a new way to try) go up to the maximum, otherwise the default rounds
+    const limit =
+      fresh.length > 0 || newWay ? (this.opts.maxCycles ?? MAX_CYCLES) : (this.opts.baseCycles ?? 2)
     if (s.cycles >= limit) return stop('rounds')
     if (this.now() - s.started > (this.opts.maxMs ?? 10 * 60_000)) return stop('time')
-    if (s.whys.some((w) => sameBlocker(w, v.why))) return stop('same blocker')
+    if (!newWay && s.whys.some((w) => sameBlocker(w, v.why))) return stop('same blocker')
     s.whys.push(v.why)
+    if (v.next) s.nexts.push(v.next)
+    // The answer after a send-back that called no tool tried nothing: it only wrote the same answer again
+    const idle = s.cycles > 0 && turn.tools.length === 0
     s.cycles++
     return {
       kind: 'again',
@@ -405,7 +421,7 @@ export class FinishCheck {
       ...(v.next ? { next: v.next } : {}),
       ...(v.offer ? { offer: v.offer } : {}),
       cycles: s.cycles,
-      note: againNote(v, this.opts.lang?.()),
+      note: againNote(v, this.opts.lang?.(), { idle }),
       because,
       source,
       ms,
@@ -414,12 +430,15 @@ export class FinishCheck {
 }
 
 /** Note sent back (only the first sentence shows on screen, the rest is for the AI only) */
-export function againNote(v: Verdict, lang: Lang = 'ko'): string {
+export function againNote(v: Verdict, lang: Lang = 'ko', o: { idle?: boolean } = {}): string {
   // One part per line: the screen reads "A way to try:" back as the step it shows while Dool2 continues (finishNext)
   return [
     `${FINISH_CHECK_TEXT[lang].again} ${FINISH_CHECK_MARK}`,
     `Something is still left: ${v.why}`,
     v.next ? `A way to try: ${v.next}` : '',
+    o.idle
+      ? 'Your last answer called no tool, so nothing new was tried. Try the way above with your tools now, and answer only after trying it. Saying all ways were tried is right only when every way you can think of was actually tried and failed; then say exactly what blocked each.'
+      : '',
     'Do not repeat the same method; continue another way. If only the user knows it, first look in mail, connected places and memory or estimate it, and ask only if it really is not there, gathering all questions in one message. When done, report once in the order result, what was done, what is left. Your next answer replaces your earlier answer to this request on screen (the earlier one is folded away), so write it as the one complete answer: keep what still matters from before, not only the new part. Reply to the user in their language.',
   ]
     .filter(Boolean)

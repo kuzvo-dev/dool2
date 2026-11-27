@@ -198,3 +198,15 @@ the other two first answers were already useful, with the rest better asked than
 - **A hand-over reply is replaced by the task's result** on screen (`interimAnswers`): "I'm looking it up" folds under
   the answer that the task brought back, as earlier answers did.
 - The global instructions stay as they are (ADR 0040): the button comes from the verdict, not from a new rule.
+
+## Update 2026-11-27: keep going while a way is left
+
+The family certificate task on the test PC (11-27) stopped after 2 rounds on Sonnet and on Opus alike. The judge's last
+verdict said "saving to Downloads instead of Documents is still left", and the turn before it had called no tool and
+only rewritten the answer. The person asked that Dool2 keep trying until there really is no way left.
+
+- **A new way counts as progress.** When the judge gives a way to try (`next`) that it has not given before, the
+  request goes on to the maximum, even after a turn with no new tool, and a repeated blocker does not stop it then.
+- **The maximum is 6 rounds** (was 4). The 10-minute limit still ends a request that goes in circles.
+- **A turn that tried nothing is told so.** If the answer after a send-back called no tool, the next note says nothing
+  new was tried, to try the way now, and that "everything was tried" holds only when each way was tried and failed.
