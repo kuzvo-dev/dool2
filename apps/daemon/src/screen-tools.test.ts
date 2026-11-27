@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { Approvals } from './approvals.js'
 import type { HandsCaller } from './hands.js'
-import { ScreenTools } from './screen-tools.js'
+import { harmfulShortcut, ScreenTools } from './screen-tools.js'
 
 const KAKAO = 'com.kakao.KakaoTalkMac'
 
@@ -143,6 +143,25 @@ describe('PC 화면 제어', () => {
     // Shift+Enter(줄 바꿈)는 괜찮다
     await tools.run('key', { bundleId: KAKAO, key: 'Enter', modifiers: ['shift'] })
     expect(hands.calls.some(([c]) => c === 'key')).toBe(true)
+  })
+
+  it('presses any shortcut except the ones that delete, quit or log out (ADR 0045)', async () => {
+    const { tools, hands } = setup()
+    await tools.run('read', { bundleId: KAKAO })
+    const keys = () => hands.calls.filter(([c]) => c === 'key').length
+    expect((await tools.run('key', { bundleId: KAKAO, key: 'p', modifiers: ['cmd'] })).isError).toBeFalsy()
+    expect(keys()).toBe(1)
+    for (const [key, mods] of [
+      ['Backspace', ['cmd']],
+      ['q', ['cmd']],
+      ['q', ['cmd', 'shift']],
+      ['Escape', ['cmd', 'option']],
+    ] as const) {
+      const r = await tools.run('key', { bundleId: KAKAO, key, modifiers: [...mods] })
+      expect(r.isError).toBe(true)
+    }
+    expect(keys()).toBe(1)
+    expect(harmfulShortcut('Backspace', [])).toBeUndefined()
   })
 
   it('승인하면 다시 읽어 같은 버튼일 때만 누르고, 화면이 바뀌었으면 누르지 않는다', async () => {

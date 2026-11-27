@@ -147,32 +147,14 @@ export function registerScreenTools(server: McpServer, client: BrowserClient) {
   tool(
     'key',
     'Press key in app',
-    'Presses keys like Tab, Escape, arrows and Backspace. modifiers: cmd, shift, option, ctrl. In a messenger Enter means send, so it needs approval.',
+    'Presses a key or a shortcut in the app: named keys (Tab, Escape, arrows, Backspace), letters, digits and F1–F12, with modifiers cmd, shift, option, ctrl (cmd+p prints, cmd+s saves, cmd+f finds). In a messenger Enter means send, so it needs approval. Shortcuts that delete, quit the app or log out are refused.',
     {
       bundleId,
       key: z
-        .enum([
-          'Enter',
-          'Tab',
-          'Space',
-          'Backspace',
-          'Delete',
-          'Escape',
-          'ArrowLeft',
-          'ArrowRight',
-          'ArrowUp',
-          'ArrowDown',
-          'Home',
-          'End',
-          'PageUp',
-          'PageDown',
-          'a',
-          'c',
-          'f',
-          'k',
-          'l',
-          'n',
-        ])
+        .string()
+        .regex(
+          /^(Enter|Tab|Space|Backspace|Delete|Escape|ArrowLeft|ArrowRight|ArrowUp|ArrowDown|Home|End|PageUp|PageDown|[a-z0-9]|F[1-9]|F1[0-2])$/,
+        )
         .describe('Key to press'),
       modifiers: z
         .array(z.enum(['cmd', 'shift', 'option', 'ctrl']))
