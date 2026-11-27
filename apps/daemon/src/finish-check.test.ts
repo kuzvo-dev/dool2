@@ -239,6 +239,7 @@ describe('false completion, caught by code (no judge)', () => {
       '결제 완료했어요',
       '엄마에게 문자 보냈어요.',
       '예약이 완료됐어요',
+      '신청서를 넣었어요',
       'I booked a table for two at 7.',
       "I've sent the message to Mina.",
       'Your order has been placed.',
@@ -251,6 +252,8 @@ describe('false completion, caught by code (no judge)', () => {
       '문자는 안 보냈어요',
       '예약하지 않았어요. 시간을 골라 주세요.',
       '3곳을 비교했어요.',
+      // A card summary, not an action (test PC 11-27)
+      '쿠팡이츠는 배달이라 식당으로 넣었어요.',
       'I could not book it: the site asks for a phone check.',
       'Shall I order it?',
     ])
