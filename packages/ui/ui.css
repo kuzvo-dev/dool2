@@ -18,37 +18,32 @@
   color-scheme: light;
 
   /* Background */
-  --bg: light-dark(
-    #f5f8f6,
-    #0f1412
-  ); /* App background: gray with a breath of mint (so white cards stand out) */
-  --surface: light-dark(#ffffff, #171e1b); /* Cards, sheets, side panels */
-  --surface-sunken: light-dark(#eef3f0, #0a0e0c); /* Sunken areas: Dool2's screen, product previews */
-  --raise: light-dark(#eaf3ee, #1c2a23); /* My messages, selected menu, icon tiles */
-  --line: light-dark(#e3eae5, #24302a);
-  --line-strong: light-dark(#8e9b93, #5a6961); /* Input borders, secondary buttons */
-  --scrim: light-dark(rgba(15, 25, 20, 0.36), rgba(0, 0, 0, 0.6));
+  --bg: light-dark(#f5f6f8, #0d0f12); /* App background: very light gray (so white cards stand out) */
+  --surface: light-dark(#ffffff, #17191d); /* Cards, sheets, side panels */
+  --surface-sunken: light-dark(#f0f2f5, #0a0b0d); /* Sunken areas: Dool2's screen, product previews */
+  --raise: light-dark(#eef0f3, #202328); /* Dool2 bubbles, selected menu, icon tiles */
+  --line: light-dark(#e6e8ed, #262a31);
+  --line-strong: light-dark(#8b9099, #5c616b); /* Input borders, secondary buttons */
+  --scrim: light-dark(rgba(17, 18, 20, 0.42), rgba(0, 0, 0, 0.6));
 
   /* Text */
-  --ink: light-dark(#142019, #eef4f0); /* Body text, the "your turn" pill button */
-  --ink-muted: light-dark(#5c6b62, #a3b2a9); /* Descriptions, times */
-  --ink-faint: light-dark(#94a199, #6f7d75); /* Empty states, placeholders */
-  --ink-inverse: light-dark(#ffffff, #0f2a1d); /* Text on ink */
+  --ink: light-dark(#111214, #f2f3f5); /* Body text, primary button, my bubbles */
+  --ink-muted: light-dark(#5f646d, #a3a8b1); /* Descriptions, times */
+  --ink-faint: light-dark(#8b9099, #6c717b); /* Empty states, placeholders */
+  --ink-inverse: light-dark(#ffffff, #111214); /* Text on ink */
   --on-accent: #0f2a1d; /* Text on mint and yellow */
-  --me: var(--raise); /* My messages: a soft mint box */
-  --me-ink: var(--ink);
+  --me: light-dark(#d4f1e3, #1b4733); /* My bubbles: light mint */
+  --me-ink: light-dark(#08331f, #e9fff4);
 
   /* Colors: only for status */
   --brand: #4cc98f; /* Dool2 mint: character, the ², working */
   --brand-text: light-dark(#167a4b, #6fe0a8);
   --brand-soft: light-dark(#e5f7ee, #15302a);
-  --approve: #13885a; /* The approve button (dark mint) */
+  --approve: #13885a; /* Only for the approve button (dark mint) */
   --approve-hi: #1aa369;
-  /* Primary actions: send, approve, switches on, picked chips (deep mint; light mint on dark) */
-  --primary: light-dark(#13885a, #4cc98f);
-  --on-primary: light-dark(#ffffff, #0f2a1d);
-  --butter: #ffd66b; /* Needs you: a soft background (--butter-soft) and the tab dot */
-  --butter-soft: light-dark(#fff6d9, #352d14);
+  --primary: var(--approve); /* Selected Doori options (My Doori) */
+  --butter: #ffd66b; /* Needs you: approval, identity verification */
+  --butter-soft: light-dark(#fff4d1, #352d14);
   --danger: light-dark(#d0342c, #ff7a72); /* Stop, decline, error: text only */
   --danger-soft: light-dark(#fde4e2, #3a1816);
   --night: #1d2846; /* Landing hero only */
@@ -77,10 +72,9 @@
   --shadow-card:
     0 0.5px 0 light-dark(rgba(16, 24, 40, 0.04), transparent),
     0 1px 2px light-dark(rgba(16, 24, 40, 0.05), transparent);
-  /* Glass: header, input and tab bar; the content scrolls underneath */
-  --glass: light-dark(rgba(255, 255, 255, 0.72), rgba(23, 30, 27, 0.7));
-  --glass-line: light-dark(rgba(20, 32, 25, 0.08), rgba(255, 255, 255, 0.07));
-  --glass-blur: blur(18px) saturate(1.5);
+  /* Floating glass: header buttons, input, tab bar */
+  --glass: light-dark(rgba(255, 255, 255, 0.74), rgba(30, 33, 38, 0.72));
+  --glass-line: light-dark(rgba(16, 24, 40, 0.07), rgba(255, 255, 255, 0.07));
   --shadow-float:
     0 0 0 0.5px var(--glass-line), 0 12px 32px -12px light-dark(rgba(16, 24, 40, 0.28), rgba(0, 0, 0, 0.8)),
     0 2px 6px -2px light-dark(rgba(16, 24, 40, 0.08), rgba(0, 0, 0, 0.4));
