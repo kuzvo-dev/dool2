@@ -98,6 +98,8 @@ const norm = (s: string) => s.normalize('NFC').toLowerCase().replace(/\s+/g, '')
 export class FileTools {
   private readonly folders: Record<FolderKey, string[]>
   private readonly home: string
+  /** Dool2's own folder in the home folder (macOS), see dooriDir */
+  private readonly doori?: string
   /** Language of the text people read. Korean when not given */
   private readonly lang: () => Lang
   /** Move, photo conversion, printing (approval through opts.approvals) */
@@ -124,7 +126,14 @@ export class FileTools {
   }) => void
   /** How long a folder may take before file_find says macOS has not let Dool2 read it (shorter in tests) */
   waitMs = 8_000
-  constructor(folders?: UserFolders, home = homedir(), opts: FileOpsOptions = {}) {
+  constructor(
+    folders?: UserFolders,
+    home = homedir(),
+    opts: FileOpsOptions & {
+      /** Keep what Dool2 makes in ~/DOORI_FOLDER instead of Documents/DOORI_FOLDER (the daemon on macOS) */
+      dooriInHome?: boolean
+    } = {},
+  ) {
     this.lang = opts.lang ?? (() => 'ko')
     // Use real paths (macOS has shortcuts like /var → /private/var)
     const real = (p: string) => {
@@ -143,6 +152,7 @@ export class FileTools {
       movies: (f.movies ?? []).map(real),
     }
     this.home = real(home)
+    if (opts.dooriInHome) this.doori = join(this.home, DOORI_FOLDER)
     this.ops = new FileOps(
       {
         inside: (p) => this.inside(p),
@@ -161,7 +171,19 @@ export class FileTools {
   }
 
   private roots() {
-    return Object.values(this.folders).flat()
+    return [...Object.values(this.folders).flat(), ...(this.doori ? [this.doori] : [])]
+  }
+
+  /**
+   * Where Dool2 keeps what it makes (documents, PDFs, pictures, videos). On macOS a folder in the home folder:
+   * Documents, Desktop and Downloads open a permission window that only someone at the PC can answer, and a saved
+   * certificate PDF waited on it while the person was away (test PC 11-27). The home folder needs no permission.
+   * Elsewhere Documents/DOORI_FOLDER
+   */
+  dooriDir(): string | undefined {
+    if (this.doori) return this.doori
+    const docs = this.folders.documents?.[0]
+    return docs ? join(docs, DOORI_FOLDER) : undefined
   }
 
   /**
@@ -562,7 +584,7 @@ export class FileTools {
     kind: string
     text?: string
     rows?: unknown[][]
-    /** Empty means Dool2's folder (Documents/DOORI_FOLDER) */
+    /** Empty means Dool2's folder (dooriDir) */
     folder?: FolderKey
     /** Design template for html documents (doc-kit.ts) */
     look?: DocLook
@@ -573,9 +595,10 @@ export class FileTools {
     if (!['md', 'txt', 'csv', 'xlsx', 'html'].includes(kind))
       return fail('Only md, txt, csv, xlsx and html can be made.')
     // What Dool2 makes goes in Dool2's folder (so the desktop stays tidy), or the folder the user picked
-    const docs = this.folders.documents?.[0]
-    const dir = o.folder ? this.folders[o.folder]?.[0] : docs ? join(docs, DOORI_FOLDER) : undefined
-    const where = o.folder ? FOLDER_LABEL[o.folder] : `the Documents/${DOORI_FOLDER} folder`
+    const dir = o.folder ? this.folders[o.folder]?.[0] : this.dooriDir()
+    const where = o.folder
+      ? FOLDER_LABEL[o.folder]
+      : `Dool2's folder (${this.doori ? `~/${DOORI_FOLDER}` : `Documents/${DOORI_FOLDER}`})`
     if (!dir)
       return fail(
         `Could not find the ${o.folder ? (FOLDER_LABEL[o.folder] ?? o.folder) : 'Documents'} folder.`,
