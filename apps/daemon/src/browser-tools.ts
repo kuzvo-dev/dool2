@@ -38,6 +38,7 @@ import { scrubUrl } from './journal.js'
 import { browserText } from './locales/browser.js'
 import { LoginRequests } from './logins.js'
 import { pageDiff, type SeenPage } from './page-diff.js'
+import { type PointWhat, pointProbe } from './point-probe.js'
 import {
   maskValue,
   PROFILE_FIELDS,
@@ -1454,12 +1455,16 @@ export class BrowserTools {
           false,
         )
       case 'click': {
+        // A spot seen on the screenshot (an icon in a viewer, a canvas): pressed where Dool2 saw it (ADR 0045)
+        if (a.at && typeof a.at === 'object')
+          return this.clickPoint(tabId, a.at as { x?: unknown; y?: unknown })
         // A site's own print button: pressed plainly it opened Chrome's print window, which froze the tab and nobody
         // was at the PC to close it (test PC 11-27, a resident certificate). Pressed through the print path, the file
         // the site prints is kept as a PDF and no print window opens
         if (a.__printing !== true && this.savePdf) {
           const name = this.pages.get(tabId)?.refs.get(String(a.ref ?? ''))?.name ?? ''
-          if (PRINT_BUTTON.test(name)) return this.saveSitePrint(tabId, String(a.ref), '')
+          if (PRINT_BUTTON.test(name))
+            return this.saveSitePrint(tabId, this.pressRef(tabId, String(a.ref)), '')
         }
         // Buttons inside a frame on the page (a small window from another address): frames change late. If unchanged right after the click, wait briefly and read again
         // (measured 11-20 Gmarket adding an address: the form appeared, but reading right away concluded 'no input window' and handed off to the person)
@@ -1555,7 +1560,7 @@ export class BrowserTools {
         // The site's own print button: press it and keep what the site prints, the way a person presses print and
         // picks "Save as PDF". A viewer page printed as it is shows only a picture of the screen (test PC 11-27)
         if (typeof a.print === 'string' && a.print)
-          return this.saveSitePrint(tabId, a.print, String(a.name ?? ''))
+          return this.saveSitePrint(tabId, this.pressRef(tabId, a.print), String(a.name ?? ''))
         const r = (await this.browser
           .call(
             'pdf',
@@ -3645,14 +3650,68 @@ export class BrowserTools {
    * folder. That is the file print → Save as PDF gives, whatever the viewer does inside (a frame printing itself,
    * a print PDF in a hidden frame). Without the PC helper the print window is left for the person
    */
-  private async saveSitePrint(tabId: number, ref: string, name: string): Promise<ToolResult> {
+  /** Presses a ref for the print path (the print button itself is not routed to the print path again) */
+  private pressRef(tabId: number, ref: string): () => Promise<ToolResult> {
+    return () => this.runCall('click', { tabId, ref, __printing: true })
+  }
+
+  /**
+   * Presses a spot Dool2 saw on the screenshot (0-1000 on the visible part of the tab). What is there is measured
+   * first with a side-effect-free script, so pay, send and delete buttons still go to approval and a print button
+   * still goes to the print path. A spot inside another site's frame or a drawn viewer has no name to read: it is
+   * pressed, and the page is read back so Dool2 sees what happened (health checkup viewer, test PC 11-27)
+   */
+  private async clickPoint(tabId: number, at: { x?: unknown; y?: unknown }): Promise<ToolResult> {
+    const px = Number(at.x)
+    const py = Number(at.y)
+    if (!(px >= 0 && px <= 1000 && py >= 0 && py <= 1000))
+      throw new Error('at takes x and y from 0 to 1000 on the last browser_screenshot of this tab.')
+    if (this.isPaying(tabId))
+      throw new Error(
+        'Inside a payment, buttons are pressed by their ref (browser_read marks them), so the approval and the keypad stay as they are.',
+      )
+    const r = (await this.browser
+      .call('eval', { tabId, expression: pointProbe(px, py) }, 20_000)
+      .catch(() => undefined)) as { value?: PointWhat; error?: string } | undefined
+    const what = r?.value
+    if (!what || typeof what.x !== 'number')
+      throw new Error(
+        `Could not measure the page to find that spot${r?.error ? ` (${r.error})` : ''}. Take browser_screenshot again and point once more, or read the page (browser_read) for a ref.`,
+      )
+    const label = what.label.trim()
+    const risk = label ? classifyRisk(`${what.role} ${label}`) : undefined
+    if (risk)
+      throw new Error(
+        `${GATE_STOP}: the spot is "${label}", ${RISK_TEXT[risk.kind]} (${risk.reason}). Read the page (browser_read) and raise its ref with ${risk.kind === 'money' ? 'browser_checkout' : 'browser_request_approval'} for an approval card.`,
+      )
+    const press = (): Promise<ToolResult> =>
+      this.browser.call('input', { tabId, action: 'tap', x: what.x, y: what.y }, 20_000).then(
+        () => ({ content: [{ type: 'text' as const, text: 'Pressed.' }] }),
+        (e: Error) => ({ isError: true, content: [{ type: 'text' as const, text: e.message }] }),
+      )
+    if (this.savePdf && label && PRINT_BUTTON.test(label)) return this.saveSitePrint(tabId, press, '')
+    const pressed = await press()
+    if (pressed.isError) return pressed
+    const there = label
+      ? `"${label.slice(0, 60)}"`
+      : what.frame
+        ? `inside a frame from ${what.frame}, whose names the page cannot read`
+        : 'nothing named on the page'
+    return this.read(tabId, undefined, `Pressed the spot (${Math.round(px)}, ${Math.round(py)}): ${there}.`)
+  }
+
+  private async saveSitePrint(
+    tabId: number,
+    press: () => Promise<ToolResult>,
+    name: string,
+  ): Promise<ToolResult> {
     // The title is read first: once the print window is open the page answers nothing until it closes
     const page = this.printViaChrome
       ? ((await this.browser.call('snapshot', { tabId, maxChars: 200 }).catch(() => undefined)) as
           | { title?: string }
           | undefined)
       : undefined
-    const click = this.runCall('click', { tabId, ref, __printing: true })
+    const click = press()
     if (!this.printViaChrome) return click
     // The click itself does not come back while the print window is open (window.print holds the page), so the
     // print window is handled alongside it. A click that fails at once (a stale ref) is said as it is
