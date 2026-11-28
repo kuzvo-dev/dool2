@@ -6,9 +6,10 @@
 // to test with a fake child. No forged identity lives here: the binary and its args are passed straight through.
 
 import type { Brain, BrainId } from '@dool2/brains'
-import type { RunHandle, TurnEvent, TurnInput } from '@dool2/core'
+import type { RunHandle, ToolHandler, TurnEvent, TurnInput } from '@dool2/core'
+import { defaultMcpConnector, type McpBinding, type McpConnector } from './mcp.js'
 import { defaultSpawn, which as defaultWhich } from './spawn.js'
-import type { CliBrainBaseOptions, CliStreamParser, SpawnCli } from './types.js'
+import type { CliBrainBaseOptions, CliStreamParser, MakeParserOptions, SpawnCli } from './types.js'
 
 /** Run one turn against a CLI: spawn, feed stdin, stream stdout lines through `parser`, end with one turn_end. */
 export async function* runCli(args: {
@@ -60,6 +61,15 @@ function pick(opts: CliBrainBaseOptions) {
   }
 }
 
+/** The MCP connector to use for this run: none without a handler or when explicitly disabled, else the default. */
+function resolveConnector(
+  opts: CliBrainBaseOptions,
+  tools: ToolHandler | undefined,
+): McpConnector | undefined {
+  if (!tools || opts.mcpConnector === false) return undefined
+  return opts.mcpConnector ?? defaultMcpConnector
+}
+
 /** What a specific CLI brain supplies on top of the shared lifecycle. */
 export interface CliBrainSpec {
   id: BrainId
@@ -70,8 +80,10 @@ export interface CliBrainSpec {
   buildArgs(input: TurnInput, opts: CliBrainBaseOptions): string[]
   /** Build the stdin payload (the prompt / transcript) for one turn, or undefined to pass nothing on stdin. */
   buildStdin(input: TurnInput): string | undefined
-  /** A fresh per-turn parser from the CLI's stream-json to TurnEvents. */
-  makeParser(): CliStreamParser
+  /** A fresh per-turn parser from the CLI's stream-json to TurnEvents. `toolsViaMcp` set when an MCP server is attached. */
+  makeParser(opts?: MakeParserOptions): CliStreamParser
+  /** Extra CLI flags to attach the MCP tool server for this run. Pure, so it is pinned by tests. */
+  mcpArgs(binding: McpBinding): string[]
   /** The official, offline-safe status command used by the default login probe, e.g. ['auth', 'status']. */
   statusArgs: string[]
   /** Decide logged-in from the status command's output. */
@@ -115,12 +127,23 @@ export function createCliBrain(spec: CliBrainSpec, opts: CliBrainBaseOptions = {
       }
     },
 
-    async *run(input: TurnInput, _handle: RunHandle): AsyncIterable<TurnEvent> {
+    async *run(input: TurnInput, handle: RunHandle): AsyncIterable<TurnEvent> {
       const bin = await resolveBin()
       if (!bin) {
         yield { kind: 'turn_end', stop: 'error' }
         return
       }
+
+      // If the engine handed us a tool handler and MCP is enabled, stand up the MCP server and attach it to the CLI,
+      // so the model can call Dool2's tools and each call round-trips to that handler (sandbox + gate). Otherwise the
+      // legacy path: a tool-use ends the turn and the engine runs the tool and re-invokes.
+      const connector = resolveConnector(opts, handle.tools)
+      const binding = connector ? await connector(handle.tools as ToolHandler) : undefined
+      const argv = binding
+        ? [...spec.buildArgs(input, opts), ...spec.mcpArgs(binding)]
+        : spec.buildArgs(input, opts)
+      const parser = spec.makeParser(binding ? { toolsViaMcp: true } : undefined)
+
       // A controller the finally aborts: if the daemon stops reading early (it called handle.abort and broke the
       // loop), this cancels the child. The bridge also kills it in its own finally.
       const controller = new AbortController()
@@ -128,13 +151,14 @@ export function createCliBrain(spec: CliBrainSpec, opts: CliBrainBaseOptions = {
         yield* runCli({
           spawn,
           command: bin,
-          argv: spec.buildArgs(input, opts),
-          parser: spec.makeParser(),
+          argv,
+          parser,
           ...(spec.buildStdin(input) !== undefined ? { stdin: spec.buildStdin(input) } : {}),
           signal: controller.signal,
         })
       } finally {
         controller.abort()
+        if (binding) await binding.close()
       }
     },
   }

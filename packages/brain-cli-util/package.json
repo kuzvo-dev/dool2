@@ -12,7 +12,8 @@
   },
   "dependencies": {
     "@dool2/brains": "workspace:*",
-    "@dool2/core": "workspace:*"
+    "@dool2/core": "workspace:*",
+    "@dool2/mcp-server": "workspace:*"
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",

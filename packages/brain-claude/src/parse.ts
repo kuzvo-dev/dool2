@@ -7,7 +7,7 @@
 // and ends the turn with stop 'tool'. The daemon runs the tool, appends the result to the transcript, and calls
 // run() again. A plain answer ends at the `result` line with stop 'done'.
 
-import type { CliExit, CliStreamParser } from '@dool2/brain-cli-util'
+import type { CliExit, CliStreamParser, MakeParserOptions } from '@dool2/brain-cli-util'
 import type { ToolCall, ToolName, TurnEvent } from '@dool2/core'
 
 type Json = Record<string, unknown>
@@ -17,6 +17,12 @@ class ClaudeParser implements CliStreamParser {
   /** Realtime text deltas already streamed, so the final assistant text block is not emitted twice. */
   private sawTextDelta = false
   private toolCalls = 0
+  /** When tools are serviced by an attached MCP server, a tool-use does not end the turn — the CLI keeps running. */
+  private readonly toolsViaMcp: boolean
+
+  constructor(opts?: MakeParserOptions) {
+    this.toolsViaMcp = opts?.toolsViaMcp === true
+  }
 
   push(line: unknown): TurnEvent[] {
     if (!isObj(line)) return []
@@ -35,9 +41,15 @@ class ClaudeParser implements CliStreamParser {
 
   end(exit: CliExit): TurnEvent[] {
     // The stream closed without a `result`: a nonzero exit (or spawn error, code -1) is an error; a clean exit that
-    // nonetheless produced a tool call ends as 'tool', otherwise 'done'.
+    // nonetheless produced a tool call ends as 'tool' (legacy) — but when MCP serviced the calls inline, the CLI
+    // completed the whole turn itself, so a clean exit is 'done'.
     if (exit.code !== 0 && exit.code !== null) return [{ kind: 'turn_end', stop: 'error' }]
-    return [{ kind: 'turn_end', stop: this.toolCalls > 0 ? 'tool' : 'done' }]
+    return [{ kind: 'turn_end', stop: this.terminalStop() }]
+  }
+
+  /** The clean-exit terminal stop: 'done' when tools round-trip over MCP, else 'tool' if a call was seen. */
+  private terminalStop(): 'done' | 'tool' {
+    return !this.toolsViaMcp && this.toolCalls > 0 ? 'tool' : 'done'
   }
 
   private onStreamEvent(msg: Json): TurnEvent[] {
@@ -69,8 +81,14 @@ class ClaudeParser implements CliStreamParser {
           args: 'input' in block ? block.input : {},
         }
         this.toolCalls++
+        if (this.toolsViaMcp) {
+          // The MCP server services the call inline; record it for the transcript and keep reading — the CLI runs the
+          // tool over MCP and continues in the same process until its own `result` ends the turn.
+          out.push({ kind: 'tool_call', call, serviced: true })
+          continue
+        }
         out.push({ kind: 'tool_call', call })
-        // One turn per run: hand control back so the daemon can run the tool and re-invoke with the result.
+        // Legacy path (no MCP): one turn per run — hand control back so the daemon runs the tool and re-invokes.
         out.push({ kind: 'turn_end', stop: 'tool' })
         break
       }
@@ -83,9 +101,9 @@ class ClaudeParser implements CliStreamParser {
       msg.is_error === true ||
       (typeof msg.subtype === 'string' && msg.subtype !== 'success' && msg.subtype.startsWith('error'))
     if (isError) return [{ kind: 'turn_end', stop: 'error' }]
-    return [{ kind: 'turn_end', stop: this.toolCalls > 0 ? 'tool' : 'done' }]
+    return [{ kind: 'turn_end', stop: this.terminalStop() }]
   }
 }
 
 /** A fresh parser for one Claude turn. */
-export const makeClaudeParser = (): CliStreamParser => new ClaudeParser()
+export const makeClaudeParser = (opts?: MakeParserOptions): CliStreamParser => new ClaudeParser(opts)

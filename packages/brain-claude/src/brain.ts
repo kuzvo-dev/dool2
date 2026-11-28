@@ -3,7 +3,7 @@
 // and never touches its sign-in or tokens — there is no forged user agent and no client id. ready() finds the binary
 // and runs the CLI's own cheap `auth status` (offline-safe, no paid turn); run() maps a TurnInput to one turn.
 
-import { createCliBrain } from '@dool2/brain-cli-util'
+import { claudeMcpArgs, createCliBrain } from '@dool2/brain-cli-util'
 import type { Brain } from '@dool2/brains'
 import { buildClaudeArgs, buildClaudeStdin, CLAUDE_BINARY } from './args.js'
 import { makeClaudeParser } from './parse.js'
@@ -30,6 +30,7 @@ export function createClaudeBrain(opts: ClaudeBrainOptions = {}): Brain {
       buildArgs: buildClaudeArgs,
       buildStdin: buildClaudeStdin,
       makeParser: makeClaudeParser,
+      mcpArgs: claudeMcpArgs,
       statusArgs: ['auth', 'status'],
       parseStatus: claudeLoggedIn,
     },
