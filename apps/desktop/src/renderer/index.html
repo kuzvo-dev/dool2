@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'" />
+    <title>Dool2</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <div id="app">
+      <header id="header">
+        <div class="brand">
+          <span class="mascot" aria-hidden="true">🌱</span>
+          <div>
+            <h1 id="title">Dool2</h1>
+            <p id="tagline">An AI that lives on your computer</p>
+          </div>
+        </div>
+        <div class="controls">
+          <label id="level-label" for="level">Autonomy</label>
+          <select id="level"></select>
+          <button id="browser-toggle" type="button"></button>
+        </div>
+      </header>
+      <main id="main">
+        <section id="chat">
+          <div id="transcript"></div>
+          <form id="composer">
+            <input id="input" type="text" autocomplete="off" />
+            <button id="send" type="submit"></button>
+          </form>
+        </section>
+        <aside id="browser-pane" hidden>
+          <div id="browser-caption"></div>
+          <div id="browser-view">
+            <p id="browser-idle"></p>
+            <img id="browser-frame" alt="" hidden />
+          </div>
+        </aside>
+      </main>
+    </div>
+    <script type="module" src="renderer.js"></script>
+  </body>
+</html>

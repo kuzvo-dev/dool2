@@ -1,0 +1,315 @@
+:root {
+  --bg: #f6f7f5;
+  --panel: #ffffff;
+  --ink: #1d231c;
+  --muted: #6b746a;
+  --accent: #2f8f4e;
+  --accent-soft: #e6f3ea;
+  --line: #e4e7e2;
+  --bubble-user: #2f8f4e;
+  --warn: #8a5a00;
+  --warn-soft: #fdf3dc;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #141712;
+    --panel: #1d211b;
+    --ink: #eef2ec;
+    --muted: #9aa396;
+    --accent: #5bc27e;
+    --accent-soft: #223026;
+    --line: #2c3129;
+    --bubble-user: #3a9a5a;
+    --warn: #e7c173;
+    --warn-soft: #2d2714;
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+}
+
+body {
+  font-family:
+    -apple-system, BlinkMacSystemFont, "Segoe UI", "Apple SD Gothic Neo", "Malgun Gothic", sans-serif;
+  background: var(--bg);
+  color: var(--ink);
+  font-size: 15px;
+}
+
+#app {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+}
+
+#header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 20px;
+  background: var(--panel);
+  border-bottom: 1px solid var(--line);
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.mascot {
+  font-size: 26px;
+}
+
+#title {
+  margin: 0;
+  font-size: 17px;
+}
+
+#tagline {
+  margin: 2px 0 0;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.controls {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+#level-label {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+#level {
+  font: inherit;
+  font-size: 13px;
+  padding: 6px 8px;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: var(--panel);
+  color: var(--ink);
+}
+
+#browser-toggle {
+  font: inherit;
+  font-size: 13px;
+  padding: 7px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: var(--panel);
+  color: var(--ink);
+  cursor: pointer;
+}
+
+#browser-toggle.on {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+#main {
+  flex: 1;
+  display: flex;
+  min-height: 0;
+}
+
+#chat {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+#transcript {
+  flex: 1;
+  overflow-y: auto;
+  padding: 22px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.empty {
+  margin: auto;
+  max-width: 440px;
+  text-align: center;
+  color: var(--muted);
+}
+
+.empty .big {
+  font-size: 30px;
+  margin-bottom: 10px;
+}
+
+.empty h2 {
+  color: var(--ink);
+  font-size: 18px;
+  margin: 0 0 8px;
+}
+
+.row {
+  display: flex;
+}
+
+.row.user {
+  justify-content: flex-end;
+}
+
+.bubble {
+  max-width: 76%;
+  padding: 10px 14px;
+  border-radius: 16px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.row.dool2 .bubble {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-bottom-left-radius: 4px;
+}
+
+.row.user .bubble {
+  background: var(--bubble-user);
+  color: #fff;
+  border-bottom-right-radius: 4px;
+}
+
+.work {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 13px;
+  padding-left: 4px;
+}
+
+.work .dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+
+.note {
+  color: var(--muted);
+  font-size: 13px;
+  padding-left: 4px;
+}
+
+.approval {
+  align-self: flex-start;
+  max-width: 76%;
+  background: var(--warn-soft);
+  border: 1px solid var(--warn);
+  border-radius: 14px;
+  padding: 12px 14px;
+}
+
+.approval .head {
+  font-weight: 600;
+  color: var(--warn);
+  margin-bottom: 4px;
+}
+
+.approval .label {
+  color: var(--ink);
+}
+
+.approval .amount {
+  font-weight: 600;
+}
+
+.approval .hint {
+  color: var(--muted);
+  font-size: 12px;
+  margin-top: 6px;
+}
+
+#composer {
+  display: flex;
+  gap: 10px;
+  padding: 14px 20px;
+  border-top: 1px solid var(--line);
+  background: var(--panel);
+}
+
+#input {
+  flex: 1;
+  font: inherit;
+  padding: 11px 14px;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  background: var(--bg);
+  color: var(--ink);
+}
+
+#send {
+  font: inherit;
+  padding: 11px 18px;
+  border-radius: 10px;
+  border: none;
+  background: var(--accent);
+  color: #fff;
+  cursor: pointer;
+}
+
+#send:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+#browser-pane {
+  width: 420px;
+  border-left: 1px solid var(--line);
+  background: #0e120d;
+  display: flex;
+  flex-direction: column;
+}
+
+/* The pane is hidden by default (the browser stays invisible). An ID selector beats the UA [hidden] rule, so
+   restate display:none here, otherwise the pane would show even while hidden. */
+#browser-pane[hidden] {
+  display: none;
+}
+
+#browser-caption {
+  color: #cdd6c8;
+  font-size: 12px;
+  padding: 10px 14px;
+  border-bottom: 1px solid #232a20;
+}
+
+#browser-view {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 12px;
+  overflow: auto;
+}
+
+#browser-idle {
+  color: #8a9384;
+  font-size: 13px;
+  text-align: center;
+  max-width: 260px;
+}
+
+#browser-frame {
+  max-width: 100%;
+  border-radius: 8px;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.4);
+}
