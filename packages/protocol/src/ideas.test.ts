@@ -14,15 +14,22 @@ import {
 } from './ideas.js'
 
 const skillsDir = join(import.meta.dirname, '../../../skills')
-const cards: ConnectCard[] = readdirSync(skillsDir)
-  .filter((d) => !d.startsWith('_') && !d.includes('.'))
-  .flatMap((d) => {
-    try {
-      return [JSON.parse(readFileSync(join(skillsDir, d, 'connect.json'), 'utf8')) as ConnectCard]
-    } catch {
-      return []
-    }
-  })
+// The service-card skills directory is optional in the v2 layout (it was at the repo root in v1). When it is absent,
+// load no cards — the assertions below are about the general idea sections, not the service cards.
+function listSkillDirs(): string[] {
+  try {
+    return readdirSync(skillsDir).filter((d) => !d.startsWith('_') && !d.includes('.'))
+  } catch {
+    return []
+  }
+}
+const cards: ConnectCard[] = listSkillDirs().flatMap((d) => {
+  try {
+    return [JSON.parse(readFileSync(join(skillsDir, d, 'connect.json'), 'utf8')) as ConnectCard]
+  } catch {
+    return []
+  }
+})
 
 describe('아이디어 모음', () => {
   it('아이디어 탭은 직접 고른 부탁만 (카드 할 일은 연결 화면에서)', () => {
