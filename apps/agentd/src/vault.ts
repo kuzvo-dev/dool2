@@ -27,14 +27,125 @@ import {
   fillTotp as vaultFillTotp,
 } from '@dool2/vault'
 
-/** A minimal in-memory vault. Holds full items; only ever exposes masked summaries through {@link makeVaultBridge}. */
+/** Default life of an unlock session (the UI lock), ms. The desktop/phone pass their own when they call unlock(). */
+export const DEFAULT_UNLOCK_TTL_MS = 5 * 60_000
+/** Default life of the agent-access window within an unlock, ms. Defaults to the UI session's length when unset. */
+export const DEFAULT_AGENT_WINDOW_MS = DEFAULT_UNLOCK_TTL_MS
+
+/** What an explicit unlock opens. The desktop/phone call {@link InMemoryVault.unlock} with these (ADR 0011/0023). */
+export interface UnlockOptions {
+  /** How long the UI unlock session lasts from now, ms. Defaults to {@link DEFAULT_UNLOCK_TTL_MS}. */
+  ttlMs?: number
+  /**
+   * How long the agent-access window lasts from now, ms — the window `while-unlocked` fills consult, kept separate
+   * from the UI lock so the agent can be given a shorter leash than the screen. Defaults to `ttlMs`.
+   */
+  agentTtlMs?: number
+}
+
+/**
+ * One agent fill, recorded for the activity log (ADR 0047). No secret: only the opaque id, the kind, a masked
+ * non-secret label, and when it happened. The actor is always the agent here (a person's own fills are not recorded
+ * through this path).
+ */
+export interface VaultFillEvent {
+  actor: 'agent'
+  id: string
+  kind: 'login' | 'totp' | 'payment-pin'
+  /** A non-secret label for the item (its user-given name, else its site, else its id). Never a secret. */
+  masked: string
+  /** Unix ms when the fill happened (from the vault's clock, so a fake clock drives it in tests). */
+  at: number
+}
+
+/** Construction knobs for {@link InMemoryVault}: a clock (for tests) and the account's default agent-access policy. */
+export interface InMemoryVaultOptions {
+  /** The clock the lock model and audit log read. Defaults to Date.now; a test passes a fake clock. */
+  now?: () => number
+  /** The account's default agent-access policy (per-item overrides win). Defaults to 'while-unlocked'. */
+  accountPolicy?: AgentAccessPolicy
+}
+
+/**
+ * A minimal in-memory vault. Holds full items; only ever exposes masked summaries through {@link makeVaultBridge}.
+ *
+ * It also owns the live lock model the vault design intends (ADR 0011/0023): the vault starts LOCKED, `unlock()`
+ * opens a UI session (`unlockedUntil`) and a separate agent-access window (`agentExpiresAt`) that both expire on the
+ * clock, and `lock()` closes them at once. The bridge's `while-unlocked` gate reads {@link unlockedForAgent} LIVE, so
+ * an expired window re-locks on its own. The account default agent-access policy and per-item overrides live here too.
+ */
 export class InMemoryVault {
   readonly #items: VaultItem[]
+  readonly #now: () => number
+  #accountPolicy: AgentAccessPolicy
+  /** Unix ms until which the UI is unlocked; 0 means locked. */
+  #unlockedUntil = 0
+  /** Unix ms until which the agent-access window is open; 0 means closed. Separate from the UI lock. */
+  #agentExpiresAt = 0
   /** Records the ids actually filled, so a smoke/test can see the fill happened without a secret appearing. */
   readonly fills: { id: string; kind: 'login' | 'totp' | 'payment-pin' }[] = []
+  /** Append-only agent-fill audit log (no secret). Read with {@link auditLog}. */
+  readonly #audit: VaultFillEvent[] = []
 
-  constructor(items: VaultItem[] = defaultVaultItems()) {
+  constructor(items: VaultItem[] = defaultVaultItems(), opts: InMemoryVaultOptions = {}) {
     this.#items = items
+    this.#now = opts.now ?? Date.now
+    this.#accountPolicy = opts.accountPolicy ?? 'while-unlocked'
+  }
+
+  // --- lock model (the seam the desktop/phone drive) ---------------------------------------------------------------
+
+  /**
+   * Unlock the vault. Opens a UI session and an agent-access window that both expire on the clock. Default locked, so
+   * this is an explicit call the desktop/phone make after the user authenticates; nothing auto-unlocks.
+   */
+  unlock(opts: UnlockOptions = {}): void {
+    const now = this.#now()
+    const ttl = opts.ttlMs ?? DEFAULT_UNLOCK_TTL_MS
+    const agentTtl = opts.agentTtlMs ?? ttl
+    this.#unlockedUntil = now + ttl
+    this.#agentExpiresAt = now + agentTtl
+  }
+
+  /** Lock the vault at once: close both the UI session and the agent-access window. */
+  lock(): void {
+    this.#unlockedUntil = 0
+    this.#agentExpiresAt = 0
+  }
+
+  /** Whether the UI is unlocked right now (the screen's lock), read live against the clock. */
+  isUnlocked(): boolean {
+    return this.#now() < this.#unlockedUntil
+  }
+
+  /** Whether the agent-access window is open right now — the state `while-unlocked` fills consult. Read live. */
+  unlockedForAgent(): boolean {
+    return this.#now() < this.#agentExpiresAt
+  }
+
+  // --- policy ------------------------------------------------------------------------------------------------------
+
+  /** The account's default agent-access policy; per-item overrides win in {@link canAgentUse}. */
+  accountPolicy(): AgentAccessPolicy {
+    return this.#accountPolicy
+  }
+
+  /** Set the account default agent-access policy (the desktop/phone drive this from settings). */
+  setAccountPolicy(policy: AgentAccessPolicy): void {
+    this.#accountPolicy = policy
+  }
+
+  /** Set (or clear) a per-item override of the account default. Throws for an unknown id. */
+  setItemPolicy(id: string, policy: AgentAccessPolicy | undefined): void {
+    const item = this.find(id)
+    if (!item) throw new Error(`No vault item ${id}`)
+    if (policy === undefined) delete item.accessPolicy
+    else item.accessPolicy = policy
+  }
+
+  /** The agent-fill audit log, in order. No secret appears in it. */
+  auditLog(): readonly VaultFillEvent[] {
+    return this.#audit
   }
 
   /** The masked view the AI may see (via @dool2/vault toAgentSummary). No secret field exists on the result. */
@@ -61,9 +172,15 @@ export class InMemoryVault {
     return this.#items
   }
 
-  /** Note that a fill happened (for inspection); the secret is not recorded, only the id and kind. */
+  /**
+   * Note that a fill happened (for inspection and the audit log); the secret is not recorded, only the id, the kind,
+   * a masked non-secret label and the time. Appends one {@link VaultFillEvent}.
+   */
   recordFill(id: string, kind: 'login' | 'totp' | 'payment-pin'): void {
     this.fills.push({ id, kind })
+    const item = this.find(id)
+    const masked = item ? (item.label ?? item.site ?? item.id) : id
+    this.#audit.push({ actor: 'agent', id, kind, masked, at: this.#now() })
   }
 }
 
@@ -191,10 +308,15 @@ export interface VaultBridgeDeps {
   skills?: () => readonly SkillMeta[]
   /**
    * The account's default agent-access policy (ADR 0023/0047). A `never` item is never filled; `while-unlocked` needs
-   * the vault unlocked; `always` fills regardless. A per-item policy overrides this. Defaults to 'while-unlocked'.
+   * the vault unlocked; `always` fills regardless. A per-item policy overrides this. Read at call time so a settings
+   * change is honored. Defaults to the live account policy held on the vault ({@link InMemoryVault.accountPolicy}).
    */
   accessPolicy?: () => AgentAccessPolicy
-  /** Whether the vault is currently unlocked. Defaults to () => true (unlocked). */
+  /**
+   * Whether the vault is unlocked for the agent right now. Read at call time (LIVE), so an unlock that expires
+   * re-locks on its own. Defaults to the vault's live agent-access window ({@link InMemoryVault.unlockedForAgent}) —
+   * which means DEFAULT LOCKED until the desktop/phone call {@link InMemoryVault.unlock}.
+   */
   unlocked?: () => boolean
   /** Extra equivalent-domain groups for URL binding; the built-in Korean groups (ADR 0029) always apply. */
   urlBinding?: UrlBindingSettings
@@ -209,8 +331,10 @@ export interface VaultBridgeDeps {
 export function makeVaultBridge(vault: InMemoryVault, deps: VaultBridgeDeps): VaultBridge {
   const { page } = deps
   const skills = (): readonly SkillMeta[] => deps.skills?.() ?? []
-  const accessPolicy = (): AgentAccessPolicy => deps.accessPolicy?.() ?? 'while-unlocked'
-  const unlocked = (): boolean => deps.unlocked?.() ?? true
+  // Default to the vault's LIVE state (ADR 0047): the account policy and the agent-access window held on the vault,
+  // read at call time. So the default is locked until the desktop/phone unlock, and an expired unlock re-locks itself.
+  const accessPolicy = (): AgentAccessPolicy => deps.accessPolicy?.() ?? vault.accountPolicy()
+  const unlocked = (): boolean => deps.unlocked?.() ?? vault.unlockedForAgent()
   const urlBinding = deps.urlBinding ?? {}
 
   /**

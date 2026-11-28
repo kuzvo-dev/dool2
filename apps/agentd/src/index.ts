@@ -24,4 +24,14 @@ export {
 } from './brain-config.js'
 export { type BuildBridgesOptions, type BuiltBridges, buildHostBridges } from './bridges.js'
 export { type HttpServerOptions, type RunningHttpServer, startHttpServer } from './http.js'
-export { defaultVaultItems, InMemoryVault, makeVaultBridge } from './vault.js'
+export {
+  DEFAULT_AGENT_WINDOW_MS,
+  DEFAULT_UNLOCK_TTL_MS,
+  defaultVaultItems,
+  InMemoryVault,
+  type InMemoryVaultOptions,
+  makeVaultBridge,
+  type UnlockOptions,
+  type VaultBridgeDeps,
+  type VaultFillEvent,
+} from './vault.js'

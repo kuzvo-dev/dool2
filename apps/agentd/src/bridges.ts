@@ -38,9 +38,15 @@ export interface BuildBridgesOptions {
    * heuristic.
    */
   skills?: () => readonly SkillMeta[]
-  /** The account default agent-access policy for vault fills (ADR 0023/0047). Defaults to 'while-unlocked'. */
+  /**
+   * The account default agent-access policy for vault fills (ADR 0023/0047), read live. Omitted -> the bridge reads
+   * the policy held on the InMemoryVault ({@link InMemoryVault.accountPolicy}, default 'while-unlocked').
+   */
   accessPolicy?: () => AgentAccessPolicy
-  /** Whether the vault is currently unlocked. Defaults to () => true. */
+  /**
+   * Whether the vault is unlocked for the agent right now, read live. Omitted -> the bridge reads the vault's live
+   * agent-access window ({@link InMemoryVault.unlockedForAgent}), which is LOCKED until unlock() is called.
+   */
   unlocked?: () => boolean
 }
 

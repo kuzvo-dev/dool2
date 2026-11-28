@@ -33,6 +33,13 @@ export interface SessionOptions {
 export interface Session {
   agentd: Agentd
   /**
+   * The in-memory vault behind the `vault` bridge, when the built-in browser is on (else undefined — the offline fake
+   * bridges hold no real vault). The vault starts LOCKED (ADR 0047); the main process calls vault.unlock()/lock() to
+   * drive the lock state after the user authenticates, and sets the account/per-item agent-access policy on it. This
+   * is the seam the desktop/phone own; nothing auto-unlocks.
+   */
+  vault?: InMemoryVault
+  /**
    * A single frame of the hidden browser as a data: URL, or null when there is nothing to show (offline/fake page, or
    * no tab open yet). Used for the smoke screenshot and as the screencast fallback.
    */
@@ -51,15 +58,18 @@ export interface Session {
 export function createSession(opts: SessionOptions): Session {
   let caller: CdpBrowserCaller | undefined
   let bridges: HostBridges
+  let vault: InMemoryVault | undefined
 
   if (opts.builtinBrowser) {
     if (!opts.dataDir) throw new Error('builtinBrowser requires a dataDir for the downloaded Chromium')
     caller = new CdpBrowserCaller({ dataDir: opts.dataDir })
     const page = createPageBridge(caller)
     const fake = makeFakeBridges()
-    const vault = new InMemoryVault()
+    vault = new InMemoryVault()
     bridges = {
       page,
+      // level/accessPolicy/unlocked default to the live session level and the vault's own lock + policy state, so the
+      // vault starts locked until the app drives vault.unlock() (ADR 0047).
       vault: makeVaultBridge(vault, { page, level: () => agentd.level }),
       pc: fake.pc,
       fs: fake.fs,
@@ -90,6 +100,7 @@ export function createSession(opts: SessionOptions): Session {
 
   return {
     agentd,
+    ...(vault !== undefined ? { vault } : {}),
     captureFrame,
     watchBrowser(onFrame) {
       // A modest jpeg size keeps the DevTools pipe light; the pane repaints as the page changes.
