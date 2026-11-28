@@ -277,6 +277,8 @@ importers:
         specifier: ^4.6.7
         version: 4.6.7
 
+  packages/packs: {}
+
   packages/protocol:
     dependencies:
       '@dool2/i18n':
@@ -299,6 +301,12 @@ importers:
         version: 0.32.0
 
   packages/skill-sdk: {}
+
+  packages/skills:
+    dependencies:
+      '@dool2/skill-sdk':
+        specifier: workspace:*
+        version: link:../skill-sdk
 
   packages/store:
     dependencies:

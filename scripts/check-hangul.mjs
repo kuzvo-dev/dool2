@@ -19,6 +19,7 @@ const ALLOWED = [
   /(^|\/)locales\//,
   /(^|\/)region\/kr\//,
   /^skills\//,
+  /^packages\/skills\/skills\//,
   /^evals\//,
   /^docs\//,
   /(^|\/)fixtures\//,
