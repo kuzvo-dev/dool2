@@ -227,6 +227,25 @@ importers:
         specifier: workspace:*
         version: link:../browser
 
+  packages/phone:
+    dependencies:
+      '@dool2/approvals':
+        specifier: workspace:*
+        version: link:../approvals
+      '@dool2/core':
+        specifier: workspace:*
+        version: link:../core
+    devDependencies:
+      '@dool2/agentd':
+        specifier: workspace:*
+        version: link:../../apps/agentd
+      '@dool2/brains':
+        specifier: workspace:*
+        version: link:../brains
+      '@dool2/sandbox':
+        specifier: workspace:*
+        version: link:../sandbox
+
   packages/protocol:
     dependencies:
       '@dool2/i18n':
