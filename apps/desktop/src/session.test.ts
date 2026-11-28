@@ -26,11 +26,20 @@ describe('createSession (offline demo)', () => {
     await session.close()
   })
 
-  it('starts at the autonomy level it was given and can change it', () => {
+  it('starts at the autonomy level it was given and can lower it freely', () => {
     const session = createSession({ brain: demoBrain(), level: 'auto' })
     expect(session.agentd.level).toBe('auto')
-    session.agentd.setLevel('full')
-    expect(session.agentd.level).toBe('full')
+    const toAsk = session.agentd.setLevel('ask')
+    expect(toAsk.ok).toBe(true)
+    expect(session.agentd.level).toBe('ask')
+  })
+
+  it('refuses full-auto from the desktop without a phone-signed consent (ADR 0047)', () => {
+    const session = createSession({ brain: demoBrain(), level: 'auto' })
+    const result = session.agentd.setLevel('full')
+    expect(result.ok).toBe(false)
+    // The level stays where it was; full-auto only turns on from the phone's secure chip.
+    expect(session.agentd.level).toBe('auto')
   })
 
   it('refuses the built-in browser without a data folder', () => {
