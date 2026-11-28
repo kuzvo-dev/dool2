@@ -5,6 +5,7 @@
 import type { AgentdEvent } from '@dool2/agentd'
 import type { AutonomyLevel } from '@dool2/core'
 import type { Lang } from '@dool2/i18n'
+import { frameView } from './frame.js'
 import { LEVELS, toLevel } from './levels.js'
 import { lineFor, type UiLine } from './lines.js'
 import { type AppText, appText } from './locales/app.js'
@@ -198,14 +199,10 @@ async function toggleBrowser(): Promise<void> {
 }
 
 function onFrame(dataUrl: string | null): void {
-  if (dataUrl) {
-    els.paneFrame.src = dataUrl
-    els.paneFrame.hidden = false
-    els.paneIdle.hidden = true
-  } else {
-    els.paneFrame.hidden = true
-    els.paneIdle.hidden = false
-  }
+  const v = frameView(dataUrl)
+  if (v.src) els.paneFrame.src = v.src
+  els.paneFrame.hidden = !v.showFrame
+  els.paneIdle.hidden = !v.showIdle
 }
 
 async function main(): Promise<void> {

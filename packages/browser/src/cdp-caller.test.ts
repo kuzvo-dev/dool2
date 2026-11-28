@@ -524,6 +524,57 @@ describe('CdpBrowserCaller', () => {
     await expect(c.call('fetch', { tabId, url: 'https://shop.test/api' })).rejects.toThrow(/Failed to fetch/)
   })
 
+  it('screencast start enables Page.startScreencast and delivers ACKed frames to a subscriber', async () => {
+    const { c, browser } = caller((i) => new FakePage(`T${i}`, { url: 'https://cast.test/', title: 'cast' }))
+    const { tabId } = (await c.call('open', { url: 'https://cast.test/' })) as { tabId: number }
+    const frames: { data: string; mime: string }[] = []
+    c.onScreencastFrame(tabId, (f) => frames.push(f))
+    const r = (await c.call('screencast', { tabId, action: 'start' })) as { started: boolean }
+    expect(r.started).toBe(true)
+    const page = browser.pages[0] as FakePage
+    expect(page.sent.some((s) => s.method === 'Page.startScreencast')).toBe(true)
+    browser.emit('Page.screencastFrame', { data: 'FRAME1', sessionId: 11 }, page.sessionId)
+    // The frame was delivered as a base64 jpeg, and ACKed so Chromium keeps sending.
+    expect(frames).toEqual([{ data: 'FRAME1', mime: 'image/jpeg' }])
+    const ack = page.sent.find((s) => s.method === 'Page.screencastFrameAck')
+    expect(ack?.params).toEqual({ sessionId: 11 })
+  })
+
+  it('screencast stop sends Page.stopScreencast and stops delivering frames', async () => {
+    const { c, browser } = caller((i) => new FakePage(`T${i}`, { url: 'https://cast.test/', title: 'cast' }))
+    const { tabId } = (await c.call('open', { url: 'https://cast.test/' })) as { tabId: number }
+    const frames: unknown[] = []
+    c.onScreencastFrame(tabId, (f) => frames.push(f))
+    await c.call('screencast', { tabId, action: 'start' })
+    const page = browser.pages[0] as FakePage
+    browser.emit('Page.screencastFrame', { data: 'F1', sessionId: 1 }, page.sessionId)
+    const stop = (await c.call('screencast', { tabId, action: 'stop' })) as { stopped: boolean }
+    expect(stop.stopped).toBe(true)
+    expect(page.sent.some((s) => s.method === 'Page.stopScreencast')).toBe(true)
+    // A frame arriving after stop is ignored (the tab's throttle state was cleared).
+    browser.emit('Page.screencastFrame', { data: 'F2', sessionId: 2 }, page.sessionId)
+    expect(frames).toHaveLength(1)
+  })
+
+  it('screencast throttles delivery to every everyNthFrame-th frame but ACKs them all', async () => {
+    const { c, browser } = caller((i) => new FakePage(`T${i}`, { url: 'https://cast.test/', title: 'cast' }))
+    const { tabId } = (await c.call('open', { url: 'https://cast.test/' })) as { tabId: number }
+    const frames: { data: string }[] = []
+    c.onScreencastFrame(tabId, (f) => frames.push(f))
+    await c.call('screencast', { tabId, action: 'start', everyNthFrame: 2 })
+    const page = browser.pages[0] as FakePage
+    for (let i = 1; i <= 4; i++)
+      browser.emit('Page.screencastFrame', { data: `F${i}`, sessionId: i }, page.sessionId)
+    // Every 2nd frame is delivered (F2, F4); the dropped ones are still ACKed so the stream never stalls.
+    expect(frames.map((f) => f.data)).toEqual(['F2', 'F4'])
+    expect(page.sent.filter((s) => s.method === 'Page.screencastFrameAck')).toHaveLength(4)
+  })
+
+  it('screencast on an unknown tab throws (owner-scoped)', async () => {
+    const { c } = caller((i) => new FakePage(`T${i}`, { url: 'https://cast.test/', title: 'cast' }))
+    await expect(c.call('screencast', { tabId: 999, action: 'start' })).rejects.toThrow(/No tab/)
+  })
+
   it('throws a clear error naming an unsupported command', async () => {
     const { c } = caller((i) => new FakePage(`T${i}`, { url: 'https://u.test/', title: 'u' }))
     await expect(c.call('fill', { tabId: 1, ref: 'e1', value: 'x' })).rejects.toThrow(/fill/)
@@ -574,6 +625,24 @@ IT('CdpBrowserCaller integration (real Chromium)', () => {
     expect(Buffer.from(pdf.data, 'base64').subarray(0, 5).toString('latin1')).toBe('%PDF-')
     expect(pdf.pages).toBeGreaterThanOrEqual(1)
   }, 120_000)
+
+  it('starts a screencast on example.com and receives at least one jpeg frame', async () => {
+    c = new CdpBrowserCaller({ dataDir })
+    const { tabId } = (await c.call('open', { url: 'https://example.com/' }, 60_000)) as { tabId: number }
+    const got = c
+    const frame = await new Promise<{ data: string; mime: string }>((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error('no screencast frame within 20s')), 20_000)
+      const unsub = got.onScreencastFrame(tabId, (f) => {
+        clearTimeout(timer)
+        unsub()
+        resolve(f)
+      })
+      got.call('screencast', { tabId, action: 'start' }).catch(reject)
+    })
+    expect(frame.mime).toBe('image/jpeg')
+    expect(frame.data.length).toBeGreaterThan(0)
+    await got.call('screencast', { tabId, action: 'stop' })
+  }, 60_000)
 
   it('fetches a relative url from the page under the live session (the data path)', async () => {
     c = new CdpBrowserCaller({ dataDir })
