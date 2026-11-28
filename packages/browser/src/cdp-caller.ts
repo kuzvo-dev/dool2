@@ -91,6 +91,13 @@ const SUPPORTED = [
 ] as const
 
 /**
+ * Commands that change the page (or the viewport), so the next snapshot must re-walk rather than trust its cache. Listed
+ * here so the cache is invalidated in one place, whatever the command does. `fetch` reads under the session and never
+ * touches the DOM, so it is not here; a real DOM change the site makes on its own is caught by the signature probe.
+ */
+const ACTING_COMMANDS = new Set(['navigate', 'back', 'click', 'input', 'type', 'press', 'hover', 'scroll'])
+
+/**
  * The data path. Default cap on a fetched body (bytes ≈ chars): 2 MB. Big enough for a site's JSON API response, small
  * enough that one call never pulls an unbounded download over the DevTools pipe. The in-page code caps first (bounded
  * transfer) and the caller re-enforces this defensively. Override per call with args.maxBytes.
@@ -107,6 +114,51 @@ const DEFAULT_FETCH_TIMEOUT = 30_000
 const MAX_FRAMES = 24 // total documents walked, counting the top one
 const MAX_FRAME_DEPTH = 5 // how deep the iframe nesting is followed
 const MIN_FRAME_PX = 24 // frames narrower/shorter than this are treated as decorative and skipped
+
+/**
+ * Fast snapshots (fast internals). A snapshot defaults to the current viewport, returns a compact diff when the page
+ * barely changed, and is cached per tab so a repeat with no change costs no DOM walk. None of this touches the mark/ref
+ * string format: viewport scoping only changes which marks are listed (every interactive element still gets its stable
+ * `eN`/`fMeN`, counted in the same DFS order, so a ref from any earlier snapshot still clicks), the diff reuses the exact
+ * mark substrings from the last walk, and the cache is an optimization only — a forced full snapshot always re-walks.
+ */
+type SnapScope = 'viewport' | 'full'
+type SnapMode = 'auto' | 'full' | 'diff'
+/**
+ * How many changed marks still counts as "barely changed" in `mode:'auto'`: at or below this, auto returns a compact
+ * diff naming the changed refs; above it, auto returns the full list (and says the page changed a lot). A small constant
+ * — a click usually flips a handful of marks (a button label, a new row), a navigation flips most of them.
+ */
+const DIFF_THRESHOLD = 8
+
+/** The result shape of a snapshot (the extension shape plus the fast-internals fields `scope`/`mode`/`cached`). */
+interface SnapshotResult {
+  tabId: number
+  url: string
+  title: string
+  text: string
+  truncated: boolean
+  captcha: boolean
+  /** Which part of the document was listed: the current viewport (default) or the whole page */
+  scope: SnapScope
+  /** What the text is: the full list, or a compact diff from the last snapshot */
+  mode: 'full' | 'diff'
+  /** Present and true only when this came straight from the cache (no DOM walk) */
+  cached?: boolean
+  dialogNotes?: SiteDialog[]
+}
+
+/** The last snapshot kept per tab, for the diff baseline and the no-change cache. `text` is the full walk (with notes). */
+interface LastSnap {
+  /** The full stitched walk text that was cached (what a cache hit returns, and the diff baseline's source) */
+  text: string
+  /** ref → its exact mark substring (e.g. `[e3 button "OK"]`), so a diff reuses byte-identical marks, never re-synthesizing them */
+  marks: Map<string, string>
+  /** Cheap page signature (url + element count) captured for this snapshot; a later probe equal to it means no change */
+  signature: string
+  /** The scope this snapshot was taken at; a cache hit or diff baseline only applies when the next call matches it */
+  scope: SnapScope
+}
 
 /** One screencast frame delivered to an onScreencastFrame subscriber: base64 image bytes + its mime type. */
 export interface ScreencastFrame {
@@ -155,6 +207,10 @@ interface Tab {
   frameSessions: Map<string, string>
   /** prefix (`f1`, `f2`, …) → where that frame resolves; rebuilt on every snapshot so refs stay in step with the walk */
   frames?: Map<string, FrameLoc>
+  /** The last snapshot (diff baseline + no-change cache). Cleared implicitly by `snapDirty` on any acting call */
+  lastSnap?: LastSnap
+  /** Set by every acting call (navigate/click/type/press/hover/scroll/input/back) so the next snapshot re-walks */
+  snapDirty?: boolean
 }
 
 /** A ref parsed into its frame prefix (`''` for the top document, `f1`/`f2`/… for a frame) and element index */
@@ -164,6 +220,70 @@ function parseRef(ref: string): { prefix: string; index: number } | null {
   const index = Number(m[2])
   if (!index) return null
   return { prefix: m[1] ?? '', index }
+}
+
+/**
+ * Parse a walk's inline marks into `ref → exact mark substring`, in document order. Mirrors the daemon's parseRefs and
+ * page-bridge's parseNodes (a ref `eN`/`fMeN`, then the bracket up to its `]`), but keeps the WHOLE mark string so a diff
+ * can reuse it byte-for-byte rather than re-synthesizing role/name. The per-frame note lines carry no `[` so they are
+ * never mistaken for a mark. A duplicate ref cannot occur within one walk (each `eN` is assigned once).
+ */
+function parseMarks(text: string): Map<string, string> {
+  const marks = new Map<string, string>()
+  const re = /\[((?:f\d+)?e\d+) [^\]]*\]/g
+  for (let m = re.exec(text); m !== null; m = re.exec(text)) marks.set(m[1] as string, m[0])
+  return marks
+}
+
+/** What changed between two mark maps (by stable ref): refs added, removed, or whose mark string differs */
+interface MarkDiff {
+  added: string[]
+  removed: string[]
+  changed: string[]
+  count: number
+}
+
+/** Diff two mark maps on their stable refs + exact mark string (role+name+value all live in the mark). Deterministic. */
+function diffMarks(prev: Map<string, string>, cur: Map<string, string>): MarkDiff {
+  const added: string[] = []
+  const removed: string[] = []
+  const changed: string[] = []
+  for (const ref of cur.keys()) {
+    if (!prev.has(ref)) added.push(ref)
+    else if (prev.get(ref) !== cur.get(ref)) changed.push(ref)
+  }
+  for (const ref of prev.keys()) if (!cur.has(ref)) removed.push(ref)
+  return { added, removed, changed, count: added.length + removed.length + changed.length }
+}
+
+/**
+ * Render a compact diff. Changed/added entries carry their exact (byte-identical) mark so the brain can still click them
+ * and page-bridge still parses them; removed entries name only the ref. No brackets appear outside a real mark, so a
+ * reader (or parseNodes) sees exactly the refs that still exist.
+ */
+function renderDiff(diff: MarkDiff, cur: Map<string, string>): string {
+  if (diff.count === 0) return '(diff) unchanged'
+  const seg: string[] = []
+  if (diff.changed.length) seg.push(`changed ${diff.changed.map((r) => cur.get(r)).join(' ')}`)
+  if (diff.added.length) seg.push(`added ${diff.added.map((r) => cur.get(r)).join(' ')}`)
+  if (diff.removed.length) seg.push(`removed ${diff.removed.join(', ')}`)
+  return `(diff) ${seg.join('; ')}`
+}
+
+/**
+ * The viewport affordance: a one-line note of how many interactive marks sit out of view, so the brain knows to scroll
+ * or ask for the full list. Empty for `scope:'full'` (nothing is hidden) or when everything in-view fits. No brackets,
+ * so it is never read as a mark.
+ */
+function moreNote(scope: SnapScope, above: number, below: number): string {
+  if (scope !== 'viewport') return ''
+  const a = Number.isFinite(above) ? Math.max(0, Math.floor(above)) : 0
+  const b = Number.isFinite(below) ? Math.max(0, Math.floor(below)) : 0
+  if (!a && !b) return ''
+  const bits: string[] = []
+  if (b) bits.push(`+${b} more below`)
+  if (a) bits.push(`+${a} more above`)
+  return `\n${bits.join(', ')} — scroll or snapshot full`
 }
 
 /** The flat DFS order of a frame tree, parent before children, with each frame's position among its siblings */
@@ -279,9 +399,19 @@ const WALK_HELPERS = `
  * field values are never emitted. The walk itself does NOT descend into iframes (SKIP lists iframe); each frame is walked in
  * its own context and stitched together by the caller.
  */
-const FRAME_WALK_FN = `function(maxChars, R, prefix){
+const FRAME_WALK_FN = `function(maxChars, R, prefix, scope){
   ${WALK_HELPERS}
-  var n = 0, out = '';
+  var n = 0, out = '', above = 0, below = 0;
+  var viewportOnly = scope !== 'full';
+  var vh = window.innerHeight || document.documentElement.clientHeight || 0;
+  var vw = window.innerWidth || document.documentElement.clientWidth || 0;
+  // In (or intersecting) the current viewport. Used only to decide what to LIST in viewport scope; it never changes the
+  // eN counting (every visible interactive element is counted either way), so a ref stays stable across scopes.
+  function inView(el){
+    var r = el.getBoundingClientRect();
+    if (r.width === 0 && r.height === 0) return false;
+    return r.bottom > 0 && r.top < vh && r.right > 0 && r.left < vw;
+  }
   function nameOf(el, role){
     var s = el.getAttribute('aria-label') || el.getAttribute('title') || el.getAttribute('alt') || '';
     if (!s && role !== R.password){
@@ -301,6 +431,7 @@ const FRAME_WALK_FN = `function(maxChars, R, prefix){
   function walk(node){
     if (out.length > maxChars + 2000) return;
     if (node.nodeType === 3){
+      if (viewportOnly && node.parentElement && !inView(node.parentElement)) return;
       var t = node.textContent.replace(/\\s+/g, ' ');
       if (t.trim()) out += t;
       return;
@@ -312,7 +443,12 @@ const FRAME_WALK_FN = `function(maxChars, R, prefix){
     if (!visible(el)) return;
     var role = roleOf(el);
     if (role){
-      var id = (prefix || '') + 'e' + (++n);
+      var id = (prefix || '') + 'e' + (++n); // always counted — eN is assigned in DFS order whatever the scope
+      if (viewportOnly && !inView(el)){
+        // Out of view: do not list it, but tally it so the caller can note "+N more above/below". The ref still exists.
+        if (el.getBoundingClientRect().top >= vh) below++; else above++;
+        return;
+      }
       var name = nameOf(el, role);
       out += ' [' + id + ' ' + role + (name ? ' "' + name + '"' : '') + '] ';
       return;
@@ -337,7 +473,12 @@ const FRAME_WALK_FN = `function(maxChars, R, prefix){
     // content-box origin in this document's viewport: the frame element's top-left plus its border width
     boxes.push({ x: fr.left + (fe.clientLeft || 0), y: fr.top + (fe.clientTop || 0), w: fr.width, h: fr.height, visible: fvis });
   }
-  return { text: out.replace(/[ \\t]+\\n/g, '\\n').replace(/\\n{3,}/g, '\\n\\n').trim(), frames: boxes };
+  return {
+    text: out.replace(/[ \\t]+\\n/g, '\\n').replace(/\\n{3,}/g, '\\n\\n').trim(),
+    frames: boxes,
+    above: above,
+    below: below,
+  };
 }`
 
 /** Resolve a ref: find the Nth interactive element, scroll it into view, and report its centre and kind (for a click) */
@@ -525,6 +666,12 @@ export class CdpBrowserCaller {
 
   /** The browser caller the daemon uses. Same shape as the extension bridge's call */
   async call(cmd: string, args: Record<string, unknown> = {}, timeoutMs?: number): Promise<unknown> {
+    // Any acting command invalidates the target tab's snapshot cache (the DOM or the viewport is about to move), so the
+    // next snapshot re-walks. Marked before the action runs: a half-finished action may still have changed the page.
+    if (ACTING_COMMANDS.has(cmd)) {
+      const tt = this.tabs.get(Number(args.tabId))
+      if (tt) tt.snapDirty = true
+    }
     switch (cmd) {
       case 'open':
         return this.open(args, timeoutMs)
@@ -899,24 +1046,83 @@ export class CdpBrowserCaller {
     return {}
   }
 
-  private async snapshot(
-    args: Record<string, unknown>,
-    timeoutMs?: number,
-  ): Promise<{
-    tabId: number
-    url: string
-    title: string
-    text: string
-    truncated: boolean
-    captcha: boolean
-    dialogNotes?: SiteDialog[]
-  }> {
+  /**
+   * A page snapshot, made fast three ways (fast internals):
+   * - `scope` (default `'viewport'`): list only the marks in or intersecting the current viewport, with a one-line
+   *   "+N more above/below" note; `'full'` lists the whole document as before. Every interactive element is still
+   *   counted for its stable `eN`/`fMeN` whatever the scope, so a ref from any earlier snapshot still clicks.
+   * - `mode` (default `'auto'`): in auto, when the page barely changed from the last snapshot (≤ DIFF_THRESHOLD marks)
+   *   return a compact diff naming the changed refs instead of the whole list; a big change returns the full list and
+   *   says so. `'full'` always lists everything; `'diff'` always returns a diff (both re-walk the page).
+   * - cache: when nothing changed since the last snapshot (no acting call and the same cheap page signature) an `auto`
+   *   snapshot returns the cached list with the same refs and no DOM walk. The cache is an optimization only — a `full`
+   *   snapshot always re-walks, and a diff always re-walks to read the current marks.
+   */
+  private async snapshot(args: Record<string, unknown>, timeoutMs?: number): Promise<SnapshotResult> {
     const tab = this.tab(args)
     const id = Number(args.tabId)
     const maxChars = Number.isFinite(Number(args.maxChars)) ? Math.max(0, Number(args.maxChars)) : 40_000
+    const scope: SnapScope = args.scope === 'full' ? 'full' : 'viewport'
+    const mode: SnapMode = args.mode === 'full' || args.mode === 'diff' ? args.mode : 'auto'
+    const t = timeoutMs ?? 20_000
     await this.refresh(tab)
-    const full = await this.walkFrames(tab, maxChars, timeoutMs ?? 20_000)
-    const text = full.slice(0, maxChars)
+
+    // Cache: only `auto` can skip the walk (a `full` is forced fresh; a `diff` must read the current marks to compare).
+    // It needs a clean page (no acting call since the last snapshot), the same scope, and an unchanged cheap signature.
+    if (mode === 'auto' && tab.lastSnap && !tab.snapDirty && tab.lastSnap.scope === scope) {
+      const sig = await this.pageSignature(tab, t)
+      if (sig === tab.lastSnap.signature)
+        return this.finishSnapshot(tab, id, tab.lastSnap.text, maxChars, scope, 'full', true)
+      // signature moved: fall through and re-walk, reusing this fresh signature for storage
+      return this.walkAndReturn(tab, id, maxChars, scope, mode, t, sig)
+    }
+    return this.walkAndReturn(tab, id, maxChars, scope, mode, t)
+  }
+
+  /** Walk the page, store it as the new diff baseline + cache, and return either the full list or a compact diff. */
+  private async walkAndReturn(
+    tab: Tab,
+    id: number,
+    maxChars: number,
+    scope: SnapScope,
+    mode: SnapMode,
+    timeoutMs: number,
+    knownSignature?: string,
+  ): Promise<SnapshotResult> {
+    const prev = tab.lastSnap
+    const full = await this.walkFrames(tab, maxChars, scope, timeoutMs)
+    const marks = parseMarks(full)
+    const signature = knownSignature ?? (await this.pageSignature(tab, timeoutMs))
+    tab.lastSnap = { text: full, marks, signature, scope }
+    tab.snapDirty = false
+
+    // Decide full vs diff. A diff needs a same-scope baseline; auto only diffs when the change is small.
+    const canDiff = !!prev && prev.scope === scope
+    let outText = full
+    let outMode: 'full' | 'diff' = 'full'
+    if ((mode === 'diff' || mode === 'auto') && canDiff) {
+      const diff = diffMarks(prev!.marks, marks)
+      if (mode === 'diff' || diff.count <= DIFF_THRESHOLD) {
+        outText = renderDiff(diff, marks)
+        outMode = 'diff'
+      } else {
+        outText = `${full}\n\n(page changed a lot since last snapshot — full list)`
+      }
+    }
+    return this.finishSnapshot(tab, id, outText, maxChars, scope, outMode, false)
+  }
+
+  /** Assemble the snapshot result: cap the text, pull in any auto-dismissed dialogs (consumed once), add the shape fields */
+  private finishSnapshot(
+    tab: Tab,
+    id: number,
+    outText: string,
+    maxChars: number,
+    scope: SnapScope,
+    mode: 'full' | 'diff',
+    cached: boolean,
+  ): SnapshotResult {
+    const text = outText.slice(0, maxChars)
     const notes = tab.dialogNotes
     tab.dialogNotes = undefined
     return {
@@ -924,10 +1130,29 @@ export class CdpBrowserCaller {
       url: tab.url,
       title: tab.title,
       text,
-      truncated: full.length > maxChars,
+      truncated: outText.length > maxChars,
       captcha: false,
+      scope,
+      mode,
+      ...(cached ? { cached: true } : {}),
       ...(notes && notes.length ? { dialogNotes: notes } : {}),
     }
+  }
+
+  /**
+   * A cheap page signature for the no-change cache: the url plus the element count, read in one tiny main-world eval (no
+   * DOM walk, no Runtime.enable). Equal signature + no acting call since ⇒ nothing worth re-walking. A probe that fails
+   * returns a value that never matches, so the cache simply turns off rather than ever returning something stale.
+   */
+  private async pageSignature(tab: Tab, timeoutMs: number): Promise<string> {
+    const got = await tab.page
+      .evaluate<{ u: string; n: number }>(
+        `({ u: location.href, n: document.getElementsByTagName('*').length })`,
+        Math.min(timeoutMs, 8_000),
+      )
+      .catch(() => undefined)
+    if (!got) return `?${Date.now()}-${Math.random()}`
+    return `${got.u}#${got.n}`
   }
 
   /**
@@ -938,8 +1163,12 @@ export class CdpBrowserCaller {
    * frame whose owner box is hidden or smaller than MIN_FRAME_PX (and its subtree) is skipped, as is a frame we cannot
    * reach (e.g. an OOPIF whose session has not attached yet) — the top document is always returned. When the page has no
    * frames this reduces to exactly the old single top-document walk.
+   *
+   * `scope` is passed straight through to each frame's walk: `'viewport'` lists only the marks in view and reports how
+   * many sit above/below (appended here as a one-line note per frame), `'full'` lists everything. The eN counting is the
+   * same either way, so refs are stable across scopes.
    */
-  private async walkFrames(tab: Tab, maxChars: number, timeoutMs: number): Promise<string> {
+  private async walkFrames(tab: Tab, maxChars: number, scope: SnapScope, timeoutMs: number): Promise<string> {
     const pageSend: SessionSend = (method, params, t) => tab.page.send(method, params, t)
     let ordered: WalkFrame[]
     try {
@@ -991,13 +1220,13 @@ export class CdpBrowserCaller {
         }
       }
 
-      let walk: { text?: string; frames?: FrameBox[] } | undefined
+      let walk: { text?: string; frames?: FrameBox[]; above?: number; below?: number } | undefined
       try {
-        walk = await this.evalFrame<{ text?: string; frames?: FrameBox[] }>(
+        walk = await this.evalFrame<{ text?: string; frames?: FrameBox[]; above?: number; below?: number }>(
           send,
           f.frameId,
           FRAME_WALK_FN,
-          [maxChars, SNAP_ROLE_WORDS, prefix],
+          [maxChars, SNAP_ROLE_WORDS, prefix, scope],
           timeoutMs,
         )
       } catch {
@@ -1007,9 +1236,10 @@ export class CdpBrowserCaller {
       walkedBoxes.set(f.ordinal, walk?.frames ?? [])
       if (f.ordinal !== 0)
         frames.set(prefix, { frameId: f.frameId, sessionId: childSession, offsetX, offsetY })
+      const note = moreNote(scope, walk?.above ?? 0, walk?.below ?? 0)
       const body = (walk?.text ?? '').trim()
-      if (f.ordinal === 0) parts.push(body)
-      else if (body) parts.push(`[frame ${prefix}]\n${body}`)
+      if (f.ordinal === 0) parts.push(body + note)
+      else if (body) parts.push(`[frame ${prefix}]\n${body}${note}`)
     }
 
     tab.frames = frames
