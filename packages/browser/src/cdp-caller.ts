@@ -11,6 +11,10 @@
 // interactive element (findNth below), so the counting that assigns `eN` and the counting that finds it never diverge.
 // Still not here (they throw a clear error naming the command): vault fill, dropdown options/choose, element shots, form
 // read, frames and popup adoption — a full login→lookup→PDF needs those.
+//
+// It also adds the DATA path: `fetch` runs the site's own window.fetch inside the page's main world under the user's
+// live session (cookies), so a skill can call a site's internal API instead of clicking through the UI — the biggest
+// speed win (click-free reads). See the `fetch` method and fetchExpr below.
 import type { Lang } from '@dool2/i18n'
 import { ChromiumInstall, chromiumPaths } from './chromium.js'
 import { launchChromium } from './chromium-launch.js'
@@ -69,7 +73,17 @@ const SUPPORTED = [
   'hover',
   'scroll',
   'pdf',
+  'fetch',
 ] as const
+
+/**
+ * The data path. Default cap on a fetched body (bytes ≈ chars): 2 MB. Big enough for a site's JSON API response, small
+ * enough that one call never pulls an unbounded download over the DevTools pipe. The in-page code caps first (bounded
+ * transfer) and the caller re-enforces this defensively. Override per call with args.maxBytes.
+ */
+const DEFAULT_FETCH_CAP = 2 * 1024 * 1024
+/** Default wall-clock for a fetch (the in-page AbortController fires at this; the pipe call waits a touch longer). */
+const DEFAULT_FETCH_TIMEOUT = 30_000
 
 /** A site dialog, as the daemon's SiteDialog expects it (browser-tools.ts) */
 interface SiteDialog {
@@ -250,6 +264,63 @@ const SCROLL_FN = `function(target, dir, R){
   };
 }`
 
+/**
+ * The DATA path. Builds the expression run INSIDE the page's MAIN world (via Runtime.evaluate, awaitPromise) so a skill
+ * can call a site's own internal API under the user's live session instead of clicking through the UI — the biggest
+ * speed win (click-free reads).
+ *
+ * Why the page's MAIN world, not an isolated world: an isolated world shares the same origin and cookies, so a fetch
+ * from either carries the user's session. But the main world is the site's own `window.fetch` — including any wrapper
+ * the site installed (auth-header interceptors, base-URL rewriting, custom headers) — so the request looks exactly like
+ * one the page itself would make, which is what reaching an internal API needs. Runtime.evaluate on the default context
+ * runs there and needs no Runtime.enable (which sites can notice), matching the rest of this caller.
+ *
+ * Session: `credentials: 'include'` sends the page's cookies. A RELATIVE url resolves against the current page origin,
+ * because `window.fetch` resolves it against the document base URL — nothing to prepend here. Body is read as text and
+ * capped (bounded transfer); `truncated` flags a cut. On any failure (network, CORS as the site sees it, abort) the
+ * expression returns `{ __fetchError }` instead of throwing, so the caller can surface one clear message.
+ */
+function fetchExpr(url: string, opts: Record<string, unknown>, cap: number, timeoutMs: number): string {
+  return `(async () => {
+  const __ctrl = new AbortController();
+  const __timer = setTimeout(() => { try { __ctrl.abort(); } catch (e) {} }, ${timeoutMs});
+  try {
+    const __res = await fetch(${JSON.stringify(url)}, Object.assign(${JSON.stringify(opts)}, { signal: __ctrl.signal }));
+    const __headers = {};
+    try { __res.headers.forEach((v, k) => { __headers[k] = String(v); }); } catch (e) {}
+    let __body = '';
+    try { __body = await __res.text(); } catch (e) { __body = ''; }
+    let __truncated = false;
+    if (typeof __body === 'string' && __body.length > ${cap}) { __body = __body.slice(0, ${cap}); __truncated = true; }
+    return {
+      ok: !!__res.ok,
+      status: __res.status,
+      statusText: __res.statusText || '',
+      url: __res.url || ${JSON.stringify(url)},
+      headers: __headers,
+      body: __body,
+      truncated: __truncated,
+    };
+  } catch (e) {
+    return { __fetchError: (e && e.message) ? String(e.message) : String(e) };
+  } finally {
+    clearTimeout(__timer);
+  }
+})()`
+}
+
+/** The shape the in-page fetch expression returns (or an error marker the caller turns into a thrown Error). */
+interface InPageFetch {
+  ok?: boolean
+  status?: number
+  statusText?: string
+  url?: string
+  headers?: Record<string, string>
+  body?: string
+  truncated?: boolean
+  __fetchError?: string
+}
+
 /** Keys the daemon's browser_press sends. Each becomes an Input.dispatchKeyEvent down+up */
 const KEY_INFO: Record<string, { key: string; code: string; keyCode: number; text?: string }> = {
   Enter: { key: 'Enter', code: 'Enter', keyCode: 13, text: '\r' },
@@ -356,6 +427,8 @@ export class CdpBrowserCaller {
         return this.scroll(args, timeoutMs)
       case 'pdf':
         return this.pdf(args, timeoutMs)
+      case 'fetch':
+        return this.fetch(args, timeoutMs)
       default:
         throw new Error(
           `Dool2's built-in browser cannot "${cmd}" yet. It can so far: ${SUPPORTED.join(', ')}. ` +
@@ -678,6 +751,92 @@ export class CdpBrowserCaller {
     return { data, pages: countPdfPages(Buffer.from(data, 'base64')) }
   }
 
+  /**
+   * The DATA path: run `window.fetch(url, {...})` inside the tab's page under the user's live session, so a skill can
+   * hit a site's own internal API instead of clicking through the UI. Only works on a tab Dool2 opened (same ownership
+   * rule as the other commands — `this.tab` throws for an unknown tab).
+   *
+   * The request runs in the page's MAIN world (see fetchExpr) with `credentials: 'include'`, so the page's cookies and
+   * any site fetch wrapper apply, and a relative url resolves against the current page origin. Returns
+   * `{ ok, status, statusText, url, headers, body, truncated }` with `body` as text, plus a `json` convenience when the
+   * response's content-type is JSON and the (un-truncated) body parses. Body is capped at args.maxBytes (default 2 MB)
+   * and the fetch is aborted after args.timeoutMs (default 30 s).
+   *
+   * Security: this runs AS THE USER on their own session — that is the point (their own accounts). It only calls the
+   * same-site/able API the page itself could call, and sends nothing to anywhere external. The body is returned
+   * verbatim (nothing redacted here). IMPORTANT: the daemon MUST pass this body through the vault's `maskSecretsInText`
+   * (@dool2/vault) before the brain sees it, the same as any other page read — this caller never hands raw page bytes
+   * to the model directly.
+   */
+  private async fetch(args: Record<string, unknown>, timeoutMs?: number): Promise<InPageFetch> {
+    const tab = this.tab(args)
+    const url = String(args.url ?? '')
+    if (!url) throw new Error('browser fetch needs a url (absolute, or relative to the current page).')
+    const cap =
+      Number.isFinite(Number(args.maxBytes)) && Number(args.maxBytes) > 0
+        ? Math.floor(Number(args.maxBytes))
+        : DEFAULT_FETCH_CAP
+    const fetchTimeout =
+      Number.isFinite(Number(args.timeoutMs)) && Number(args.timeoutMs) > 0
+        ? Math.floor(Number(args.timeoutMs))
+        : (timeoutMs ?? DEFAULT_FETCH_TIMEOUT)
+
+    // Build the fetch init: method/headers/body are optional; credentials is always 'include' so the session rides along
+    const opts: Record<string, unknown> = { credentials: 'include' }
+    if (typeof args.method === 'string' && args.method) opts.method = args.method
+    if (args.headers && typeof args.headers === 'object') opts.headers = args.headers
+    if (typeof args.body === 'string') opts.body = args.body
+
+    // Wait a little past the in-page AbortController so the abort returns a clean error before the pipe call times out
+    const r = await this.evalInPage<InPageFetch>(
+      tab.page,
+      fetchExpr(url, opts, cap, fetchTimeout),
+      fetchTimeout + 5_000,
+    )
+    if (!r || typeof r !== 'object') throw new Error('browser fetch returned nothing from the page.')
+    if (r.__fetchError) throw new Error(`browser fetch failed in the page: ${r.__fetchError}`)
+
+    // Defensive re-cap: the in-page code already capped, but never trust a body longer than the cap over the wire
+    let body = typeof r.body === 'string' ? r.body : ''
+    let truncated = r.truncated === true
+    if (body.length > cap) {
+      body = body.slice(0, cap)
+      truncated = true
+    }
+    const status = typeof r.status === 'number' ? r.status : 0
+    const ok = typeof r.ok === 'boolean' ? r.ok : status >= 200 && status < 300
+    const headers = r.headers && typeof r.headers === 'object' ? r.headers : {}
+    const contentType = String(headers['content-type'] ?? headers['Content-Type'] ?? '')
+
+    const out: {
+      ok: boolean
+      status: number
+      statusText: string
+      url: string
+      headers: Record<string, string>
+      body: string
+      truncated: boolean
+      json?: unknown
+    } = {
+      ok,
+      status,
+      statusText: typeof r.statusText === 'string' ? r.statusText : '',
+      url: typeof r.url === 'string' && r.url ? r.url : url,
+      headers,
+      body,
+      truncated,
+    }
+    // JSON convenience: only when the server said JSON and the body was not cut (a cut body would not parse)
+    if (!truncated && /\bjson\b/i.test(contentType)) {
+      try {
+        out.json = JSON.parse(body)
+      } catch {
+        // leave json unset; the caller still has the raw text in body
+      }
+    }
+    return out
+  }
+
   /** mouseMoved → mousePressed → mouseReleased (left), the way a real click lands */
   private async dispatchClick(page: CdpPageLike, x: number, y: number, timeoutMs: number): Promise<void> {
     await page.send(
@@ -772,6 +931,24 @@ export class CdpBrowserCaller {
     if (r.exceptionDetails)
       throw new Error(
         r.exceptionDetails.exception?.description ?? r.exceptionDetails.text ?? 'snapshot failed',
+      )
+    return r.result?.value as T
+  }
+
+  /**
+   * Runs an expression in the page's MAIN world and returns its value. Unlike {@link evalInWorld} (isolated world, for
+   * the snapshot/ref DOM walks), this uses Runtime.evaluate on the default context so the data-path fetch is the site's
+   * own `window.fetch` under its session. Runtime.evaluate needs no Runtime.enable (which sites can notice), so this
+   * keeps the same low profile as the rest of the caller. awaitPromise resolves the async fetch IIFE before returning.
+   */
+  private async evalInPage<T>(page: CdpPageLike, expression: string, timeoutMs: number): Promise<T> {
+    const r = await page.send<{
+      result?: { value?: T }
+      exceptionDetails?: { text?: string; exception?: { description?: string } }
+    }>('Runtime.evaluate', { expression, returnByValue: true, awaitPromise: true }, timeoutMs)
+    if (r.exceptionDetails)
+      throw new Error(
+        r.exceptionDetails.exception?.description ?? r.exceptionDetails.text ?? 'page fetch failed',
       )
     return r.result?.value as T
   }
