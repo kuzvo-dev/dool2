@@ -74,6 +74,7 @@ const SUPPORTED = [
   'scroll',
   'pdf',
   'fetch',
+  'screencast',
 ] as const
 
 /**
@@ -84,6 +85,12 @@ const SUPPORTED = [
 const DEFAULT_FETCH_CAP = 2 * 1024 * 1024
 /** Default wall-clock for a fetch (the in-page AbortController fires at this; the pipe call waits a touch longer). */
 const DEFAULT_FETCH_TIMEOUT = 30_000
+
+/** One screencast frame delivered to an onScreencastFrame subscriber: base64 image bytes + its mime type. */
+export interface ScreencastFrame {
+  data: string
+  mime: string
+}
 
 /** A site dialog, as the daemon's SiteDialog expects it (browser-tools.ts) */
 interface SiteDialog {
@@ -364,6 +371,10 @@ export class CdpBrowserCaller {
   private readonly tabs = new Map<number, Tab>()
   /** sessionId → tabId, so a DevTools dialog event is matched to its tab */
   private readonly bySession = new Map<string, number>()
+  /** tabId → live subscribers of that tab's screencast frames (the desktop mirror; owner-scoped) */
+  private readonly screencastSubs = new Map<number, Set<(frame: ScreencastFrame) => void>>()
+  /** tabId → throttle state while a screencast runs on that tab (deliver only every everyNth-th frame) */
+  private readonly screencastState = new Map<number, { everyNth: number; seen: number }>()
   private unsubEvents?: () => void
   private nextTabId = 1
   private lastTabId?: number
@@ -429,6 +440,8 @@ export class CdpBrowserCaller {
         return this.pdf(args, timeoutMs)
       case 'fetch':
         return this.fetch(args, timeoutMs)
+      case 'screencast':
+        return this.screencast(args, timeoutMs)
       default:
         throw new Error(
           `Dool2's built-in browser cannot "${cmd}" yet. It can so far: ${SUPPORTED.join(', ')}. ` +
@@ -445,7 +458,7 @@ export class CdpBrowserCaller {
       this.launching = (async () => {
         const b = await this.doLaunch()
         this.browser = b
-        this.watchDialogs(b)
+        this.watchEvents(b)
         return b
       })()
       this.launching
@@ -457,30 +470,134 @@ export class CdpBrowserCaller {
     return this.launching
   }
 
-  /** Closes JS dialogs by itself so a stray alert/confirm never hangs the page, and remembers each for the next snapshot */
-  private watchDialogs(b: CdpBrowserLike): void {
+  /** One DevTools event subscription: auto-closes JS dialogs and feeds screencast frames to their tab's subscribers */
+  private watchEvents(b: CdpBrowserLike): void {
     this.unsubEvents?.()
     this.unsubEvents = b.onEvent?.((method, params, sessionId) => {
-      if (method !== 'Page.javascriptDialogOpening' || !sessionId) return
-      const tabId = this.bySession.get(sessionId)
-      const tab = tabId === undefined ? undefined : this.tabs.get(tabId)
-      if (!tab) return
-      const rawType = String(params.type ?? 'alert')
-      const type = (
-        ['alert', 'confirm', 'prompt', 'beforeunload'].includes(rawType) ? rawType : 'alert'
-      ) as SiteDialog['type']
-      const dialog: SiteDialog = {
-        type,
-        message: String(params.message ?? ''),
-        url: String(params.url ?? tab.url),
-        ...(typeof params.defaultPrompt === 'string' ? { defaultPrompt: params.defaultPrompt } : {}),
-      }
-      tab.dialogNotes = [...(tab.dialogNotes ?? []), dialog]
-      // Dismiss (cancel) by default — a confirm that proceeds is a decision for the daemon's gate; a leave-page prompt is
-      // accepted so navigation is not stuck
-      const accept = type === 'beforeunload'
-      tab.page.send('Page.handleJavaScriptDialog', { accept }).catch(() => {})
+      if (!sessionId) return
+      if (method === 'Page.javascriptDialogOpening') this.onDialog(params, sessionId)
+      else if (method === 'Page.screencastFrame') this.onScreencastFrameEvent(params, sessionId)
     })
+  }
+
+  /** Closes a JS dialog by itself so a stray alert/confirm never hangs the page, and remembers it for the next snapshot */
+  private onDialog(params: Record<string, unknown>, sessionId: string): void {
+    const tabId = this.bySession.get(sessionId)
+    const tab = tabId === undefined ? undefined : this.tabs.get(tabId)
+    if (!tab) return
+    const rawType = String(params.type ?? 'alert')
+    const type = (
+      ['alert', 'confirm', 'prompt', 'beforeunload'].includes(rawType) ? rawType : 'alert'
+    ) as SiteDialog['type']
+    const dialog: SiteDialog = {
+      type,
+      message: String(params.message ?? ''),
+      url: String(params.url ?? tab.url),
+      ...(typeof params.defaultPrompt === 'string' ? { defaultPrompt: params.defaultPrompt } : {}),
+    }
+    tab.dialogNotes = [...(tab.dialogNotes ?? []), dialog]
+    // Dismiss (cancel) by default — a confirm that proceeds is a decision for the daemon's gate; a leave-page prompt is
+    // accepted so navigation is not stuck
+    const accept = type === 'beforeunload'
+    tab.page.send('Page.handleJavaScriptDialog', { accept }).catch(() => {})
+  }
+
+  /**
+   * A Page.screencastFrame event. ACK it so Chromium keeps sending (even a frame we throttle away must be ACKed, or
+   * the stream stalls), then — every everyNth-th frame — hand the base64 jpeg to this tab's subscribers. Frames are
+   * never persisted or logged; they carry the same page pixels a screenshot would.
+   */
+  private onScreencastFrameEvent(params: Record<string, unknown>, sessionId: string): void {
+    const tabId = this.bySession.get(sessionId)
+    if (tabId === undefined) return
+    const tab = this.tabs.get(tabId)
+    const ackId = params.sessionId
+    if (tab && typeof ackId === 'number')
+      tab.page.send('Page.screencastFrameAck', { sessionId: ackId }).catch(() => {})
+    const state = this.screencastState.get(tabId)
+    if (!state) return
+    state.seen++
+    if (state.seen % state.everyNth !== 0) return // throttle: deliver only every everyNth-th frame
+    const subs = this.screencastSubs.get(tabId)
+    if (!subs || subs.size === 0) return
+    const data = typeof params.data === 'string' ? params.data : ''
+    if (!data) return
+    const frame: ScreencastFrame = { data, mime: 'image/jpeg' }
+    for (const cb of subs) {
+      try {
+        cb(frame)
+      } catch {
+        // a subscriber error must not break the stream for others
+      }
+    }
+  }
+
+  /**
+   * Subscribe to a tab's screencast frames (base64 jpeg). Returns an unsubscribe. Frames arrive only while a
+   * screencast is running on that tab — see the `screencast` command. The desktop mirror subscribes here and
+   * forwards each frame to the window; nothing is kept on disk.
+   */
+  onScreencastFrame(tabId: number, cb: (frame: ScreencastFrame) => void): () => void {
+    let subs = this.screencastSubs.get(tabId)
+    if (!subs) {
+      subs = new Set()
+      this.screencastSubs.set(tabId, subs)
+    }
+    subs.add(cb)
+    return () => {
+      const s = this.screencastSubs.get(tabId)
+      if (!s) return
+      s.delete(cb)
+      if (s.size === 0) this.screencastSubs.delete(tabId)
+    }
+  }
+
+  /**
+   * Live mirror of a tab via Chromium's screencast. `action:'start'` turns on Page.startScreencast (jpeg, a modest
+   * quality/size so the DevTools pipe is not flooded) and begins delivering Page.screencastFrame images to this tab's
+   * subscribers (onScreencastFrame); `action:'stop'` turns it off. Owner-scoped: this.tab throws for a tab Dool2 did
+   * not open, so a screencast is only ever started on Dool2's own hidden tabs. Throttle with everyNthFrame (default 1).
+   */
+  private async screencast(
+    args: Record<string, unknown>,
+    timeoutMs?: number,
+  ): Promise<{ started: true } | { stopped: true }> {
+    const tab = this.tab(args)
+    const id = Number(args.tabId)
+    const action = String(args.action ?? 'start')
+    if (action === 'stop') {
+      this.screencastState.delete(id)
+      await tab.page.send('Page.stopScreencast', {}, timeoutMs ?? 10_000).catch(() => {})
+      return { stopped: true }
+    }
+    if (action !== 'start')
+      throw new Error(
+        `Dool2's built-in browser screencast action must be "start" or "stop" (got "${action}").`,
+      )
+    const everyNth =
+      Number.isFinite(Number(args.everyNthFrame)) && Number(args.everyNthFrame) >= 1
+        ? Math.floor(Number(args.everyNthFrame))
+        : 1
+    const quality = Number.isFinite(Number(args.quality))
+      ? Math.min(100, Math.max(1, Math.floor(Number(args.quality))))
+      : 40
+    const maxWidth =
+      Number.isFinite(Number(args.maxWidth)) && Number(args.maxWidth) > 0
+        ? Math.floor(Number(args.maxWidth))
+        : 1000
+    const maxHeight =
+      Number.isFinite(Number(args.maxHeight)) && Number(args.maxHeight) > 0
+        ? Math.floor(Number(args.maxHeight))
+        : 720
+    this.screencastState.set(id, { everyNth, seen: 0 })
+    // Page must be enabled to receive screencast frames; open() already enabled it, but re-enable defensively (cheap).
+    await tab.page.send('Page.enable', {}, timeoutMs ?? 10_000).catch(() => {})
+    await tab.page.send(
+      'Page.startScreencast',
+      { format: 'jpeg', quality, maxWidth, maxHeight },
+      timeoutMs ?? 10_000,
+    )
+    return { started: true }
   }
 
   private tab(args: Record<string, unknown>): Tab {
@@ -548,6 +665,8 @@ export class CdpBrowserCaller {
       this.tabs.delete(id)
       if (tab.page.sessionId) this.bySession.delete(tab.page.sessionId)
       if (this.lastTabId === id) this.lastTabId = undefined
+      this.screencastState.delete(id)
+      this.screencastSubs.delete(id)
       await tab.page.close().catch(() => {})
     }
     return {}
@@ -957,6 +1076,8 @@ export class CdpBrowserCaller {
   async closeBrowser(): Promise<void> {
     this.tabs.clear()
     this.bySession.clear()
+    this.screencastState.clear()
+    this.screencastSubs.clear()
     this.unsubEvents?.()
     this.unsubEvents = undefined
     const b = this.browser

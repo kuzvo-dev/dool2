@@ -31,7 +31,9 @@ function dataDir(): string {
 
 let session: Session | undefined
 let win: BrowserWindow | undefined
-let mirror: NodeJS.Timeout | undefined
+/** Stops the live browser mirror (screencast or its screenshot fallback) while the pane is open; set only then. */
+let mirrorStop: (() => Promise<void>) | undefined
+let starting: Promise<void> | undefined
 let level: AutonomyLevel = 'ask'
 
 async function createWindow(): Promise<BrowserWindow> {
@@ -62,20 +64,28 @@ async function createWindow(): Promise<BrowserWindow> {
   return w
 }
 
-function startMirror(w: BrowserWindow): void {
-  if (mirror) return
-  const tick = async (): Promise<void> => {
-    if (!session || w.isDestroyed()) return
-    const frame = await session.captureFrame()
-    if (!w.isDestroyed()) w.webContents.send('dool2:browser-frame', frame)
+/** Open the live mirror: subscribe to the hidden browser's screencast frames and forward each to the window. */
+async function startMirror(w: BrowserWindow): Promise<void> {
+  if (mirrorStop || starting || !session) return
+  const s = session
+  starting = (async () => {
+    mirrorStop = await s.watchBrowser((frame) => {
+      if (!w.isDestroyed()) w.webContents.send('dool2:browser-frame', frame)
+    })
+  })()
+  try {
+    await starting
+  } finally {
+    starting = undefined
   }
-  void tick()
-  mirror = setInterval(() => void tick(), 700)
 }
 
-function stopMirror(): void {
-  if (mirror) clearInterval(mirror)
-  mirror = undefined
+/** Close the live mirror: stop the screencast and drop the subscription. */
+async function stopMirror(): Promise<void> {
+  await starting?.catch(() => {})
+  const stop = mirrorStop
+  mirrorStop = undefined
+  if (stop) await stop().catch(() => {})
 }
 
 function registerIpc(): void {
@@ -97,11 +107,11 @@ function registerIpc(): void {
     session?.agentd.setLevel(next)
   })
 
-  ipcMain.handle('dool2:watch-browser', (_e, on: boolean) => {
+  ipcMain.handle('dool2:watch-browser', async (_e, on: boolean) => {
     if (!win) return
-    if (on) startMirror(win)
+    if (on) await startMirror(win)
     else {
-      stopMirror()
+      await stopMirror()
       if (!win.isDestroyed()) win.webContents.send('dool2:browser-frame', null)
     }
   })
@@ -153,6 +163,5 @@ app.whenReady().then(async () => {
 })
 
 app.on('window-all-closed', () => {
-  stopMirror()
-  void session?.close().finally(() => app.quit())
+  void stopMirror().finally(() => session?.close().finally(() => app.quit()))
 })
