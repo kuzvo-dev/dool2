@@ -45,4 +45,18 @@ describe('built-in skill pack', () => {
     const top = resolveSkills({ message: '네이버 로그인 해줘' }, metas)[0]
     expect(top?.skill.id).toBe('naver')
   })
+
+  it('exposes login field hints on the naver seed skill (Korean names)', () => {
+    const naver = skills.find((s) => s.meta.id === 'naver')
+    expect(naver?.meta.login?.username).toEqual({ name: '아이디', role: 'textbox' })
+    expect(naver?.meta.login?.password?.name).toBe('비밀번호')
+    expect(naver?.meta.login?.submit).toEqual({ name: '로그인', role: 'button' })
+    expect(naver?.meta.login?.totp?.name).toBe('인증번호')
+  })
+
+  it('binds the login hints to the nid.naver.com login page via URL resolution', () => {
+    const top = resolveSkills({ url: 'https://nid.naver.com/nidlogin.login' }, metas)[0]
+    expect(top?.skill.id).toBe('naver')
+    expect(top?.skill.login?.password?.name).toBe('비밀번호')
+  })
 })

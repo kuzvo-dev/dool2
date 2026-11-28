@@ -20,6 +20,43 @@ export interface AutoInject {
   keywords?: string[]
 }
 
+/**
+ * Where one login field lives on a site's page. A hint is matched against the
+ * tab's accessibility snapshot by the vault (daemon-side) so it can type the
+ * secret into the right field without the AI ever seeing it.
+ *
+ * Give either a `selector` (a robust CSS selector or a snapshot ref, used
+ * as-is) or a role+name hint (`name` is the visible label / accessible name,
+ * which may be a Korean site label; `role` is the ARIA role such as
+ * `textbox` or `button`). A bare string in the YAML is shorthand for `{ name }`.
+ */
+export interface LoginFieldHint {
+  /** A CSS selector or snapshot ref pointing straight at the field. */
+  selector?: string
+  /** Visible label / accessible name to match (may be a Korean site label). */
+  name?: string
+  /** ARIA role to match (`textbox`, `button`, ...). */
+  role?: string
+}
+
+/**
+ * The `login` block: which fields on this site to fill for a login. Only
+ * `password` is needed for a fill; the rest are optional. The vault reads these
+ * hints for the matched skill, locates the fields on the real page, and types
+ * the stored secret in — the hints are data (not secrets) and the values never
+ * reach the AI.
+ */
+export interface LoginHints {
+  /** The username / id field (role+name or selector). */
+  username?: LoginFieldHint
+  /** The password field. Required for a login fill to happen. */
+  password?: LoginFieldHint
+  /** The submit / login button to click after the fields are filled. */
+  submit?: LoginFieldHint
+  /** The one-time-code (TOTP / 2FA) field, when the site asks for one. */
+  totp?: LoginFieldHint
+}
+
 /** The typed, normalized shape of a SKILL.md frontmatter block. */
 export interface SkillFrontmatter {
   /** Short stable name of the skill. Required. */
@@ -34,6 +71,8 @@ export interface SkillFrontmatter {
   regions?: string[]
   /** When true the skill is parked and the resolver skips it. */
   disabled?: boolean
+  /** Field hints that tell the vault which page fields to fill for a login on this site. */
+  login?: LoginHints
 }
 
 /** A parsed SKILL.md document: its typed frontmatter and the Markdown body after it. */
@@ -88,7 +127,45 @@ function normalizeFrontmatter(data: Record<string, unknown>): SkillFrontmatter {
 
   if (typeof data.disabled === 'boolean') fm.disabled = data.disabled
 
+  const login = normalizeLogin(data.login)
+  if (login) fm.login = login
+
   return fm
+}
+
+/** Normalize the `login` block, dropping it when it names no fillable field. */
+function normalizeLogin(value: unknown): LoginHints | undefined {
+  if (!isPlainObject(value)) return undefined
+  const result: LoginHints = {}
+  const username = normalizeFieldHint(value.username)
+  if (username) result.username = username
+  const password = normalizeFieldHint(value.password)
+  if (password) result.password = password
+  const submit = normalizeFieldHint(value.submit)
+  if (submit) result.submit = submit
+  const totp = normalizeFieldHint(value.totp)
+  if (totp) result.totp = totp
+  if (!result.username && !result.password && !result.submit && !result.totp) return undefined
+  return result
+}
+
+/**
+ * Normalize one field hint. A bare string is shorthand for `{ name }` (the
+ * common Korean-label case); a map may carry `selector`, `name` and/or `role`.
+ */
+function normalizeFieldHint(value: unknown): LoginFieldHint | undefined {
+  const shorthand = asString(value)
+  if (shorthand) return { name: shorthand }
+  if (!isPlainObject(value)) return undefined
+  const hint: LoginFieldHint = {}
+  const selector = asString(value.selector)
+  if (selector) hint.selector = selector
+  const name = asString(value.name)
+  if (name) hint.name = name
+  const role = asString(value.role)
+  if (role) hint.role = role
+  if (!hint.selector && !hint.name && !hint.role) return undefined
+  return hint
 }
 
 /** Normalize the `autoInject` block, dropping it entirely when it carries no triggers. */

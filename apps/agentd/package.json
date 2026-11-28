@@ -32,6 +32,8 @@
     "@dool2/engine": "workspace:*",
     "@dool2/page-bridge": "workspace:*",
     "@dool2/sandbox": "workspace:*",
+    "@dool2/skill-sdk": "workspace:*",
+    "@dool2/skills": "workspace:*",
     "@dool2/vault": "workspace:*"
   }
 }

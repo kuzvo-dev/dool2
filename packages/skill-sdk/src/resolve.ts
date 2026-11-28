@@ -17,7 +17,7 @@
  * "pay" inside "payment". See the tests for the Hangul examples.
  */
 
-import type { AutoInject } from './frontmatter.js'
+import type { AutoInject, LoginHints } from './frontmatter.js'
 import { globSpecificity, matchUrlGlob } from './url-glob.js'
 
 /** The minimum a skill needs to expose to take part in resolution. */
@@ -34,6 +34,8 @@ export interface SkillMeta {
   regions?: string[]
   /** When true the skill is skipped. */
   disabled?: boolean
+  /** Login field hints for this site, consulted by the vault when it fills a login. */
+  login?: LoginHints
 }
 
 /** Why a skill matched: a tab-URL glob or a message keyword. */

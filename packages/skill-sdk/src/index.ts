@@ -7,7 +7,13 @@
  * optional directory loader lives behind the `./loader` entry point.
  */
 
-export type { AutoInject, ParsedSkill, SkillFrontmatter } from './frontmatter.js'
+export type {
+  AutoInject,
+  LoginFieldHint,
+  LoginHints,
+  ParsedSkill,
+  SkillFrontmatter,
+} from './frontmatter.js'
 export { parseSkillMarkdown, parseYaml } from './frontmatter.js'
 export type {
   MatchReason,

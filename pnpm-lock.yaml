@@ -62,6 +62,12 @@ importers:
       '@dool2/sandbox':
         specifier: workspace:*
         version: link:../../packages/sandbox
+      '@dool2/skill-sdk':
+        specifier: workspace:*
+        version: link:../../packages/skill-sdk
+      '@dool2/skills':
+        specifier: workspace:*
+        version: link:../../packages/skills
       '@dool2/vault':
         specifier: workspace:*
         version: link:../../packages/vault

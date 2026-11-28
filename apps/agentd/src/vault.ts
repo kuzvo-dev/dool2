@@ -7,13 +7,20 @@
 
 import type { AutonomyLevel } from '@dool2/core'
 import type { PageBridge, PageSnapshot, VaultBridge, VaultItemSummary } from '@dool2/sandbox'
+import type { LoginFieldHint, LoginHints, SkillMeta } from '@dool2/skill-sdk'
+import { resolveSkills } from '@dool2/skill-sdk'
 import {
+  type AgentAccessPolicy,
+  canAgentUse,
   canFillTotp,
+  findLoginItemsForUrl,
   type LoginFieldTargets,
   type PageFiller,
   paymentPinAvailable,
   type SecureKeypad,
   toAgentSummary,
+  type UrlBindingSettings,
+  urlMatchesSite,
   type VaultItem,
   fillLogin as vaultFillLogin,
   fillPaymentPin as vaultFillPaymentPin,
@@ -44,6 +51,14 @@ export class InMemoryVault {
   /** Find an item by its opaque id (daemon-side; the secret stays here). */
   find(id: string): VaultItem | undefined {
     return this.#items.find((i) => i.id === id)
+  }
+
+  /**
+   * Every item, daemon-side only. Used for URL binding (which reads the non-secret `site`); these full items never
+   * cross into the sandbox or the transcript — the bridge reads them here and types secrets straight into the page.
+   */
+  all(): readonly VaultItem[] {
+    return this.#items
   }
 
   /** Note that a fill happened (for inspection); the secret is not recorded, only the id and kind. */
@@ -114,11 +129,75 @@ function findPinField(snapshot: PageSnapshot): string | undefined {
   return snapshot.nodes.find((n) => matches(n, /\bpin\b|keypad/iu))?.ref
 }
 
+// --- site-skill field hints --------------------------------------------------
+// A site skill (skills/<id>) may carry a `login` block that pins the exact fields for its site, including Korean
+// label names that the English heuristic above cannot see. The hints are data, not secrets; the
+// vault resolves them to a page ref here and types the secret into that ref. This is the preferred path; the heuristic
+// stays as the broad-hand fallback for a page no skill covered (ADR 0045).
+
+function escapeRegExp(literal: string): string {
+  return literal.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+
+/**
+ * Resolve one field hint to a page ref. A `selector` is used as-is (a snapshot ref, matched exactly when present, else
+ * passed straight through as a CSS selector/ref). Otherwise the `name`/`role` hint matches a snapshot node by its
+ * accessible name (substring, case-insensitive, Unicode so Korean matches) and/or its role.
+ */
+function resolveHint(snapshot: PageSnapshot, hint: LoginFieldHint): string | undefined {
+  if (hint.selector !== undefined) {
+    const byRef = snapshot.nodes.find((n) => n.ref === hint.selector)
+    return byRef ? byRef.ref : hint.selector
+  }
+  const nameRe = hint.name !== undefined ? new RegExp(escapeRegExp(hint.name), 'iu') : undefined
+  const roleRe = hint.role !== undefined ? new RegExp(`^${escapeRegExp(hint.role)}$`, 'iu') : undefined
+  if (!nameRe && !roleRe) return undefined
+  const node = snapshot.nodes.find((n) => {
+    const nameOk = nameRe ? nameRe.test(n.name ?? '') : true
+    const roleOk = roleRe ? roleRe.test(n.role) : true
+    return nameOk && roleOk
+  })
+  return node?.ref
+}
+
+/** Build login field targets from a skill's `login` hints. Needs at least a resolvable password field. */
+function loginTargetsFromHints(snapshot: PageSnapshot, login: LoginHints): LoginFieldTargets | undefined {
+  if (!login.password) return undefined
+  const passwordSelector = resolveHint(snapshot, login.password)
+  if (passwordSelector === undefined) return undefined
+  const usernameSelector = login.username ? resolveHint(snapshot, login.username) : undefined
+  return { passwordSelector, ...(usernameSelector !== undefined ? { usernameSelector } : {}) }
+}
+
+/** The `login` hints of the best site skill that matches `url` (by URL glob) and carries a login block, if any. */
+function skillLoginForUrl(skills: readonly SkillMeta[], url: string): LoginHints | undefined {
+  if (!url) return undefined
+  for (const scored of resolveSkills({ url }, skills as SkillMeta[])) {
+    if (scored.skill.login) return scored.skill.login
+  }
+  return undefined
+}
+
 export interface VaultBridgeDeps {
   /** The page to fill secrets into (the real hidden browser, or a fake in tests). */
   page: PageBridge
   /** The current autonomy level, read at call time so the payment-PIN guard reflects the live session (ADR 0047). */
   level: () => AutonomyLevel
+  /**
+   * Site skills with optional `login` field hints. Read at call time so a freshly downloaded pack is seen. The bridge
+   * picks the skill whose URL glob matches the tab and that carries a `login` block, and uses its hints to locate the
+   * fields (Korean names included). Defaults to none — then the English heuristic is the only field-finder.
+   */
+  skills?: () => readonly SkillMeta[]
+  /**
+   * The account's default agent-access policy (ADR 0023/0047). A `never` item is never filled; `while-unlocked` needs
+   * the vault unlocked; `always` fills regardless. A per-item policy overrides this. Defaults to 'while-unlocked'.
+   */
+  accessPolicy?: () => AgentAccessPolicy
+  /** Whether the vault is currently unlocked. Defaults to () => true (unlocked). */
+  unlocked?: () => boolean
+  /** Extra equivalent-domain groups for URL binding; the built-in Korean groups (ADR 0029) always apply. */
+  urlBinding?: UrlBindingSettings
 }
 
 /**
@@ -129,6 +208,32 @@ export interface VaultBridgeDeps {
  */
 export function makeVaultBridge(vault: InMemoryVault, deps: VaultBridgeDeps): VaultBridge {
   const { page } = deps
+  const skills = (): readonly SkillMeta[] => deps.skills?.() ?? []
+  const accessPolicy = (): AgentAccessPolicy => deps.accessPolicy?.() ?? 'while-unlocked'
+  const unlocked = (): boolean => deps.unlocked?.() ?? true
+  const urlBinding = deps.urlBinding ?? {}
+
+  /**
+   * The two gates every agent-triggered fill must pass, bound to the tab's REAL url (never one the AI claims):
+   *  - URL binding: the item's site must match the tab host (http(s) only, equivalent-domains aware) — stops a page
+   *    from coaxing out another site's login (threat T15/T22).
+   *  - access policy: `never` refuses; `while-unlocked` needs the vault unlocked (ADR 0023/0047).
+   * Throws (refuses) when either fails; the message says why. Never returns or logs a secret.
+   */
+  const assertFillAllowed = (item: VaultItem, tabUrl: string): void => {
+    const site = item.site
+    if (site === undefined || !urlMatchesSite(tabUrl, site, urlBinding)) {
+      throw new Error(
+        `Vault item ${item.id} is not bound to ${tabUrl || 'this page'} — a login fills only on its own site, over http(s).`,
+      )
+    }
+    if (!canAgentUse(item, accessPolicy(), { unlocked: unlocked() })) {
+      throw new Error(
+        `Vault item ${item.id} may not be filled by the agent right now (access policy ${item.accessPolicy ?? accessPolicy()}).`,
+      )
+    }
+  }
+
   return {
     async listItems(): Promise<VaultItemSummary[]> {
       return vault.summaries()
@@ -138,10 +243,31 @@ export function makeVaultBridge(vault: InMemoryVault, deps: VaultBridgeDeps): Va
       const item = vault.find(id)
       if (!item || item.kind !== 'login') throw new Error(`No login vault item ${id}`)
       const snapshot = await page.snapshot()
-      const targets = findLoginFields(snapshot)
+      // URL binding (ADR spec): the item must be among the login items this tab's REAL url allows — http(s) only,
+      // equivalent-domains aware — so a page cannot coax out another site's login (threat T15/T22).
+      const allowed = findLoginItemsForUrl(snapshot.url, vault.all(), urlBinding)
+      if (!allowed.some((i) => i.id === id)) {
+        throw new Error(
+          `Vault item ${id} is not bound to ${snapshot.url || 'this page'} — a login fills only on its own site, over http(s).`,
+        )
+      }
+      // Access policy: `never` refuses; `while-unlocked` needs the vault unlocked (ADR 0023/0047).
+      if (!canAgentUse(item, accessPolicy(), { unlocked: unlocked() })) {
+        throw new Error(
+          `Vault item ${id} may not be filled by the agent right now (access policy ${item.accessPolicy ?? accessPolicy()}).`,
+        )
+      }
+      // Prefer the matched site skill's field hints (Korean names included); fall back to the English heuristic.
+      const login = skillLoginForUrl(skills(), snapshot.url)
+      const targets =
+        (login ? loginTargetsFromHints(snapshot, login) : undefined) ?? findLoginFields(snapshot)
       if (!targets) throw new Error(`No login fields found on ${snapshot.url} to fill ${id} into`)
       // @dool2/vault types username then password straight into the page; nothing flows back to the caller.
       await vaultFillLogin(item, pageFiller(page), targets)
+      // Click the submit button when the skill pins one, so the login actually goes through. This is a sub-step of the
+      // already-gated vault.fillLogin, so it is not separately reported to the autonomy gate (same note as page.fill).
+      const submitRef = login?.submit ? resolveHint(snapshot, login.submit) : undefined
+      if (submitRef !== undefined) await page.click(submitRef)
       vault.recordFill(id, 'login')
     },
 
@@ -149,7 +275,12 @@ export function makeVaultBridge(vault: InMemoryVault, deps: VaultBridgeDeps): Va
       const item = vault.find(id)
       if (!item || !canFillTotp(item)) throw new Error(`No TOTP for vault item ${id}`)
       const snapshot = await page.snapshot()
-      const selector = findTotpField(snapshot)
+      // A TOTP is a login's second factor: same URL binding + access gate, bound to the real tab URL.
+      assertFillAllowed(item, snapshot.url)
+      // Prefer the site skill's totp hint; fall back to the English one-time-code heuristic.
+      const login = skillLoginForUrl(skills(), snapshot.url)
+      const selector =
+        (login?.totp ? resolveHint(snapshot, login.totp) : undefined) ?? findTotpField(snapshot)
       if (!selector) throw new Error(`No one-time-code field found on ${snapshot.url} to fill ${id} into`)
       // @dool2/vault computes the code with computeTotp and types it; the AI never sees seed or code.
       await vaultFillTotp(item, pageFiller(page), selector)
