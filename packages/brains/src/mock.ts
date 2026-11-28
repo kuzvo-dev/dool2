@@ -10,7 +10,7 @@ export function mockBrain(toolCall?: ToolCall): Brain {
       return true
     },
     async *run(_input: TurnInput, _handle: RunHandle): AsyncIterable<TurnEvent> {
-      yield { kind: 'text', text: '알겠어요.' }
+      yield { kind: 'text', text: 'OK.' }
       if (toolCall) {
         yield { kind: 'tool_call', call: toolCall }
         yield { kind: 'turn_end', stop: 'tool' }

@@ -30,7 +30,7 @@ export interface ToolResult {
 /** A single step the gate must weigh (produced while a `code` tool runs and wants to act on a page). */
 export interface GatedAction {
   tier: ActionTier
-  /** Human label for the approval card / log, e.g. the button text or "송금 50,000원". */
+  /** Human label for the approval card / log, e.g. the button text or "Send 50,000 won". */
   label: string
   amountKrw?: number
   merchantKnown?: boolean

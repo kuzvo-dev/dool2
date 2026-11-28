@@ -2,7 +2,7 @@
 // The gate is a pure function: the daemon enforces it in code, never the prompt. Secrets never reach the AI; this
 // module only decides whether an action runs, needs a phone signature, a review, a notification, or is blocked.
 
-/** 허락받기 · 자동 · 완전 자동 */
+/** ask / auto / full-auto */
 export type AutonomyLevel = 'ask' | 'auto' | 'full'
 
 /**
@@ -42,9 +42,9 @@ export interface GateResult {
 /**
  * Decide what happens to an action at a given autonomy level. Pure and total.
  *
- * ask (허락받기): pay/contact/delete each wait for a phone signature; plain acts run.
- * auto (자동): acts run; contact/delete go through the reviewer; payment still always signs.
- * full (완전 자동): acts run; contact/delete run and notify; payment runs when the merchant is known and under the
+ * ask: pay/contact/delete each wait for a phone signature; plain acts run.
+ * auto: acts run; contact/delete go through the reviewer; payment still always signs.
+ * full (full-auto): acts run; contact/delete run and notify; payment runs when the merchant is known and under the
  *   cap, otherwise a signature is still required (new merchant or over the cap); clearly over the cap is blocked.
  */
 export function decide(level: AutonomyLevel, tier: ActionTier, ctx: ActionContext = {}): GateResult {
@@ -61,7 +61,7 @@ export function decide(level: AutonomyLevel, tier: ActionTier, ctx: ActionContex
     return { decision: 'review', reason: `auto:${tier}` }
   }
 
-  // full (완전 자동)
+  // full (full-auto)
   if (tier === 'act') return { decision: 'run', reason: 'full:act' }
   if (tier === 'contact' || tier === 'delete') return { decision: 'notify', reason: `full:${tier}` }
   // pay
