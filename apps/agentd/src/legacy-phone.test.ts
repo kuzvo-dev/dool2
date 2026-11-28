@@ -9,7 +9,7 @@
 import { createSign, generateKeyPairSync, type KeyObject } from 'node:crypto'
 import { envelopeForAction, generateDeviceKeyPair, signApproval, verifyApproval } from '@dool2/approvals'
 import type { Brain } from '@dool2/brains'
-import type { ApprovalView, PcToPhone, PhoneToPc } from '@dool2/protocol'
+import type { ApprovalView, DaemonStreamEvent, PcToPhone, PhoneToPc } from '@dool2/protocol'
 import {
   type DeviceKeys,
   type Envelope,
@@ -118,6 +118,24 @@ class V1Phone {
     )
   }
 
+  async hello(): Promise<void> {
+    await this.up('hello', { kind: 'hello' })
+  }
+
+  /** Send a chat message, as the shipped app does from its composer (apps/phone ask.ts). */
+  async ask(text: string): Promise<void> {
+    await this.up('ask', { kind: 'ask', text })
+  }
+
+  /** Fetch the conversation history, as the app does on connect and resync. */
+  async conversation(): Promise<void> {
+    await this.up('conversation', { kind: 'conversation' })
+  }
+
+  async cancel(): Promise<void> {
+    await this.up('conversation-cancel', { kind: 'conversation-cancel' })
+  }
+
   /** Register the P-256 secure-chip approval keys, signed with the Ed25519 pairing key (approveKeysSignText). */
   async registerApproveKeys(): Promise<void> {
     const at = Date.now()
@@ -170,10 +188,10 @@ interface Harness {
   phone: V1Phone
 }
 
-async function setup(): Promise<Harness> {
+async function setup(brain: Brain = clickBrain('e2')): Promise<Harness> {
   const pc = await generateDevice(true)
   const bridges = payBridges()
-  const agentd = new Agentd({ brain: clickBrain('e2'), bridges, level: 'ask' })
+  const agentd = new Agentd({ brain, bridges, level: 'ask' })
   const link = new LegacyPhoneLink({
     keys: pc,
     agentd,
@@ -276,6 +294,148 @@ describe('v1-compat phone link', () => {
     // key omitted → the daemon verifies the Ed25519 pairing-key text signature.
     await h.phone.decide(view, 'approve', await h.phone.signEd25519(view, 'approve'))
     expect(h.agentd.isApproved(card.hash)).toBe(true)
+  })
+})
+
+/** A brain that just says one line and ends — the shape the demo brain uses for a plain chat answer. */
+function textBrain(text: string): Brain {
+  return {
+    id: 'pi',
+    label: 'text',
+    async ready() {
+      return true
+    },
+    async *run() {
+      yield { kind: 'text', text }
+      yield { kind: 'turn_end', stop: 'done' }
+    },
+  }
+}
+
+/** A brain that says a line, then blocks on `gate` before ending — lets a test cancel while a turn is in flight. */
+function gatedBrain(text: string, gate: Promise<void>): Brain {
+  return {
+    id: 'pi',
+    label: 'gated',
+    async ready() {
+      return true
+    },
+    async *run() {
+      yield { kind: 'text', text }
+      await gate
+      yield { kind: 'turn_end', stop: 'done' }
+    },
+  }
+}
+
+/** Every `stream` event the phone received, in order. */
+function streams(msgs: PcToPhone[]): DaemonStreamEvent[] {
+  return msgs
+    .filter((m): m is Extract<PcToPhone, { kind: 'stream' }> => m.kind === 'stream')
+    .map((m) => m.event)
+}
+
+/** The streamed assistant text (concatenated text deltas). */
+function streamedText(msgs: PcToPhone[]): string {
+  return streams(msgs)
+    .filter((e) => e.type === 'agent' && e.event.type === 'text')
+    .map((e) => (e.type === 'agent' && e.event.type === 'text' ? e.event.delta : ''))
+    .join('')
+}
+
+describe('v1-compat phone chat', () => {
+  it('hello is answered with state and health so the app shows connected', async () => {
+    const h = await setup(textBrain('Hi.'))
+    await h.phone.pair()
+    await h.phone.hello()
+    const msgs = await h.phone.received()
+    expect(msgs.map((m) => m.kind)).toContain('state')
+    expect(msgs.map((m) => m.kind)).toContain('health')
+  })
+
+  it('an ask runs a turn and streams the assistant answer, then a final idle state', async () => {
+    const h = await setup(textBrain('Here is your answer.'))
+    await h.phone.pair()
+    await h.phone.ask('what is up?')
+    const msgs = await h.phone.received()
+
+    // The user message was saved (so the app's optimistic bubble resolves).
+    const saved = streams(msgs).filter((e) => e.type === 'saved')
+    const savedUser = saved.find((e) => e.type === 'saved' && e.message.role === 'user')
+    expect(savedUser && savedUser.type === 'saved' ? savedUser.message.text : '').toBe('what is up?')
+
+    // The assistant answer streamed as text and was saved as the final message.
+    expect(streamedText(msgs)).toBe('Here is your answer.')
+    const savedAssistant = saved.find((e) => e.type === 'saved' && e.message.role === 'assistant')
+    expect(savedAssistant && savedAssistant.type === 'saved' ? savedAssistant.message.text : '').toBe(
+      'Here is your answer.',
+    )
+    // The stream closed and the conversation ended idle.
+    expect(streams(msgs).some((e) => e.type === 'end')).toBe(true)
+    const status = msgs.filter(
+      (m): m is Extract<PcToPhone, { kind: 'conversation-status' }> => m.kind === 'conversation-status',
+    )
+    expect(status.at(-1)?.busy).toBe(false)
+  })
+
+  it('a reconnecting app restores the conversation with a conversation request', async () => {
+    const h = await setup(textBrain('Done.'))
+    await h.phone.pair()
+    await h.phone.ask('remember this')
+    h.phone.outbox.length = 0 // a fresh reconnect: only look at what the resync fetch returns
+    await h.phone.conversation()
+    const conv = (await h.phone.received()).find(
+      (m): m is Extract<PcToPhone, { kind: 'conversation' }> => m.kind === 'conversation',
+    )
+    expect(conv).toBeDefined()
+    const roles = conv?.state.messages.map((m) => `${m.role}:${m.text}`) ?? []
+    expect(roles).toEqual(['user:remember this', 'assistant:Done.'])
+    expect(conv?.state.busy).toBe(false)
+  })
+
+  it('cancel stops a running turn: busy clears and the answer is dropped', async () => {
+    let release = (): void => {}
+    const gate = new Promise<void>((r) => {
+      release = r
+    })
+    const h = await setup(gatedBrain('working…', gate))
+    await h.phone.pair()
+
+    const running = h.phone.ask('do the thing') // blocks inside the turn on the gate
+    await new Promise((r) => setTimeout(r, 0)) // let the user-save + busy status flush
+    await h.phone.cancel()
+    release()
+    await running
+
+    const msgs = await h.phone.received()
+    // The suppressed turn never streamed its text nor saved an assistant answer.
+    expect(streamedText(msgs)).toBe('')
+    expect(streams(msgs).some((e) => e.type === 'saved' && e.message.role === 'assistant')).toBe(false)
+    // The conversation ended idle (busy false) and the stream was closed.
+    const status = msgs.filter(
+      (m): m is Extract<PcToPhone, { kind: 'conversation-status' }> => m.kind === 'conversation-status',
+    )
+    expect(status.at(-1)?.busy).toBe(false)
+    expect(streams(msgs).some((e) => e.type === 'end')).toBe(true)
+  })
+
+  it('still surfaces a pay approval as a card and resumes it via decide, during chat', async () => {
+    const h = await setup() // the pay-clicking brain
+    await h.phone.pair()
+    await h.phone.registerApproveKeys()
+    // The app sends the message through `ask`; the pay action pauses for a signature.
+    await h.phone.ask('pay for the order')
+    const announced = (await h.phone.received()).find(
+      (m): m is Extract<PcToPhone, { kind: 'approval' }> => m.kind === 'approval',
+    )
+    if (!announced) throw new Error('expected an announced approval view')
+    const view = announced.approval
+    expect(view.kind).toBe('money')
+
+    await h.phone.decide(view, 'approve', h.phone.signP256(view, 'approve', 'pay'), 'pay')
+    expect(h.agentd.isApproved(view.id)).toBe(true)
+    const resumed = await h.agentd.send('pay for the order', { approved: [view.id] })
+    expect(resumed.gateDecisions.find((g) => g.tier === 'pay')?.decision).toBe('run')
   })
 })
 
