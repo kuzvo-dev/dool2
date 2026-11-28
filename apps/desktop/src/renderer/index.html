@@ -19,12 +19,17 @@
         <div class="controls">
           <label id="level-label" for="level">Autonomy</label>
           <select id="level"></select>
+          <button id="review-toggle" type="button">
+            <span id="review-toggle-label"></span>
+            <span id="review-badge" class="badge" hidden></span>
+          </button>
           <button id="browser-toggle" type="button"></button>
         </div>
       </header>
       <main id="main">
         <section id="chat">
           <div id="transcript"></div>
+          <button id="review-nudge" class="nudge" type="button" hidden></button>
           <form id="composer">
             <input id="input" type="text" autocomplete="off" />
             <button id="send" type="submit"></button>
@@ -36,6 +41,14 @@
             <p id="browser-idle"></p>
             <img id="browser-frame" alt="" hidden />
           </div>
+        </aside>
+        <aside id="review-pane" hidden>
+          <div id="review-caption"></div>
+          <p id="review-intro"></p>
+          <div id="review-coverage"></div>
+          <div id="review-status" hidden></div>
+          <p id="review-empty"></p>
+          <div id="review-list"></div>
         </aside>
       </main>
     </div>

@@ -12,6 +12,7 @@ import type { AutonomyLevel } from '@dool2/core'
 import type { Lang } from '@dool2/i18n'
 import { app, BrowserWindow, ipcMain, nativeTheme, shell } from 'electron'
 import { DEMO_MESSAGE, demoBrain } from './demo.js'
+import { demoDraftsSnapshot } from './locales/drafts-demo.js'
 import { mainText } from './locales/main.js'
 import { createSession, type Session } from './session.js'
 
@@ -115,6 +116,24 @@ function registerIpc(): void {
       if (!win.isDestroyed()) win.webContents.send('dool2:browser-frame', null)
     }
   })
+
+  // The review-pending learned site-skill drafts + library KPIs. Same data the HTTP daemon serves at GET /drafts;
+  // here we read the in-process daemon directly (agentd.drafts()/coverage()). The smoke run has no live recording
+  // (fake bridges), so it serves demo drafts instead, to screenshot the panel with real-looking content.
+  ipcMain.handle('dool2:drafts', () => {
+    if (SMOKE) return demoDraftsSnapshot()
+    return {
+      drafts: session?.agentd.drafts() ?? [],
+      coverage: session?.agentd.coverage() ?? { covered: 0, total: 0, clickFreeRatio: 0 },
+    }
+  })
+
+  // Approve / discard a draft. TODO(v2 daemon): the LocalDraftStore has no approve/discard yet — a follow-up PR wires
+  // agentd (and the HTTP daemon's POST routes) so an approved draft is written out as an active local skill and a
+  // discarded one is dropped. Until then these are no-ops that report `wired: false`; the renderer still removes the
+  // card optimistically so the panel stays usable. This never mutates agentd.
+  ipcMain.handle('dool2:approve-draft', (_e, _id: string) => ({ ok: true, wired: false }))
+  ipcMain.handle('dool2:discard-draft', (_e, _id: string) => ({ ok: true, wired: false }))
 }
 
 /** Smoke screenshot: wait for the window to paint, send the canned turn, capture the chat, quit. No network. */
@@ -131,11 +150,11 @@ async function smoke(w: BrowserWindow): Promise<void> {
       if (!w.isDestroyed()) w.webContents.send('dool2:event', event)
     },
   })
-  // Open the browser-watch pane so the screenshot shows the whole layout (offline, so it shows its idle state).
+  // Open the "review new site-skill drafts" panel so the screenshot shows it with the demo drafts.
   if (!w.isDestroyed())
-    await w.webContents.executeJavaScript("document.getElementById('browser-toggle').click()").catch(() => {})
-  // Let the DOM paint the new lines before capturing.
-  await new Promise((r) => setTimeout(r, 600))
+    await w.webContents.executeJavaScript("document.getElementById('review-toggle').click()").catch(() => {})
+  // Let the DOM paint the new lines and the fetched drafts before capturing.
+  await new Promise((r) => setTimeout(r, 800))
   const out = process.env.DOOL2_SMOKE_OUT ?? join(here, '..', 'out')
   await mkdir(out, { recursive: true })
   const img = await w.webContents.capturePage()

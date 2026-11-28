@@ -15,6 +15,12 @@ contextBridge.exposeInMainWorld('dool2', {
   setLevel: (level: 'ask' | 'auto' | 'full'): Promise<void> => ipcRenderer.invoke('dool2:set-level', level),
   /** Turn the hidden-browser mirror on or off. Off by default: the browser stays invisible. */
   watchBrowser: (on: boolean): Promise<void> => ipcRenderer.invoke('dool2:watch-browser', on),
+  /** The review-pending learned site-skill drafts + the library coverage KPIs (the daemon's GET /drafts). */
+  drafts: (): Promise<unknown> => ipcRenderer.invoke('dool2:drafts'),
+  /** Approve a draft so it becomes an active local skill. */
+  approveDraft: (id: string): Promise<unknown> => ipcRenderer.invoke('dool2:approve-draft', id),
+  /** Discard a draft. */
+  discardDraft: (id: string): Promise<unknown> => ipcRenderer.invoke('dool2:discard-draft', id),
   /** Each daemon event during a turn (already safe to show; the renderer maps it to a line). */
   onEvent: (cb: (event: unknown) => void): void => {
     ipcRenderer.on('dool2:event', (_e, event) => cb(event))
