@@ -104,6 +104,9 @@ importers:
       '@dool2/sandbox':
         specifier: workspace:*
         version: link:../../packages/sandbox
+      '@dool2/ui':
+        specifier: workspace:*
+        version: link:../../packages/ui
     devDependencies:
       electron:
         specifier: ^45.3.2
@@ -332,6 +335,12 @@ importers:
       '@dool2/skill-sdk':
         specifier: workspace:*
         version: link:../skill-sdk
+
+  packages/ui:
+    dependencies:
+      three:
+        specifier: 0.187.0
+        version: 0.187.0
 
   packages/vault:
     dependencies:
@@ -1365,6 +1374,9 @@ packages:
     resolution: {integrity: sha512-SS+jx45GF1QjgEXQx4NJZV9ImqmO2NPz5FNsIHrsDjh2YsHnawpan7SNQ1o8NuhrbHZy9AZhIoCUiCeaW/C80g==}
     engines: {node: '>=18'}
 
+  three@0.187.0:
+    resolution: {integrity: sha512-Qiu7R+Cmh8CstZsY1uJOSWnVlfo7ZtNLV7mF8Jltk3LB3AtDu9cRZlcnRKkAk8Y4z6KKw35z7Y7Urd7jWY8etA==}
+
   tinybench@6.2.3:
     resolution: {integrity: sha512-Al01C2JIBnO2CXCAPbpAl6sUiOZHeThGtHYNTa51JRw9PyWOCdr+9Ong05R4qg/Sk3+H645E8ov1h2c58ityNw==}
     engines: {node: '>=20.0.0'}
@@ -2280,6 +2292,8 @@ snapshots:
       - supports-color
 
   supports-color@10.2.2: {}
+
+  three@0.187.0: {}
 
   tinybench@6.2.3: {}
 

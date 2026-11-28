@@ -21,7 +21,8 @@
     "@dool2/engine": "workspace:*",
     "@dool2/i18n": "workspace:*",
     "@dool2/page-bridge": "workspace:*",
-    "@dool2/sandbox": "workspace:*"
+    "@dool2/sandbox": "workspace:*",
+    "@dool2/ui": "workspace:*"
   },
   "devDependencies": {
     "electron": "^45.3.2",

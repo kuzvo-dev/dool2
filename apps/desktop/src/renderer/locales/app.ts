@@ -1,62 +1,70 @@
-// All user-facing copy for the chat window (ADR 0029). Korean is the reference voice (docs/persona.md: warm,
-// result-first, no jargon); English is complete. This is a `locales/` file, so Korean lives here and nowhere else
-// in the app's code. lines.ts turns a daemon event into one of the `work` keys below; the renderer draws the rest.
+// All user-facing chrome copy for the chat window (ADR 0029). Korean is the reference voice (docs/persona.md: warm,
+// result-first, no jargon); English is complete. This is a `locales/` file, so Korean lives here and nowhere else in
+// the app's code. The design mock copy (docs/design/screens/src/PC.dc.html) is matched exactly where the screen shows
+// it. Demo thread/task content is seed data and lives in locales/seed.ts; lines.ts maps daemon events to `work` keys.
 
 import type { Lang } from '@dool2/i18n'
 
 /** The compact "일하는 중" step kinds lines.ts maps tool activity to. Never raw tool JSON — one friendly phrase each. */
 export type WorkKey = 'open' | 'read' | 'login' | 'fill' | 'click' | 'pdf' | 'run'
 
-/** Copy for the "review new site-skill drafts" panel (learn-by-watching, ADR 0046). */
+/** The four left-nav tabs (design mock order). */
+export type Tab = 'talk' | 'tasks' | 'explore' | 'me'
+
+/** Copy for the "review new site-skill drafts" panel (learn-by-watching, ADR 0046), folded under 나의 두리. */
 export interface ReviewText {
-  /** Panel caption. */
   title: string
-  /** One-line explanation under the caption. */
   intro: string
-  /** Shown when there is no draft to review. */
   empty: string
-  /** The "awaiting review" marker on every draft. */
   needsReview: string
-  /** Per-draft actions. */
   approve: string
   discard: string
-  /** The small live affordance shown when a draft appears during a turn. */
   nudge: string
-  /** A human summary of the drafted steps: data-path shortcuts + on-screen steps. */
   learned: (endpoints: number, steps: number) => string
-  /** The library coverage KPI: of the sites visited, how many a draft covers. */
   coverage: (covered: number, total: number) => string
-  /** The click-free (data-path) share of drafts, as a percentage. */
   clickFree: (pct: number) => string
-  /** Confirmation after approving / discarding a draft. */
   approved: (name: string) => string
   discarded: (name: string) => string
 }
 
 export interface AppText {
-  /** Header + empty state. */
-  title: string
-  tagline: string
-  emptyGreeting: string
-  emptyHint: string
-  /** Chat input. */
+  /** Brand + nav. */
+  brandSmall: string
+  navLabel: string
+  tabs: Record<Tab, string>
+  nowHead: string
+  /** Header. */
+  doori: string
+  headStatus: string
+  search: string
+  /** Composer. */
   placeholder: string
-  send: string
-  working: string
-  /** The three autonomy levels (ADR 0047), in order. */
+  voice: string
+  attachAria: string
+  voiceAria: string
+  composerNote: string
+  /** Right pane (두리의 화면). */
+  screenTitle: string
+  takeOver: string
+  stop: string
+  screenTag: string
+  beforePay: string
+  nextUp: string
+  awaitingApproval: string
+  localFoot: string
+  /** Day separators + empty states. */
+  dayToday: string
+  dayYesterday: string
+  comingSoon: string
+  comingHint: string
+  /** 나의 두리: autonomy level (ADR 0047). */
+  meTitle: string
   levelLabel: string
-  levels: { ask: string; auto: string; full: string }
-  /** The browser pane. */
-  browserShow: string
-  browserHide: string
-  browserIdle: string
-  browserLive: string
-  /** The review panel toggle (header). */
-  reviewShow: string
-  reviewHide: string
-  /** The review panel copy (learn-by-watching drafts). */
+  levelSub: string
+  levels: Record<'ask' | 'auto' | 'full', { name: string; desc: string }>
+  /** The review panel (folded under 나의 두리). */
   review: ReviewText
-  /** Approval card (phone-signed; this screen only shows what needs signing). */
+  /** Approval card shown inline in the chat (phone-signed; this screen only shows what needs signing). */
   approvalTitle: string
   approvalHint: string
   amount: (krw: number) => string
@@ -66,21 +74,38 @@ export interface AppText {
 }
 
 const KO: AppText = {
-  title: '두리',
-  tagline: '이 컴퓨터에 사는 AI',
-  emptyGreeting: '안녕하세요, 저는 두리예요.',
-  emptyHint: '예약, 주문, 자잘한 일을 대신 해 드려요. 돈 쓰는 일은 꼭 먼저 물어볼게요. 뭐부터 해 볼까요?',
-  placeholder: '두리에게 말해 보세요',
-  send: '보내기',
-  working: '일하는 중이에요…',
+  brandSmall: '두리',
+  navLabel: '주요 메뉴',
+  tabs: { talk: '대화', tasks: '맡긴 일', explore: '둘러보기', me: '나의 두리' },
+  nowHead: '지금',
+  doori: '두리',
+  headStatus: '우리 집 MacBook에서 일하는 중',
+  search: '대화에서 찾기',
+  placeholder: '두리에게 부탁하기 · 돈 드는 일은 먼저 물어봐요',
+  voice: '말하기',
+  attachAria: '첨부',
+  voiceAria: '말로 부탁하기',
+  composerNote: '돈 드는 일과 누군가에게 보내는 일은 꼭 먼저 물어봐요',
+  screenTitle: '두리의 화면',
+  takeOver: '내가 할게요',
+  stop: '멈추기',
+  screenTag: '두리 화면',
+  beforePay: '결제 전엔 물어볼게요',
+  nextUp: '다음 차례',
+  awaitingApproval: '승인 대기',
+  localFoot: '이 화면은 우리 집 컴퓨터에서 바로 보내요. 두리 서버엔 남지 않아요.',
+  dayToday: '오늘',
+  dayYesterday: '어제',
+  comingSoon: '곧 들어와요',
+  comingHint: '두리가 맡은 일이 생기면 여기에 모아 보여드릴게요.',
+  meTitle: '나의 두리',
   levelLabel: '맡기는 정도',
-  levels: { ask: '허락받기', auto: '자동', full: '완전 자동' },
-  browserShow: '두리 브라우저 보기',
-  browserHide: '브라우저 닫기',
-  browserIdle: '두리가 아직 브라우저에서 작업하고 있지 않아요.',
-  browserLive: '두리가 지금 보고 있는 화면이에요.',
-  reviewShow: '새 스킬 검수',
-  reviewHide: '검수 닫기',
+  levelSub: '두리가 어디까지 스스로 해도 될지 정해요. 돈 쓰는 일은 늘 먼저 물어봐요.',
+  levels: {
+    ask: { name: '허락받기', desc: '일마다 먼저 물어보고 나서 해요.' },
+    auto: { name: '자동', desc: '웬만한 일은 알아서 하고, 돈 드는 일만 물어봐요.' },
+    full: { name: '완전 자동', desc: '정해 둔 한도 안에서 끝까지 알아서 해요. 폰 승인이 필요해요.' },
+  },
   review: {
     title: '새 스킬 초안 검수',
     intro: '두리가 사이트를 쓰면서 배운 초안이에요. 승인하면 이 컴퓨터에서 바로 써요.',
@@ -100,7 +125,7 @@ const KO: AppText = {
   },
   approvalTitle: '폰에서 승인해 주세요',
   approvalHint: '돈 쓰는 일이라 폰에서 한 번 확인이 필요해요.',
-  amount: (krw) => `${krw.toLocaleString('ko-KR')}원`,
+  amount: (krw) => `₩${krw.toLocaleString('ko-KR')}`,
   blocked: (label) => `"${label}"은(는) 지금은 할 수 없어요.`,
   work: {
     open: '페이지를 여는 중이에요',
@@ -114,22 +139,38 @@ const KO: AppText = {
 }
 
 const EN: AppText = {
-  title: 'Dool2',
-  tagline: 'An AI that lives on your computer',
-  emptyGreeting: "Hi, I'm Dool2.",
-  emptyHint:
-    "I handle bookings, orders and little errands for you. I'll always ask first before spending money. Where shall we start?",
-  placeholder: 'Talk to Dool2',
-  send: 'Send',
-  working: 'Working on it…',
-  levelLabel: 'How much to leave to me',
-  levels: { ask: 'Ask first', auto: 'Auto', full: 'Full auto' },
-  browserShow: "Watch Dool2's browser",
-  browserHide: 'Close browser',
-  browserIdle: "Dool2 isn't working in the browser yet.",
-  browserLive: 'This is what Dool2 is looking at right now.',
-  reviewShow: 'Review new skills',
-  reviewHide: 'Close review',
+  brandSmall: 'Dool2',
+  navLabel: 'Main menu',
+  tabs: { talk: 'Chat', tasks: 'Tasks', explore: 'Explore', me: 'My Dool2' },
+  nowHead: 'Now',
+  doori: 'Dool2',
+  headStatus: 'Working on your MacBook',
+  search: 'Search the chat',
+  placeholder: "Ask Dool2 · I'll check first before anything that costs money",
+  voice: 'Speak',
+  attachAria: 'Attach',
+  voiceAria: 'Ask by voice',
+  composerNote: 'Dool2 always asks first before spending money or sending anything to anyone',
+  screenTitle: "Dool2's screen",
+  takeOver: "I'll take over",
+  stop: 'Stop',
+  screenTag: "Dool2's view",
+  beforePay: "I'll ask before paying",
+  nextUp: 'Up next',
+  awaitingApproval: 'Needs approval',
+  localFoot: "This screen comes straight from your computer. Nothing is kept on Dool2's servers.",
+  dayToday: 'Today',
+  dayYesterday: 'Yesterday',
+  comingSoon: 'Coming soon',
+  comingHint: "When Dool2 takes on tasks, you'll see them gathered here.",
+  meTitle: 'My Dool2',
+  levelLabel: 'How much to leave to Dool2',
+  levelSub: 'Decide how far Dool2 may go on its own. It always asks first before spending money.',
+  levels: {
+    ask: { name: 'Ask first', desc: 'Checks with you before each task.' },
+    auto: { name: 'Auto', desc: 'Handles the everyday things, asks only when money is involved.' },
+    full: { name: 'Full auto', desc: 'Finishes on its own within a set limit. Needs phone approval.' },
+  },
   review: {
     title: 'Review new site-skill drafts',
     intro: 'Drafts Dool2 learned while using sites. Approve one to use it on this computer right away.',

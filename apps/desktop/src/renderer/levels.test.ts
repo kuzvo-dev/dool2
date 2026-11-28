@@ -9,11 +9,14 @@ describe('autonomy level selector', () => {
 
   it('labels each level in Korean', () => {
     const ko = appText('ko').levels
-    expect(ko.ask).toBe('허락받기')
-    expect(ko.auto).toBe('자동')
-    expect(ko.full).toBe('완전 자동')
-    // Every selectable level has a label.
-    for (const level of LEVELS) expect(ko[level]).toBeTruthy()
+    expect(ko.ask.name).toBe('허락받기')
+    expect(ko.auto.name).toBe('자동')
+    expect(ko.full.name).toBe('완전 자동')
+    // Every selectable level has a label and a one-line description.
+    for (const level of LEVELS) {
+      expect(ko[level].name).toBeTruthy()
+      expect(ko[level].desc).toBeTruthy()
+    }
   })
 
   it('maps a selector value straight to the agentd level', () => {

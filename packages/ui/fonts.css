@@ -1,0 +1,11 @@
+/*
+ * Pretendard (SIL OFL 1.1, fonts/OFL.txt). Only shipped in the desktop app and Chrome extension.
+ * The phone uses the device fonts (Apple SD Gothic Neo, Noto Sans CJK), which are good enough, so it skips the 2 MB download.
+ */
+@font-face {
+  font-family: "Pretendard Variable";
+  font-weight: 45 920;
+  font-style: normal;
+  font-display: swap;
+  src: url("fonts/PretendardVariable.woff2") format("woff2-variations");
+}

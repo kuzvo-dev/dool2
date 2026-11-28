@@ -1,0 +1,25 @@
+{
+  "name": "@dool2/ui",
+  "version": "0.0.0",
+  "private": true,
+  "license": "Apache-2.0",
+  "description": "Dool2 design system: tokens and parts shared by the desktop app, phone app and Chrome extension (CSS, 3D Dool2)",
+  "files": [
+    "ui.css",
+    "doori",
+    "logos",
+    "emoji",
+    "fonts.css",
+    "fonts",
+    "copy.mjs",
+    "preview.html",
+    "doori3d.js",
+    "doori-render.html"
+  ],
+  "scripts": {
+    "test": "node --test copy.test.mjs"
+  },
+  "dependencies": {
+    "three": "0.187.0"
+  }
+}
