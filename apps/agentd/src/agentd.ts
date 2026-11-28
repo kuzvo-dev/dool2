@@ -21,6 +21,7 @@ import {
   type ConsentEnvelope,
   type ConsumeFailure,
   type ExecutedAction,
+  ed25519PemFromRawPublicKey,
   envelopeForAction,
   envelopeHash,
   matchesApproved,
@@ -360,9 +361,17 @@ export class Agentd {
     return out
   }
 
-  /** Register (or replace) the phone's device public key — done at pairing. Approvals cannot be verified without it. */
-  registerDevice(publicKeyPem: string): void {
-    this.#devicePublicKeyPem = publicKeyPem
+  /**
+   * Register (or replace) the phone's device public key — done at pairing. Approvals cannot be verified without it.
+   * Accepts either an SPKI PEM (the v2 relay/HTTP pairing path) or a RAW 32-byte Ed25519 public key in base64url (the
+   * shipped v1 phone's `signPub`, which the v1-compat pairing path passes straight through). A raw key is converted to
+   * SPKI PEM so `hasDevice()` and the v2 verify paths stay uniform; the v1 phone's own approvals are verified over the
+   * relay with its secure-chip keys, not this one (see legacy-phone.ts).
+   */
+  registerDevice(publicKey: string): void {
+    this.#devicePublicKeyPem = publicKey.includes('PUBLIC KEY')
+      ? publicKey
+      : ed25519PemFromRawPublicKey(publicKey)
   }
 
   /** Whether a phone has paired (a device public key is registered). The desktop's pairing screen reflects this. */
@@ -600,6 +609,38 @@ export class Agentd {
     )
     if (!consumed.ok) return { ok: false, reason: consumed.reason }
 
+    return this.#recordApproved(pending)
+  }
+
+  /**
+   * Resume a v1-compat (legacy phone) approval whose free-text signature the relay bridge has ALREADY verified against
+   * the phone's registered approve-keys — the P-256 secure-chip key (`SHA256withECDSA`), or the Ed25519 pairing key as
+   * the fallback (ADR 0043). It is the sibling of {@link approve} for the shipped v1 wire, where the phone signs
+   * `approvalSignText(view, decision, choice)` rather than the envelope hash, so the Ed25519-over-hash check
+   * ({@link verifyApproval}) cannot apply. Every OTHER guard is kept identical to approve(): the hash must be pending,
+   * a device key must be registered, the envelope must be unexpired and its nonce unspent (ApprovalStore.consume), and
+   * the reconstructed action must match (matchesApproved). On success the envelope is recorded in #approved by its
+   * hash, exactly as approve() does, so the same resume seam (send with { approved: [hash] }) presses the real gated
+   * action. The v2 approve() path is untouched and still signature-checked.
+   */
+  approveVerified(hash: string, now: number = Date.now()): ApproveResult {
+    const pending = this.#pending.get(hash)
+    if (!pending) return { ok: false, reason: 'unknown-hash' }
+    if (!this.#devicePublicKeyPem) return { ok: false, reason: 'no-device-key' }
+    const consumed = this.#store.consume(pending.envelope, now, pending.createdAt)
+    if (!consumed.ok) return { ok: false, reason: consumed.reason }
+    return this.#recordApproved(pending)
+  }
+
+  // --- internals ----------------------------------------------------------------------------------------------------
+
+  /**
+   * Confirm the action reconstructed from an already-consumed pending approval matches its envelope, then record it in
+   * #approved by its hash. Shared by approve() (v2, signature over the hash) and approveVerified() (v1-compat,
+   * free-text signature verified by the relay bridge). The match is trivially true here (we reconstruct the executed
+   * action from the envelope's own public facts); a real resume reads those facts off the page about to be acted on.
+   */
+  #recordApproved(pending: PendingApproval): ApproveResult {
     const executed: ExecutedAction = {
       tier: pending.envelope.tier,
       label: pending.envelope.label,
@@ -611,12 +652,10 @@ export class Agentd {
     const match = matchesApproved(executed, pending.envelope)
     if (!match.ok) return { ok: false, reason: 'mismatch' }
 
-    this.#pending.delete(hash)
-    this.#approved.set(hash, pending.envelope)
+    this.#pending.delete(pending.hash)
+    this.#approved.set(pending.hash, pending.envelope)
     return { ok: true, envelope: pending.envelope }
   }
-
-  // --- internals ----------------------------------------------------------------------------------------------------
 
   /**
    * Register an `approvalNeeded` outcome as a pending, signable approval. The envelope + hash come straight from the

@@ -35,7 +35,13 @@ interface PendingCard {
 
 interface Dool2Api {
   config(): Promise<{ lang: Lang; level: AutonomyLevel; smoke: boolean; view: string }>
-  pairing(): Promise<{ code: string; paired: boolean; qrSvg?: string; offerUrl?: string }>
+  pairing(): Promise<{
+    code: string
+    paired: boolean
+    qrSvg?: string
+    offerUrl?: string
+    legacyQrSvg?: string
+  }>
   send(text: string): Promise<void>
   setLevel(level: AutonomyLevel): Promise<void>
   watchBrowser(on: boolean): Promise<void>
@@ -393,6 +399,12 @@ async function renderPairing(): Promise<void> {
     const qr = el('div', 'pair-qr')
     qr.innerHTML = info.qrSvg
     card.append(qr, el('div', 'pair-scan', t.pair.scanHint))
+  }
+  // The second QR for the ALREADY-INSTALLED phone app (v1-compat): a bare base64url PairInvite its scanner reads.
+  if (info.legacyQrSvg) {
+    const qr = el('div', 'pair-qr pair-qr-legacy')
+    qr.innerHTML = info.legacyQrSvg
+    card.append(qr, el('div', 'pair-scan', t.pair.legacyScanHint))
   }
   const code = el('div', 'pair-code-row')
   code.append(el('div', 'pair-code-label', t.pair.codeLabel), el('div', 'pair-code mono', info.code))

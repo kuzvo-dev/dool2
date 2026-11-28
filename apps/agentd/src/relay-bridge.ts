@@ -11,7 +11,16 @@
 // untouched and stays strict — the phone never touches it.
 
 import { randomBytes } from 'node:crypto'
-import { type DeviceKeys, type Envelope, generateDevice, linkKey, open, seal } from '@dool2/protocol/e2e'
+import type { PairInvite } from '@dool2/protocol'
+import {
+  b64u,
+  type DeviceKeys,
+  type Envelope,
+  generateDevice,
+  linkKey,
+  open,
+  seal,
+} from '@dool2/protocol/e2e'
 import { LinkClient, type LinkOptions } from '@dool2/protocol/link'
 import {
   type Capability,
@@ -25,6 +34,7 @@ import {
   RELAY_RPC_KIND,
 } from '@dool2/protocol/pair-rpc'
 import type { Agentd, ApprovalCard } from './agentd.js'
+import { LegacyPhoneLink } from './legacy-phone.js'
 
 /** Default life of a pairing code once the bridge starts offering it: long enough to scan, short enough to matter. */
 const DEFAULT_PAIRING_TTL_MS = 10 * 60_000
@@ -51,6 +61,19 @@ export interface RelayBridgeOptions {
   mintToken?: () => string
   /** WebSocket implementation (Node passes `ws`; the browser uses the global). */
   WebSocketImpl?: LinkOptions['WebSocketImpl']
+  /**
+   * This PC's name, shown on the phone and put in the v1 PairInvite. Defaults to the hostname. Used by the v1-compat
+   * path (legacy-phone.ts) that lets the ALREADY-SHIPPED phone app pair + sign over the same relay.
+   */
+  pcName?: string
+  /**
+   * The one-time pairing secret the v1 PairInvite QR carries (the shipped app echoes it in its `pair` message). A
+   * random 24-byte base64url value is generated when omitted. This is the v1 analogue of the short `pairingCode` the
+   * v2 `pair-rpc` path uses; both are served from the same relay connection.
+   */
+  legacyPairingSecret?: string
+  /** Called after a v1 phone's approval is verified + recorded, so the host can resume the gated action. */
+  onLegacyApproved?: (approval: { hash: string; choice?: string }) => void
 }
 
 export interface RelayBridge {
@@ -64,6 +87,12 @@ export interface RelayBridge {
   offerUrl(appBaseUrl: string): string
   /** Whether a phone has paired (a device key is registered on the daemon). */
   paired(): boolean
+  /** The v1 PairInvite the shipped phone app pairs from (v1-compat path). */
+  legacyInvite(): PairInvite
+  /** The v1 PairInvite as the BARE base64url(JSON) token the shipped app's `startPairing` reads (no `#d2p=` wrapper). */
+  legacyInviteToken(): string
+  /** Push a new approval card to any paired v1 phone (as a v1 `approval` message). No-op when none have paired. */
+  announceLegacyApproval(card: ApprovalCard): void
   /** Tear down the relay connection. */
   close(): void
 }
@@ -105,6 +134,20 @@ export async function startRelayBridge(opts: RelayBridgeOptions): Promise<RelayB
     ...(opts.WebSocketImpl ? { WebSocketImpl: opts.WebSocketImpl } : {}),
   })
 
+  // v1-compat: the daemon-side handler for the ALREADY-SHIPPED phone app, sharing this same relay connection and keys.
+  // It speaks the v1 envelope kinds (`pair`/`approve-keys`/`decide`) the v2 `pair-rpc` path does not. See legacy-phone.ts.
+  const legacy = new LegacyPhoneLink({
+    keys,
+    agentd: opts.agentd,
+    secret: opts.legacyPairingSecret ?? b64u(randomBytes(24)),
+    relayUrl: opts.relayUrl,
+    send: (env) => client.send(env),
+    ...(opts.pcName !== undefined ? { pcName: opts.pcName } : {}),
+    ...(opts.onLegacyApproved ? { onApproved: opts.onLegacyApproved } : {}),
+    ...(opts.log ? { log: opts.log } : {}),
+    ...(opts.now ? { now: opts.now } : {}),
+  })
+
   async function keyFor(env: Envelope): Promise<LinkKey | undefined> {
     const cached = linkKeys.get(env.from)
     if (cached) return cached
@@ -119,7 +162,10 @@ export async function startRelayBridge(opts: RelayBridgeOptions): Promise<RelayB
   }
 
   async function onEnvelope(env: Envelope): Promise<void> {
-    if (env.kind !== RELAY_RPC_KIND || env.to !== keys.id) return
+    if (env.to !== keys.id) return
+    // v1 envelopes (`pair`/`approve-keys`/`decide`/…) carry a different kind than the v2 `pair-rpc`; hand them to the
+    // v1-compat link. The v2 path below is untouched.
+    if (env.kind !== RELAY_RPC_KIND) return legacy.handle(env)
     const k = await keyFor(env)
     if (!k) return
     let req: PairRpcRequest
@@ -197,6 +243,9 @@ export async function startRelayBridge(opts: RelayBridgeOptions): Promise<RelayB
     offer,
     offerUrl: (appBaseUrl: string) => pairingUrl(appBaseUrl, offer()),
     paired: () => opts.agentd.hasDevice(),
+    legacyInvite: () => legacy.invite(),
+    legacyInviteToken: () => legacy.inviteToken(),
+    announceLegacyApproval: (card: ApprovalCard) => legacy.announceApproval(card),
     close: () => client.stop(),
   }
 }
