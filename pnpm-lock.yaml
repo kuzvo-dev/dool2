@@ -298,6 +298,18 @@ importers:
         specifier: 0.32.0
         version: 0.32.0
 
+  packages/skill-learn:
+    dependencies:
+      '@dool2/packs':
+        specifier: workspace:*
+        version: link:../packs
+      '@dool2/skill-sdk':
+        specifier: workspace:*
+        version: link:../skill-sdk
+      '@dool2/vault':
+        specifier: workspace:*
+        version: link:../vault
+
   packages/skill-sdk: {}
 
   packages/skills:
