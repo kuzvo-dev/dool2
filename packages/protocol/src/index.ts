@@ -225,6 +225,12 @@ export const SettingsSchema = z.object({
    * False: leave Chrome closed and say so
    */
   chromeAutoOpen: z.boolean().optional(),
+  /**
+   * Use Dool2's own downloaded Chromium (hidden, no extension) for browsing instead of the user's Chrome and the Dool2
+   * extension (ADR 0046). Empty/false: the extension path as today. On (or the env DOOL2_BUILTIN_BROWSER=1): the daemon
+   * downloads Chromium on first use and drives it over a DevTools pipe. First slice: read-only browsing and capture
+   */
+  builtInBrowser: z.boolean().optional(),
   /** Send usage stats (numbers only, apps/daemon/src/stats.ts). Empty means not asked yet */
   usageStats: z.boolean().optional(),
   /** Connector packs (ADR 0039): beta takes each pack before everyone (test PCs); off turns automatic packs off */

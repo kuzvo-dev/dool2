@@ -18,6 +18,7 @@ import { OpenCodeInstall, OpenCodeRuntime, PAYG_PROVIDERS, paygProviders } from 
 import {
   BrowserBridge,
   BrowserError,
+  CdpBrowserCaller,
   ChromeInstall,
   chromeRunning,
   detectChrome,
@@ -836,7 +837,19 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
   }
   const vault = new Vault(secrets)
   vault.userLang = lang
-  const browserTools = new BrowserTools(browser, vault, () => readSettings().finalStep ?? 'approve')
+  // Dool2's own hidden Chromium instead of the user's Chrome + extension (ADR 0046), behind a setting (default off) or
+  // the env DOOL2_BUILTIN_BROWSER=1. On: the browser tools drive the downloaded Chromium (read-only browsing for now);
+  // the extension bridge above stays listening but unused. Off: nothing changes. The download is non-blocking — the first
+  // browser call readies it and may take a while, then a clear "preparing browser…" error if that fails
+  const builtInBrowser =
+    process.env.DOOL2_BUILTIN_BROWSER === '1' || readSettings().builtInBrowser === true
+      ? new CdpBrowserCaller({ dataDir: paths.dataDir, lang })
+      : undefined
+  const browserTools = new BrowserTools(
+    builtInBrowser ?? browser,
+    vault,
+    () => readSettings().finalStep ?? 'approve',
+  )
   // Pages read are kept per chat, for the finish check's evidence (ADR 0038)
   browserTools.chatOf = () => callerScope.getStore()
   browserTools.userLang = lang
@@ -6288,6 +6301,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
           store.close()
           stats.stop()
           if (hands instanceof HandsProcess) hands.close()
+          void builtInBrowser?.closeBrowser()
           browser.close().then(resolve, resolve)
         })
       })),
