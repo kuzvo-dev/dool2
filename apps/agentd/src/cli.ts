@@ -18,6 +18,8 @@
 import { randomBytes } from 'node:crypto'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
+import type { SkillMeta } from '@dool2/skill-sdk'
+import { loadBuiltinSkillMetas } from '@dool2/skills'
 import { Agentd, type AgentdEvent } from './agentd.js'
 import { brainConfigFromEnv, chooseBrain } from './brain-config.js'
 import { buildHostBridges } from './bridges.js'
@@ -70,7 +72,14 @@ function makeAgentd(
   const config = brainConfigFromEnv()
   const demoUrl = builtinBrowserOn() ? url : undefined
   const brain = chooseBrain(config, { ...(demoUrl !== undefined ? { demoUrl } : {}) })
-  const built = buildHostBridges({ builtinBrowser: builtinBrowserOn(), dataDir: dataDir() })
+  // Load the built-in site-skill pack once; the vault reads each skill's `login` hints to find the right login fields
+  // (Korean names included) on the matched site. Done once at startup; a getter hands the frozen list to the vault.
+  const skills: readonly SkillMeta[] = loadBuiltinSkillMetas()
+  const built = buildHostBridges({
+    builtinBrowser: builtinBrowserOn(),
+    dataDir: dataDir(),
+    skills: () => skills,
+  })
   const agentd = new Agentd({ brain, bridges: built.bridges, level })
   return { agentd, close: built.close, brainLabel: brain.label }
 }

@@ -13,6 +13,8 @@ import { CdpBrowserCaller } from '@dool2/browser'
 import type { AutonomyLevel } from '@dool2/core'
 import { createPageBridge } from '@dool2/page-bridge'
 import { type HostBridges, makeFakeBridges } from '@dool2/sandbox'
+import type { SkillMeta } from '@dool2/skill-sdk'
+import type { AgentAccessPolicy } from '@dool2/vault'
 import { InMemoryVault, makeVaultBridge } from './vault.js'
 
 export interface BuildBridgesOptions {
@@ -30,6 +32,16 @@ export interface BuildBridgesOptions {
    * () => 'ask'. The daemon passes a getter that reflects the live session level.
    */
   level?: () => AutonomyLevel
+  /**
+   * Site skills with optional `login` field hints (e.g. the built-in pack from @dool2/skills). The vault consults them
+   * to locate login fields by Korean label/role on the matched site. Omitted -> the vault uses only its English
+   * heuristic.
+   */
+  skills?: () => readonly SkillMeta[]
+  /** The account default agent-access policy for vault fills (ADR 0023/0047). Defaults to 'while-unlocked'. */
+  accessPolicy?: () => AgentAccessPolicy
+  /** Whether the vault is currently unlocked. Defaults to () => true. */
+  unlocked?: () => boolean
 }
 
 export interface BuiltBridges {
@@ -57,8 +69,15 @@ export function buildHostBridges(opts: BuildBridgesOptions = {}): BuiltBridges {
   }
 
   const level = opts.level ?? ((): AutonomyLevel => 'ask')
+  const vaultDeps = {
+    page,
+    level,
+    ...(opts.skills !== undefined ? { skills: opts.skills } : {}),
+    ...(opts.accessPolicy !== undefined ? { accessPolicy: opts.accessPolicy } : {}),
+    ...(opts.unlocked !== undefined ? { unlocked: opts.unlocked } : {}),
+  }
   return {
-    bridges: { page, vault: makeVaultBridge(vault, { page, level }), pc: fake.pc, fs: fake.fs },
+    bridges: { page, vault: makeVaultBridge(vault, vaultDeps), pc: fake.pc, fs: fake.fs },
     vault,
     async close() {
       if (caller) await caller.closeBrowser()

@@ -72,4 +72,45 @@ describe('parseSkillMarkdown', () => {
     expect(() => parseSkillMarkdown('---\ndescription: y\n---\nbody\n')).toThrow(/name/)
     expect(() => parseSkillMarkdown('---\nname: x\n---\nbody\n')).toThrow(/description/)
   })
+
+  it('parses a login block with role+name hints (Korean names) and a totp field', () => {
+    const md = `---
+name: naver
+description: 네이버 로그인 스킬
+login:
+  username:
+    name: 아이디
+    role: textbox
+  password:
+    name: 비밀번호
+    role: textbox
+  submit:
+    name: 로그인
+    role: button
+  totp:
+    name: 인증번호
+---
+body
+`
+    const { frontmatter } = parseSkillMarkdown(md)
+    expect(frontmatter.login?.username).toEqual({ name: '아이디', role: 'textbox' })
+    expect(frontmatter.login?.password).toEqual({ name: '비밀번호', role: 'textbox' })
+    expect(frontmatter.login?.submit).toEqual({ name: '로그인', role: 'button' })
+    expect(frontmatter.login?.totp).toEqual({ name: '인증번호' })
+  })
+
+  it('accepts a bare-string field hint as shorthand for { name }, and a selector hint', () => {
+    const { frontmatter } = parseSkillMarkdown(
+      `---\nname: x\ndescription: y\nlogin:\n  username: 아이디\n  password:\n    selector: "#pw"\n---\nbody\n`,
+    )
+    expect(frontmatter.login?.username).toEqual({ name: '아이디' })
+    expect(frontmatter.login?.password).toEqual({ selector: '#pw' })
+  })
+
+  it('drops a login block that names no fillable field', () => {
+    const { frontmatter } = parseSkillMarkdown(
+      '---\nname: x\ndescription: y\nlogin:\n  username:\n---\nbody\n',
+    )
+    expect(frontmatter.login).toBeUndefined()
+  })
 })

@@ -29,6 +29,7 @@ export function toSkillMeta(
   if (frontmatter.autoInject) meta.autoInject = frontmatter.autoInject
   if (frontmatter.regions) meta.regions = frontmatter.regions
   if (frontmatter.disabled !== undefined) meta.disabled = frontmatter.disabled
+  if (frontmatter.login) meta.login = frontmatter.login
   return meta
 }
 
