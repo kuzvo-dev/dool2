@@ -27,6 +27,33 @@ importers:
         specifier: ^5.1.0
         version: 5.1.0(@types/node@24.19.2)(vite@8.3.8(@types/node@24.19.2)(esbuild@0.28.2)(jiti@2.7.0))
 
+  apps/agentd:
+    dependencies:
+      '@dool2/approvals':
+        specifier: workspace:*
+        version: link:../../packages/approvals
+      '@dool2/brains':
+        specifier: workspace:*
+        version: link:../../packages/brains
+      '@dool2/browser':
+        specifier: workspace:*
+        version: link:../../packages/browser
+      '@dool2/core':
+        specifier: workspace:*
+        version: link:../../packages/core
+      '@dool2/engine':
+        specifier: workspace:*
+        version: link:../../packages/engine
+      '@dool2/page-bridge':
+        specifier: workspace:*
+        version: link:../../packages/page-bridge
+      '@dool2/sandbox':
+        specifier: workspace:*
+        version: link:../../packages/sandbox
+      '@dool2/vault':
+        specifier: workspace:*
+        version: link:../../packages/vault
+
   apps/hands-mac: {}
 
   apps/relay:
