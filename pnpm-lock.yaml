@@ -81,6 +81,15 @@ importers:
         specifier: workspace:*
         version: link:../core
 
+  packages/brain-pi:
+    dependencies:
+      '@dool2/brains':
+        specifier: workspace:*
+        version: link:../brains
+      '@dool2/core':
+        specifier: workspace:*
+        version: link:../core
+
   packages/brains:
     dependencies:
       '@dool2/core':

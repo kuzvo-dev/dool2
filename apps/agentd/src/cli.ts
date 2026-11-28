@@ -61,13 +61,17 @@ function dataDir(): string {
 }
 
 /** A scripted demo brain: look at the page with the code hand, read the snapshot back, then finish. */
-function demoBrain(): Brain {
+function demoBrain(url?: string): Brain {
+  // With the built-in browser, nothing is open yet, so open the page first; with the fake page, snapshot works as is.
+  const code = url
+    ? `(async () => { await page.goto(${JSON.stringify(url)}); return JSON.stringify(await page.snapshot()) })()`
+    : 'JSON.stringify(await page.snapshot())'
   const rounds: TurnEvent[][] = [
     [
       { kind: 'text', text: 'Let me look at the open page.' },
       {
         kind: 'tool_call',
-        call: { id: 'c1', name: 'code', args: { code: 'JSON.stringify(await page.snapshot())' } },
+        call: { id: 'c1', name: 'code', args: { code } },
       },
       { kind: 'turn_end', stop: 'tool' },
     ],
@@ -79,9 +83,16 @@ function demoBrain(): Brain {
   return scriptedBrain(rounds)
 }
 
-function makeAgentd(level: 'ask' | 'auto' | 'full'): { agentd: Agentd; close: () => Promise<void> } {
+function makeAgentd(
+  level: 'ask' | 'auto' | 'full',
+  url?: string,
+): { agentd: Agentd; close: () => Promise<void> } {
   const built = buildHostBridges({ builtinBrowser: builtinBrowserOn(), dataDir: dataDir() })
-  const agentd = new Agentd({ brain: demoBrain(), bridges: built.bridges, level })
+  const agentd = new Agentd({
+    brain: demoBrain(builtinBrowserOn() ? url : undefined),
+    bridges: built.bridges,
+    level,
+  })
   return { agentd, close: built.close }
 }
 
@@ -128,7 +139,7 @@ async function cmdSay(args: Args): Promise<number> {
   const level = normalizeLevel(args.flags.level)
   const url = typeof args.flags.url === 'string' ? args.flags.url : undefined
 
-  const { agentd, close } = makeAgentd(level)
+  const { agentd, close } = makeAgentd(level, url)
   console.log(
     `agentd say  level=${level}${url ? `  url=${url}` : ''}  browser=${builtinBrowserOn() ? 'built-in' : 'fake'}`,
   )
