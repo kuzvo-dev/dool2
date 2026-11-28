@@ -108,6 +108,8 @@ importers:
 
   apps/hands-mac: {}
 
+  apps/hands-win: {}
+
   apps/relay:
     dependencies:
       '@dool2/protocol':

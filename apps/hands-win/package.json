@@ -1,0 +1,23 @@
+{
+  "name": "@dool2/hands-win",
+  "version": "0.0.0",
+  "private": true,
+  "license": "Apache-2.0",
+  "description": "Dool2 PC screen control helper (Windows): UI Automation tree, click and type, screen capture — the Windows counterpart of @dool2/hands-mac, speaking the same line-delimited JSON protocol",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "bin": {
+    "dool2-hands-win": "./dist/cli.js"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run --passWithNoTests",
+    "start": "node dist/cli.js"
+  }
+}
