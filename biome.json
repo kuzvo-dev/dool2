@@ -15,6 +15,7 @@
       "!apps/desktop/build-res",
       "!docs",
       "!skills",
+      "!packages/skills/skills",
       "!prompts",
       "!packages/engine/src/locales/prompts.gen.ts",
       "!evals/bank"

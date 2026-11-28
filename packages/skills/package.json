@@ -1,0 +1,26 @@
+{
+  "name": "@dool2/skills",
+  "version": "0.0.0",
+  "private": true,
+  "license": "Apache-2.0",
+  "description": "Dool2 built-in skill pack: a directory of site skills (skills/<id>/SKILL.md) plus the loader that parses them with @dool2/skill-sdk. The Korean keywords and site hints in the SKILL.md files are data, not code.",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "skills"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run --passWithNoTests"
+  },
+  "dependencies": {
+    "@dool2/skill-sdk": "workspace:*"
+  }
+}

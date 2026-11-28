@@ -1,0 +1,19 @@
+{
+  "name": "@dool2/packs",
+  "version": "0.0.0",
+  "private": true,
+  "license": "Apache-2.0",
+  "description": "Dool2 signed resource packs: build and verify a signed manifest (sha256 per file + size + app-version gating + an ed25519 signature over the manifest) so site knowledge ships as downloadable packs, apart from the app and with no store review.",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run --passWithNoTests"
+  }
+}
