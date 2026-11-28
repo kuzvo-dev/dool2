@@ -153,6 +153,15 @@ describe('parseNodes', () => {
   it('returns an empty list when there are no marks', () => {
     expect(parseNodes('just some text')).toEqual([])
   })
+
+  it('reads frame-qualified refs (fMeN) alongside top-document refs', () => {
+    const text = 'Sign in [e1 button "Open"]\n[frame f1]\n[f1e1 입력칸 "아이디"] [f1e2 비밀번호칸]'
+    expect(parseNodes(text)).toEqual([
+      { ref: 'e1', role: 'button', name: 'Open' },
+      { ref: 'f1e1', role: '입력칸', name: '아이디' },
+      { ref: 'f1e2', role: '비밀번호칸' },
+    ])
+  })
 })
 
 // Opt-in integration against a real CdpBrowserCaller (real hidden Chromium). Skipped in CI; set DOOL2_BRIDGE_IT=1

@@ -79,13 +79,14 @@ interface CallerSnapshot {
 }
 
 /**
- * Parse the inline ref marks a CdpBrowserCaller snapshot embeds — `[eN role "name"]`, where `role` is a single
- * (possibly Korean) word and the quoted name is optional — into the sandbox's PageNode[]. The caller's snapshot
- * walk (cdp-caller SNAPSHOT_FN) emits exactly this form.
+ * Parse the inline ref marks a CdpBrowserCaller snapshot embeds — `[eN role "name"]` for the top document and
+ * `[fMeN role "name"]` for an element inside the M-th frame, where `role` is a single (possibly Korean) word and the
+ * quoted name is optional — into the sandbox's PageNode[]. The caller's snapshot walk (cdp-caller FRAME_WALK_FN) emits
+ * exactly this form; a frame-qualified ref is passed straight back to the caller, which resolves it to the right frame.
  */
 export function parseNodes(text: string): PageNode[] {
   const nodes: PageNode[] = []
-  const re = /\[(e\d+)\s+(\S+?)(?:\s+"([^"]*)")?\]/g
+  const re = /\[((?:f\d+)?e\d+)\s+(\S+?)(?:\s+"([^"]*)")?\]/g
   for (let m = re.exec(text); m !== null; m = re.exec(text)) {
     const ref = m[1]
     const role = m[2]
