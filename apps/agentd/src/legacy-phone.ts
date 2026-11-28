@@ -9,10 +9,12 @@
 // tab that sends one of those stays empty for now.
 //
 // Chat core: a `conversation` request is answered with the current ConversationState (history + busy + queued), and an
-// `ask` runs one v2 engine turn (Agentd.send) whose events are mapped to the v1 `stream` shape the app renders — text
-// chunks -> `{type:'agent',event:{type:'text',delta}}`, tool calls -> a subtle `{type:'tool'}` working step, the final
-// answer -> a `saved` assistant message then `end`, framed by `conversation-status` (busy). Approvals still surface as
-// cards (announceApproval -> `decide` -> approveVerified), unchanged. The v2 engine has no external abort seam yet, so
+// `ask` runs one v2 engine turn (Agentd.send) whose events are mapped to the v1 `stream` shape the app renders so the
+// phone shows live activity, not just the final answer (see #onEvent): `thinking` -> a "reasoning" status line, a
+// `code`-hand `tool_call` -> a human Korean work step derived from the snippet (open a page / press / read the screen,
+// wording from @dool2/protocol/rich codeHandLabel), `text` chunks -> the streamed answer, the final answer -> a `saved`
+// assistant message then `end`, all framed by `conversation-status` (busy -> idle). Approvals still surface as cards
+// (announceApproval -> `decide` -> approveVerified), unchanged, now with a short status leading into them. The v2 engine has no external abort seam yet, so
 // a `cancel` stops streaming to the phone and clears busy immediately; the in-flight turn finishes but its output is
 // dropped (a true mid-turn engine abort is a later PR, see the PR note).
 //
@@ -37,6 +39,7 @@ import type {
   PcHealth,
   PcToPhone,
   PhoneToPc,
+  StepDetail,
   StoredMessage,
 } from '@dool2/protocol'
 import {
@@ -53,6 +56,7 @@ import {
   verifyText,
 } from '@dool2/protocol/e2e'
 import { approvalSignText, approveKeysSignText } from '@dool2/protocol/link'
+import { codeHandLabel, workStatus } from '@dool2/protocol/rich'
 import type { Agentd, AgentdEvent, ApprovalCard } from './agentd.js'
 
 /** The thread id the shipped app's MAIN conversation runs under. Anything not in `state.threads` (we send none) and
@@ -95,6 +99,16 @@ interface LegacyPhone {
   approveKeys?: { plain: string; pay?: string }
   /** Whether a money approval must use the `pay` key (true once a pay key is registered). */
   payConfirm?: boolean
+}
+
+/**
+ * The turn answering now. `aborted` is flipped by a `cancel` so its streamed output is dropped. `thinking` coalesces a
+ * run of `thinking` events into a single reasoning status line: it is set when that line is shown and cleared by the next
+ * tool/text/block, so a thinking pause after an action shows the line again (Dool2 thinking between steps).
+ */
+interface TurnState {
+  aborted: boolean
+  thinking?: boolean
 }
 
 export interface LegacyPhoneLinkOptions {
@@ -158,8 +172,8 @@ export class LegacyPhoneLink {
   #busy = false
   /** Messages the app sent while a turn was answering, waiting their turn (texts, in order). */
   #queued: string[] = []
-  /** The turn answering now, if any. `aborted` is flipped by a `cancel` so its streamed output is dropped. */
-  #turn: { aborted: boolean } | undefined
+  /** The turn answering now, if any. See {@link TurnState}. */
+  #turn: TurnState | undefined
 
   constructor(opts: LegacyPhoneLinkOptions) {
     this.#keys = opts.keys
@@ -358,7 +372,7 @@ export class LegacyPhoneLink {
    * messages, then the assistant answer is saved and the turn is closed with `end`. `conversation-status` frames busy.
    */
   async #runTurn(text: string): Promise<void> {
-    const turn: { aborted: boolean } = { aborted: false }
+    const turn: TurnState = { aborted: false }
     this.#turn = turn
     this.#busy = true
 
@@ -407,33 +421,78 @@ export class LegacyPhoneLink {
   }
 
   /**
-   * Map one v2 turn event to the v1 wire. Text becomes a streamed assistant chunk (and is accumulated for the saved
-   * answer); a tool call becomes a subtle working step; an approval surfaces as a card through the existing path.
-   * Everything else (thinking, tool results, gate logs, blocked, drafts, turn_end) is internal and not shown as chat.
-   * Once the turn is cancelled, nothing more is forwarded.
+   * Map one v2 turn event to the v1 wire so the shipped app shows live activity, not just the final answer. The app
+   * renders a "work line" under the assistant: a step list it builds from `stream` `agent` `tool` events (its label is
+   * `doing(title)`, which appends a progressive suffix, so a title is a bare Korean verb stem) and the streamed `text` as the answer,
+   * framed busy/idle by `conversation-status` (owned by {@link #runTurn}). Korean wording lives in
+   * @dool2/protocol/rich (workStatus, codeHandLabel), not inline here (ADR 0029). We map:
+   *   - `thinking`      -> one reasoning status step per thinking run (coalesced; no chain-of-thought crosses the wire).
+   *   - `tool_call`     -> a human Korean step. For the `code` hand it is derived from what the snippet does (open a
+   *                        page, press, read the screen, fetch data…); never the raw code, a ref, a typed value, or a
+   *                        full URL — only a short host for the "how it worked" sheet. Other tools keep their own label.
+   *   - `text`          -> a streamed assistant chunk, accumulated for the saved answer (coalesced by the engine).
+   *   - `approvalNeeded`-> a short "waiting for approval" status that leads into the signable card (announceApproval).
+   *   - `blocked`       -> a short status for a hard-cap refusal (the reason itself is internal, kept off the wire).
+   * `tool_result`, `gate` (its user-facing outcome rides `approvalNeeded`/`blocked`), `notice`, `draft` and `turn_end`
+   * stay internal: the shipped work line has no shape for per-step done/failed or a free status, and {@link #runTurn}
+   * already clears busy and closes the stream when the turn ends. Once the turn is cancelled, nothing more is forwarded.
+   * No secrets or tool JSON cross this layer: every step carries a fixed Korean phrase and, at most, a masked host.
    */
-  async #onEvent(
-    turn: { aborted: boolean },
-    ev: AgentdEvent,
-    appendAnswer: (chunk: string) => void,
-  ): Promise<void> {
+  async #onEvent(turn: TurnState, ev: AgentdEvent, appendAnswer: (chunk: string) => void): Promise<void> {
     if (turn.aborted) return
     switch (ev.type) {
       case 'text':
         if (!ev.text) return
+        turn.thinking = false
         appendAnswer(ev.text)
         return this.#broadcastStream({ type: 'agent', event: { type: 'text', delta: ev.text } })
-      case 'tool_call':
-        return this.#broadcastStream({
-          type: 'agent',
-          event: { type: 'tool', name: ev.name, input: ev.args },
-        })
+      case 'thinking':
+        // Dool2 is reasoning before it acts: show one status line for the run (the app also dedups a repeated line).
+        if (turn.thinking) return
+        turn.thinking = true
+        return this.#broadcastStep({ title: workStatus('thinking') })
+      case 'tool_call': {
+        turn.thinking = false
+        const code = codeOf(ev.args)
+        if (code !== undefined) {
+          const { label, host } = codeHandLabel(code)
+          return this.#broadcastStep({ title: label, ...(host ? { detail: [{ k: 'url', v: host }] } : {}) })
+        }
+        // A non-code tool (a service tool): let the app label it from the tool name, and send no args (no secrets).
+        return this.#broadcastStep({ name: ev.name })
+      }
       case 'approvalNeeded':
+        // The signable card is the lasting surface; a short live status leads the eye into it.
+        turn.thinking = false
+        await this.#broadcastStep({ title: workStatus('awaitingApproval') })
         return this.announceApproval(ev.card)
+      case 'blocked':
+        // A hard-cap refusal: a short status the user understands (the answer text that follows says more).
+        turn.thinking = false
+        return this.#broadcastStep({ title: workStatus('blocked') })
       default:
-        // thinking / tool_result / notice / gate / blocked / draft / turn_end: not part of the rendered chat.
+        // tool_result / notice / gate / draft / turn_end: not part of the shipped app's live work line (see above).
         return
     }
+  }
+
+  /**
+   * Push one work-line step to every paired phone as the v1 `stream` `agent` `tool` shape the app renders. `title` is a
+   * bare Korean stem the app turns into a progressive phrase; we send `name: 'code'` and an empty `input` so no raw args, code,
+   * or URL reach the wire (the app derives the step's place from the name, which for `code` is Dool2's own work, and
+   * never from secrets). A non-code tool passes its real name so the app can label it from its own tool table.
+   */
+  async #broadcastStep(step: { title?: string; name?: string; detail?: StepDetail[] }): Promise<void> {
+    return this.#broadcastStream({
+      type: 'agent',
+      event: {
+        type: 'tool',
+        name: step.name ?? 'code',
+        input: {},
+        ...(step.title ? { title: step.title } : {}),
+        ...(step.detail ? { detail: step.detail } : {}),
+      },
+    })
   }
 
   /** Stop the current run: drop its streamed output, clear busy, and close the stream so the app leaves "working". */
@@ -649,4 +708,13 @@ function tierToKind(tier: ActionTier): ApprovalView['kind'] {
     default:
       return 'irreversible'
   }
+}
+
+/** The `code` string a `code`-hand tool call carries (`{ code: '…' }`), or undefined for any other tool. */
+function codeOf(args: unknown): string | undefined {
+  if (args && typeof args === 'object' && 'code' in args) {
+    const c = (args as { code?: unknown }).code
+    if (typeof c === 'string') return c
+  }
+  return undefined
 }

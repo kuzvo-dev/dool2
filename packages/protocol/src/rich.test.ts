@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { previewText } from './index.js'
 import {
   appNote,
+  codeHandLabel,
   inline,
   josa,
   narrationLine,
@@ -12,6 +13,7 @@ import {
   toolAct,
   toolPlace,
   withoutPhotoMark,
+  workStatus,
 } from './rich.js'
 
 describe('richBlocks', () => {
@@ -279,5 +281,45 @@ describe('답 속 PC 파일 경로', () => {
   })
   it('한 줄 미리 보기에는 파일 이름만', () => {
     expect(stripLinks('만들었어요: `~/Documents/두리/초대장.png`')).toBe('만들었어요: 초대장.png')
+  })
+})
+
+describe('codeHandLabel', () => {
+  it('names a page open and masks the URL to its host (no path/query/token)', () => {
+    const r = codeHandLabel('await page.goto("https://www.catchtable.co.kr/book?token=SECRET123")')
+    expect(r.label).toBe('웹페이지 여는')
+    expect(r.host).toBe('www.catchtable.co.kr')
+    // toolAct-style rendering the app does: "<stem> 중"
+    expect(`${r.label} 중`).toBe('웹페이지 여는 중')
+  })
+  it('shows the headline action: a snapshot-then-click reads as a click', () => {
+    expect(codeHandLabel('await page.snapshot(); await page.click("e2")').label).toBe('버튼 누르는')
+  })
+  it('a bare snapshot reads the screen; a fetch gets data with its host', () => {
+    expect(codeHandLabel('JSON.stringify(await page.snapshot())').label).toBe('화면 읽는')
+    const f = codeHandLabel('await page.fetch("https://api.example.com/v1/orders?key=X")')
+    expect(f.label).toBe('정보 가져오는')
+    expect(f.host).toBe('api.example.com')
+  })
+  it('never carries a typed value for a type/fill, only the stem', () => {
+    const r = codeHandLabel('await page.type("e3", "my-password")')
+    expect(r.label).toBe('입력하는')
+    expect(r.host).toBeUndefined()
+  })
+  it('falls back to a neutral stem for an unknown snippet', () => {
+    expect(codeHandLabel('await pc.snapshot()').label).toBe('PC 화면 다루는')
+    expect(codeHandLabel('const x = 1 + 1').label).toBe('일하는')
+  })
+  it('has English wording too', () => {
+    expect(codeHandLabel('await page.goto("https://x.com")', 'en').label).toBe('Opening a web page')
+  })
+})
+
+describe('workStatus', () => {
+  it('gives a bare stem for each non-tool phase', () => {
+    expect(workStatus('thinking')).toBe('생각하는')
+    expect(workStatus('awaitingApproval')).toBe('승인 기다리는')
+    expect(workStatus('blocked')).toBe('막혀서 못 한 일 알리는')
+    expect(workStatus('thinking', 'en')).toBe('Thinking')
   })
 })
