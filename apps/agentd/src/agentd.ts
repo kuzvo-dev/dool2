@@ -1,0 +1,331 @@
+// Agentd: the v2 runnable daemon service. It composes, behind one `send()`:
+//
+//   brain (@dool2/brains, DI)  ->  engine turn loop (@dool2/engine runTurn)  ->  code hand (@dool2/sandbox)
+//        -> host bridges: page (@dool2/page-bridge over @dool2/browser), vault (masked), pc/fs
+//        -> autonomy gate (@dool2/core decide, run inside the engine for every acting call)
+//        -> phone-signed approvals (@dool2/approvals) for the actions the gate says must be signed.
+//
+// The engine already runs the gate for each acting bridge call and hands back, per turn, the transcript, the gate
+// decisions, the notices (for `notify`), and the actions that did not run (`approvalNeeded`/`blocked`). Agentd's extra
+// job over the engine is the approvals lifecycle the engine deliberately leaves out: it turns each `approvalNeeded`
+// into a real, signable ActionEnvelope (@dool2/approvals), mints a PendingApproval with a hash + expiry, and exposes
+// approve(hash, signature) so the phone's secure-chip signature can be verified and consumed.
+//
+// Secrets never pass through here: the vault bridge exposes only masked summaries, and envelopes carry only the
+// public facts of an action (tier, label, amount). Nothing in an event or an envelope is a password/card/PIN.
+
+import {
+  type ActionEnvelope,
+  ApprovalStore,
+  type ConsumeFailure,
+  type ExecutedAction,
+  envelopeHash,
+  matchesApproved,
+  newNonce,
+  type PendingApproval,
+  pendingApproval,
+} from '@dool2/approvals'
+import type { Brain } from '@dool2/brains'
+import type { AutonomyLevel } from '@dool2/core'
+import {
+  type ActionClassifier,
+  type ApprovalOutcome,
+  type EngineSkill,
+  type GateDecisionLog,
+  runTurn,
+  type TranscriptItem,
+  type TurnResult,
+} from '@dool2/engine'
+import type { HostBridges } from '@dool2/sandbox'
+
+/** One thing that happened during a turn, as streamed to a client (HTTP) or printed (CLI). */
+export type AgentdEvent =
+  | { type: 'text'; text: string }
+  | { type: 'thinking'; text: string }
+  | { type: 'tool_call'; name: string; id: string; args: unknown }
+  | { type: 'tool_result'; id: string; content: string; isError?: boolean }
+  | { type: 'notice'; text: string }
+  | {
+      type: 'gate'
+      label: string
+      tier: GateDecisionLog['tier']
+      decision: GateDecisionLog['decision']
+      reason: string
+      allowed: boolean
+      amountKrw?: number
+    }
+  | { type: 'approvalNeeded'; card: ApprovalCard }
+  | { type: 'blocked'; label: string; tier: ApprovalOutcome['tier']; reason: string }
+  | { type: 'turn_end'; stop: TurnResult['stop'] }
+
+/** What the phone needs to sign an action: the exact envelope and its hash, plus the facts to show the user. */
+export interface ApprovalCard {
+  /** sha256 hex of the canonical envelope — the value the phone signs and the key approve() looks it up by. */
+  hash: string
+  envelope: ActionEnvelope
+  label: string
+  tier: ApprovalOutcome['tier']
+  reason: string
+  amountKrw?: number
+  /** Unix ms after which the approval is dead and must be re-requested. */
+  expiresAt: number
+}
+
+/** The result of one turn: the clean transcript, the gate log, notices, and any approval cards the phone must sign. */
+export interface SendResult {
+  system: string
+  transcript: TranscriptItem[]
+  gateDecisions: GateDecisionLog[]
+  notices: string[]
+  /** Actions that paused for a phone signature. Each is registered; call approve(hash, signature) to clear it. */
+  approvalsNeeded: ApprovalCard[]
+  /** Actions refused over a hard cap. */
+  blocked: { label: string; tier: ApprovalOutcome['tier']; reason: string }[]
+  stop: TurnResult['stop']
+}
+
+export interface SendOptions {
+  /** The URL of the active tab, if any, handed to the engine so skills can match and the gate can read the page. */
+  url?: string
+  /** Override the session autonomy level for this one turn. */
+  level?: AutonomyLevel
+  /** Called for each event as the turn is replayed, so the HTTP layer can stream and the CLI can print live. */
+  onEvent?: (event: AgentdEvent) => void
+}
+
+export interface AgentdOptions {
+  /** The AI runner for this session (mock/scripted in tests; a real adapter later). Dependency-injected. */
+  brain: Brain
+  /** The host bridges the code hand drives (see buildHostBridges). */
+  bridges: HostBridges
+  /** The autonomy level the user chose. Default 'ask'. */
+  level?: AutonomyLevel
+  /** Skills available to auto-inject by tab URL + message keywords. */
+  skills?: EngineSkill[]
+  /**
+   * How an acting call is refined for the gate. The default (engine's defaultClassify) reads the latest page snapshot;
+   * the daemon injects a richer one that also knows merchant history and the onboarding spending cap (for full-auto).
+   */
+  classify?: ActionClassifier
+  /** The phone's device public key (SPKI Ed25519 PEM), registered at pairing, used to verify approvals. */
+  devicePublicKeyPem?: string
+  /** Time-to-live for a pending approval. Defaults to @dool2/approvals DEFAULT_TTL_MS. */
+  approvalTtlMs?: number
+}
+
+/** The outcome of approve(): ok (and now consumed + recorded), or a machine reason it was rejected. */
+export type ApproveResult =
+  | { ok: true; envelope: ActionEnvelope }
+  | { ok: false; reason: 'unknown-hash' | 'no-device-key' | 'mismatch' | ConsumeFailure['reason'] }
+
+/**
+ * The daemon service. One instance holds a session: the autonomy level, the brain, the host bridges, the device key,
+ * and the pending/approved approval state. Construct it, call send() for a turn, approve() to clear a signed action.
+ */
+export class Agentd {
+  #level: AutonomyLevel
+  readonly #brain: Brain
+  readonly #bridges: HostBridges
+  readonly #skills: EngineSkill[]
+  readonly #classify: ActionClassifier | undefined
+  #devicePublicKeyPem: string | undefined
+  readonly #approvalTtlMs: number | undefined
+
+  readonly #store: ApprovalStore
+  /** hash -> the pending approval awaiting a phone signature. Cleared on approve or when a new turn supersedes it. */
+  readonly #pending = new Map<string, PendingApproval>()
+  /**
+   * hash -> the envelope the phone signed and the daemon consumed. The resume seam: a future send() consults this so
+   * the pre-approved action is cleared through the gate instead of pausing again (see approve() for the full note).
+   */
+  readonly #approved = new Map<string, ActionEnvelope>()
+
+  constructor(opts: AgentdOptions) {
+    this.#brain = opts.brain
+    this.#bridges = opts.bridges
+    this.#level = opts.level ?? 'ask'
+    this.#skills = opts.skills ?? []
+    this.#classify = opts.classify
+    this.#devicePublicKeyPem = opts.devicePublicKeyPem
+    this.#approvalTtlMs = opts.approvalTtlMs
+    // ApprovalStore's ttl defaults when the argument is undefined, so passing it straight through is fine.
+    this.#store = new ApprovalStore(opts.approvalTtlMs)
+  }
+
+  get level(): AutonomyLevel {
+    return this.#level
+  }
+
+  setLevel(level: AutonomyLevel): void {
+    this.#level = level
+  }
+
+  /** Register (or replace) the phone's device public key — done at pairing. Approvals cannot be verified without it. */
+  registerDevice(publicKeyPem: string): void {
+    this.#devicePublicKeyPem = publicKeyPem
+  }
+
+  /** The approval cards still awaiting a phone signature, in registration order. */
+  pending(): ApprovalCard[] {
+    return [...this.#pending.values()].map(toCardFromPending)
+  }
+
+  /** Whether an action with this envelope hash has been signed and consumed (the resume seam reads this). */
+  isApproved(hash: string): boolean {
+    return this.#approved.has(hash)
+  }
+
+  /**
+   * Run one turn. The engine drives the brain, the code hand, and the gate; Agentd then turns each `approvalNeeded`
+   * into a signable ActionEnvelope + PendingApproval and streams every event through `onEvent`.
+   */
+  async send(message: string, opts: SendOptions = {}): Promise<SendResult> {
+    const emit = opts.onEvent ?? (() => {})
+
+    const result = await runTurn(
+      {
+        brain: this.#brain,
+        bridges: this.#bridges,
+        skills: this.#skills,
+        level: opts.level ?? this.#level,
+        ...(this.#classify !== undefined ? { classify: this.#classify } : {}),
+      },
+      { message, ...(opts.url !== undefined ? { url: opts.url } : {}) },
+    )
+
+    // Replay the transcript in order, so a streaming client sees text/tool calls/results as the engine recorded them.
+    for (const item of result.transcript) {
+      emit(toTranscriptEvent(item))
+    }
+    // The gate decisions (for the activity log / dashboard) and the after-the-fact notices for `notify` actions.
+    for (const g of result.gateDecisions) {
+      emit({
+        type: 'gate',
+        label: g.label,
+        tier: g.tier,
+        decision: g.decision,
+        reason: g.reason,
+        allowed: g.allowed,
+        ...(g.amountKrw !== undefined ? { amountKrw: g.amountKrw } : {}),
+      })
+    }
+    for (const text of result.notices) emit({ type: 'notice', text })
+
+    // Turn each gated-but-not-run action into either a signable approval card or a blocked notice.
+    const approvalsNeeded: ApprovalCard[] = []
+    const blocked: SendResult['blocked'] = []
+    for (const outcome of result.approvals) {
+      if (outcome.status === 'blocked') {
+        blocked.push({ label: outcome.label, tier: outcome.tier, reason: outcome.reason })
+        emit({ type: 'blocked', label: outcome.label, tier: outcome.tier, reason: outcome.reason })
+        continue
+      }
+      const card = this.#registerApproval(outcome)
+      approvalsNeeded.push(card)
+      emit({ type: 'approvalNeeded', card })
+    }
+
+    return {
+      system: result.system,
+      transcript: result.transcript,
+      gateDecisions: result.gateDecisions,
+      notices: result.notices,
+      approvalsNeeded,
+      blocked,
+      stop: result.stop,
+    }
+  }
+
+  /**
+   * Verify a phone signature over a pending approval and, on success, consume it and record it as approved.
+   *
+   * Steps (all must hold): the hash is one we are waiting on; a device key is registered; the signature verifies for
+   * this exact envelope and the envelope is unexpired and its nonce unspent (ApprovalStore.verifyAndConsume); and the
+   * action the approval is for still matches the envelope (matchesApproved — here trivially, since we reconstruct the
+   * executed action from the envelope's own public facts; a real resume reads them off the page about to be acted on).
+   *
+   * Resume seam (documented, not fully wired this PR): the engine throws inside the sandbox so a `sign` action never
+   * runs, and the turn finishes with the action surfaced here. Clearing it for real means re-running the action with
+   * the gate already satisfied. Agentd records the consumed envelope in #approved; the next step is for the engine to
+   * accept a set of pre-approved actions (by hash) so a follow-up send() lets exactly that action through the gate and
+   * actually presses the button. That hook does not exist in @dool2/engine yet, so today approve() verifies, consumes,
+   * and records — the button is not pressed automatically. isApproved(hash) exposes the record for that future step.
+   */
+  approve(hash: string, signature: string, now: number = Date.now()): ApproveResult {
+    const pending = this.#pending.get(hash)
+    if (!pending) return { ok: false, reason: 'unknown-hash' }
+    if (!this.#devicePublicKeyPem) return { ok: false, reason: 'no-device-key' }
+
+    const consumed = this.#store.verifyAndConsume(pending.envelope, signature, this.#devicePublicKeyPem, now)
+    if (!consumed.ok) return { ok: false, reason: consumed.reason }
+
+    const executed: ExecutedAction = {
+      tier: pending.envelope.tier,
+      label: pending.envelope.label,
+      ...(pending.envelope.amountKrw !== undefined ? { amountKrw: pending.envelope.amountKrw } : {}),
+      ...(pending.envelope.merchant !== undefined ? { merchant: pending.envelope.merchant } : {}),
+      ...(pending.envelope.recipient !== undefined ? { recipient: pending.envelope.recipient } : {}),
+      ...(pending.envelope.site !== undefined ? { site: pending.envelope.site } : {}),
+    }
+    const match = matchesApproved(executed, pending.envelope)
+    if (!match.ok) return { ok: false, reason: 'mismatch' }
+
+    this.#pending.delete(hash)
+    this.#approved.set(hash, pending.envelope)
+    return { ok: true, envelope: pending.envelope }
+  }
+
+  // --- internals ----------------------------------------------------------------------------------------------------
+
+  /** Mint an ActionEnvelope + PendingApproval for an `approvalNeeded` outcome and register it by hash. */
+  #registerApproval(outcome: ApprovalOutcome): ApprovalCard {
+    const envelope: ActionEnvelope = {
+      tier: outcome.tier,
+      label: outcome.label,
+      ...(outcome.amountKrw !== undefined ? { amountKrw: outcome.amountKrw } : {}),
+      nonce: newNonce(),
+      createdAt: Date.now(),
+    }
+    const pending = pendingApproval(envelope, this.#approvalTtlMs)
+    this.#pending.set(pending.hash, pending)
+    return { ...toCardFromPending(pending), reason: outcome.reason }
+  }
+}
+
+function toCardFromPending(pending: PendingApproval): ApprovalCard {
+  const { envelope } = pending
+  return {
+    hash: pending.hash,
+    envelope,
+    label: envelope.label,
+    tier: envelope.tier,
+    reason: '',
+    ...(envelope.amountKrw !== undefined ? { amountKrw: envelope.amountKrw } : {}),
+    expiresAt: pending.expiresAt,
+  }
+}
+
+function toTranscriptEvent(item: TranscriptItem): AgentdEvent {
+  switch (item.kind) {
+    case 'text':
+      return { type: 'text', text: item.text }
+    case 'thinking':
+      return { type: 'thinking', text: item.text }
+    case 'tool_call':
+      return { type: 'tool_call', name: item.call.name, id: item.call.id, args: item.call.args }
+    case 'tool_result':
+      return {
+        type: 'tool_result',
+        id: item.result.id,
+        content: item.result.content,
+        ...(item.result.isError !== undefined ? { isError: item.result.isError } : {}),
+      }
+    case 'notice':
+      return { type: 'notice', text: item.text }
+    case 'turn_end':
+      return { type: 'turn_end', stop: item.stop === 'tool' ? 'done' : item.stop }
+  }
+}
+
+/** Re-export the hash helper so a client can confirm the hash it signs matches the card. */
+export { envelopeHash }

@@ -1,0 +1,33 @@
+{
+  "name": "@dool2/agentd",
+  "version": "0.0.0",
+  "private": true,
+  "license": "Apache-2.0",
+  "description": "Dool2 v2 daemon: composes the engine turn loop, a brain, the hidden browser, the vault, the autonomy gate and phone-signed approvals behind a small local HTTP API and a CLI",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "bin": {
+    "dool2-agentd": "./dist/cli.js"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run --passWithNoTests",
+    "start": "node dist/cli.js"
+  },
+  "dependencies": {
+    "@dool2/approvals": "workspace:*",
+    "@dool2/brains": "workspace:*",
+    "@dool2/browser": "workspace:*",
+    "@dool2/core": "workspace:*",
+    "@dool2/engine": "workspace:*",
+    "@dool2/page-bridge": "workspace:*",
+    "@dool2/sandbox": "workspace:*",
+    "@dool2/vault": "workspace:*"
+  }
+}
