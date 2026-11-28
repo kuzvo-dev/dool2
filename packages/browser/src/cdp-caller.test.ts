@@ -14,16 +14,32 @@ function parseRefs(text: string): Map<string, { role: string; name: string }> {
 const SNAP_TEXT =
   '# 두리 쇼핑\n여기에서 찾아보세요 [e1 검색칸 "검색어"] [e2 버튼 "검색"]\n약관 동의 [e3 체크박스 "동의"] [e4 링크 "자세히"]'
 
+// A fake %PDF with two /Type /Page objects, so pdf reports pages: 2
+const FAKE_PDF = Buffer.from(
+  '%PDF-1.4\n1 0 obj<</Type /Page >>endobj\n2 0 obj<</Type /Page >>endobj\n',
+).toString('base64')
+
+interface PageOpts {
+  url: string
+  title: string
+  snapshot?: string
+  screenshot?: string
+  /** click/hover ref resolve result; set found:false to act as a stale ref */
+  prep?: { found: boolean; x?: number; y?: number; w?: number; h?: number }
+}
+
 class FakePage implements CdpPageLike {
   readonly targetId: string
+  readonly sessionId: string
   closed = false
   readonly sent: { method: string; params?: Record<string, unknown> }[] = []
   readonly navigated: string[] = []
   constructor(
     id: string,
-    private readonly opts: { url: string; title: string; snapshot?: string; screenshot?: string },
+    private readonly opts: PageOpts,
   ) {
     this.targetId = id
+    this.sessionId = `S-${id}`
   }
   async send<T extends Record<string, unknown> = Record<string, unknown>>(
     method: string,
@@ -32,10 +48,29 @@ class FakePage implements CdpPageLike {
     this.sent.push({ method, params })
     if (method === 'Page.getFrameTree') return { frameTree: { frame: { id: 'F1' } } } as unknown as T
     if (method === 'Page.createIsolatedWorld') return { executionContextId: 7 } as unknown as T
-    if (method === 'Runtime.callFunctionOn')
-      return { result: { value: this.opts.snapshot ?? '' } } as unknown as T
+    if (method === 'Page.printToPDF') return { data: FAKE_PDF } as unknown as T
     if (method === 'Page.captureScreenshot')
       return { data: this.opts.screenshot ?? 'JPEGDATA' } as unknown as T
+    if (method === 'Runtime.callFunctionOn') {
+      const fn = String(params.functionDeclaration ?? '')
+      if (fn.includes('maxChars')) return { result: { value: this.opts.snapshot ?? '' } } as unknown as T
+      if (fn.includes('textField'))
+        return {
+          result: {
+            value: { found: this.opts.prep?.found ?? true, tag: 'input', type: 'text', textField: true },
+          },
+        } as unknown as T
+      if (fn.includes('scrollBy'))
+        return {
+          result: { value: { target: 'page', before: 0, after: 800, max: 2000, atEnd: false } },
+        } as unknown as T
+      // CLICK_PREP_FN (resolve a ref to a point)
+      return {
+        result: {
+          value: this.opts.prep ?? { found: true, x: 100, y: 200, w: 50, h: 20, tag: 'button', type: '' },
+        },
+      } as unknown as T
+    }
     return {} as T
   }
   async navigate(url: string): Promise<unknown> {
@@ -44,6 +79,7 @@ class FakePage implements CdpPageLike {
   }
   async evaluate<T = unknown>(expression: string): Promise<T> {
     if (expression.includes('readyState')) return true as unknown as T
+    if (expression.includes('innerWidth')) return { w: 1000, h: 800 } as unknown as T
     if (expression.includes('location.href'))
       return { url: this.opts.url, title: this.opts.title } as unknown as T
     return undefined as unknown as T
@@ -58,6 +94,7 @@ class FakeBrowser implements CdpBrowserLike {
   running = true
   readonly pages: FakePage[] = []
   private n = 0
+  private listeners: ((m: string, p: Record<string, unknown>, s?: string) => void)[] = []
   constructor(private readonly make: (i: number) => FakePage) {}
   async openPage(): Promise<CdpPageLike> {
     const p = this.make(this.n++)
@@ -67,12 +104,26 @@ class FakeBrowser implements CdpBrowserLike {
   async close(): Promise<void> {
     this.running = false
   }
+  onEvent(fn: (m: string, p: Record<string, unknown>, s?: string) => void): () => void {
+    this.listeners.push(fn)
+    return () => {
+      this.listeners = this.listeners.filter((l) => l !== fn)
+    }
+  }
+  emit(method: string, params: Record<string, unknown>, sessionId?: string): void {
+    for (const l of this.listeners) l(method, params, sessionId)
+  }
 }
 
 function caller(make: (i: number) => FakePage) {
   const browser = new FakeBrowser(make)
   const c = new CdpBrowserCaller({ dataDir: '/tmp/dool2-test', launch: async () => browser })
   return { c, browser }
+}
+
+/** The Input.dispatchMouseEvent types a page saw, in order */
+function mouseTypes(page: FakePage): string[] {
+  return page.sent.filter((s) => s.method === 'Input.dispatchMouseEvent').map((s) => String(s.params?.type))
 }
 
 describe('CdpBrowserCaller', () => {
@@ -174,9 +225,112 @@ describe('CdpBrowserCaller', () => {
     await expect(c.call('snapshot', { tabId })).rejects.toThrow(/No tab/)
   })
 
+  it('click resolves a ref and dispatches a real left click in order', async () => {
+    const { c, browser } = caller((i) => new FakePage(`T${i}`, { url: 'https://x.test/', title: 'x' }))
+    const { tabId } = (await c.call('open', { url: 'https://x.test/' })) as { tabId: number }
+    await c.call('click', { tabId, ref: 'e2' })
+    const page = browser.pages[0] as FakePage
+    expect(mouseTypes(page)).toEqual(['mouseMoved', 'mousePressed', 'mouseReleased'])
+    const pressed = page.sent.find((s) => s.params?.type === 'mousePressed')
+    expect(pressed?.params).toMatchObject({ button: 'left', x: 100, y: 200 })
+  })
+
+  it('point click maps 0-1000 coords onto the viewport', async () => {
+    const { c, browser } = caller((i) => new FakePage(`T${i}`, { url: 'https://x.test/', title: 'x' }))
+    const { tabId } = (await c.call('open', { url: 'https://x.test/' })) as { tabId: number }
+    await c.call('click', { tabId, at: { x: 500, y: 250 } })
+    const page = browser.pages[0] as FakePage
+    const pressed = page.sent.find((s) => s.params?.type === 'mousePressed')
+    // viewport 1000x800 → (500/1000*1000, 250/1000*800) = (500, 200)
+    expect(pressed?.params).toMatchObject({ x: 500, y: 200 })
+  })
+
+  it('click on a stale ref throws asking to read again', async () => {
+    const { c } = caller(
+      (i) => new FakePage(`T${i}`, { url: 'https://x.test/', title: 'x', prep: { found: false } }),
+    )
+    const { tabId } = (await c.call('open', { url: 'https://x.test/' })) as { tabId: number }
+    await expect(c.call('click', { tabId, ref: 'e9' })).rejects.toThrow(/not on the page/)
+  })
+
+  it('type inserts the text and submit presses Enter', async () => {
+    const { c, browser } = caller((i) => new FakePage(`T${i}`, { url: 'https://x.test/', title: 'x' }))
+    const { tabId } = (await c.call('open', { url: 'https://x.test/' })) as { tabId: number }
+    await c.call('type', { tabId, ref: 'e1', text: 'hello', submit: true })
+    const page = browser.pages[0] as FakePage
+    const insert = page.sent.find((s) => s.method === 'Input.insertText')
+    expect(insert?.params).toEqual({ text: 'hello' })
+    const enterDown = page.sent.find(
+      (s) =>
+        s.method === 'Input.dispatchKeyEvent' && s.params?.type === 'keyDown' && s.params?.key === 'Enter',
+    )
+    expect(enterDown).toBeTruthy()
+  })
+
+  it('press maps named keys to their virtual key code', async () => {
+    const { c, browser } = caller((i) => new FakePage(`T${i}`, { url: 'https://x.test/', title: 'x' }))
+    const { tabId } = (await c.call('open', { url: 'https://x.test/' })) as { tabId: number }
+    await c.call('press', { tabId, key: 'Escape' })
+    const page = browser.pages[0] as FakePage
+    const down = page.sent.find((s) => s.method === 'Input.dispatchKeyEvent' && s.params?.type === 'keyDown')
+    expect(down?.params).toMatchObject({ key: 'Escape', windowsVirtualKeyCode: 27 })
+  })
+
+  it('press rejects a key it does not know', async () => {
+    const { c } = caller((i) => new FakePage(`T${i}`, { url: 'https://x.test/', title: 'x' }))
+    const { tabId } = (await c.call('open', { url: 'https://x.test/' })) as { tabId: number }
+    await expect(c.call('press', { tabId, key: 'F13Weird' })).rejects.toThrow(/does not know the key/)
+  })
+
+  it('scroll returns the page scroll numbers', async () => {
+    const { c } = caller((i) => new FakePage(`T${i}`, { url: 'https://x.test/', title: 'x' }))
+    const { tabId } = (await c.call('open', { url: 'https://x.test/' })) as { tabId: number }
+    const r = (await c.call('scroll', { tabId, direction: 'down' })) as {
+      scroll: { target: string; before: number; after: number; max: number; atEnd: boolean }
+    }
+    expect(r.scroll).toEqual({ target: 'page', before: 0, after: 800, max: 2000, atEnd: false })
+  })
+
+  it('navigate moves the tab to the url', async () => {
+    const { c, browser } = caller((i) => new FakePage(`T${i}`, { url: 'https://y.test/', title: 'y' }))
+    const { tabId } = (await c.call('open', { url: 'https://y.test/' })) as { tabId: number }
+    await c.call('navigate', { tabId, url: 'https://y.test/next' })
+    expect(browser.pages[0]?.navigated).toContain('https://y.test/next')
+  })
+
+  it('pdf prints to PDF and returns bytes and a page count', async () => {
+    const { c, browser } = caller((i) => new FakePage(`T${i}`, { url: 'https://d.test/', title: 'doc' }))
+    const { tabId } = (await c.call('open', { url: 'https://d.test/' })) as { tabId: number }
+    const r = (await c.call('pdf', { tabId })) as { data: string; pages: number }
+    expect(browser.pages[0]?.sent.some((s) => s.method === 'Page.printToPDF')).toBe(true)
+    expect(Buffer.from(r.data, 'base64').subarray(0, 5).toString('latin1')).toBe('%PDF-')
+    expect(r.pages).toBe(2)
+  })
+
+  it('auto-dismisses a javascript dialog and reports it on the next snapshot', async () => {
+    const { c, browser } = caller(
+      (i) => new FakePage(`T${i}`, { url: 'https://dlg.test/', title: 'dlg', snapshot: SNAP_TEXT }),
+    )
+    const { tabId } = (await c.call('open', { url: 'https://dlg.test/' })) as { tabId: number }
+    const page = browser.pages[0] as FakePage
+    browser.emit(
+      'Page.javascriptDialogOpening',
+      { type: 'confirm', message: 'Proceed?', url: 'https://dlg.test/' },
+      page.sessionId,
+    )
+    // The dialog was closed (cancelled) so the page does not hang
+    const handled = page.sent.find((s) => s.method === 'Page.handleJavaScriptDialog')
+    expect(handled?.params).toEqual({ accept: false })
+    const snap = (await c.call('snapshot', { tabId })) as { dialogNotes?: { message: string }[] }
+    expect(snap.dialogNotes?.[0]?.message).toBe('Proceed?')
+    // Reported once, then cleared
+    const again = (await c.call('snapshot', { tabId })) as { dialogNotes?: unknown[] }
+    expect(again.dialogNotes).toBeUndefined()
+  })
+
   it('throws a clear error naming an unsupported command', async () => {
     const { c } = caller((i) => new FakePage(`T${i}`, { url: 'https://u.test/', title: 'u' }))
-    await expect(c.call('click', { tabId: 1, ref: 'e1' })).rejects.toThrow(/click/)
+    await expect(c.call('fill', { tabId: 1, ref: 'e1', value: 'x' })).rejects.toThrow(/fill/)
   })
 
   it('status reports connected so the daemon treats the browser as present', () => {
@@ -185,8 +339,8 @@ describe('CdpBrowserCaller', () => {
   })
 })
 
-// Opt-in: downloads and launches the real Chromium, opens example.com, asserts the snapshot sees the page and a ref mark.
-// Kept out of CI (network + a browser download); run with DOOL2_BUILTIN_IT=1.
+// Opt-in: downloads and launches the real Chromium, drives a tiny data: URL page end to end. Kept out of CI (it downloads a
+// browser); run with DOOL2_BUILTIN_IT=1.
 const IT = process.env.DOOL2_BUILTIN_IT === '1' ? describe : describe.skip
 IT('CdpBrowserCaller integration (real Chromium)', () => {
   const dataDir = '/tmp/dool2-builtin-it'
@@ -202,5 +356,26 @@ IT('CdpBrowserCaller integration (real Chromium)', () => {
     const snap = (await c.call('snapshot', { tabId, maxChars: 40_000 })) as { text: string; title: string }
     expect(snap.text.toLowerCase()).toContain('example')
     expect(snap.text).toMatch(/\[e\d+ /)
+  }, 120_000)
+
+  it('clicks a button on a data: page and the DOM changes, then prints a PDF', async () => {
+    c = new CdpBrowserCaller({ dataDir })
+    const html = '<button onclick="document.title=\'clicked\'">Press me</button><p id="p">before</p>'
+    const { tabId } = (await c.call(
+      'open',
+      { url: `data:text/html,${encodeURIComponent(html)}` },
+      60_000,
+    )) as {
+      tabId: number
+    }
+    const snap = (await c.call('snapshot', { tabId })) as { text: string }
+    const ref = snap.text.match(/\[(e\d+) 버튼/)?.[1]
+    expect(ref).toBeTruthy()
+    await c.call('click', { tabId, ref })
+    const after = (await c.call('snapshot', { tabId })) as { title: string }
+    expect(after.title).toBe('clicked')
+    const pdf = (await c.call('pdf', { tabId })) as { data: string; pages: number }
+    expect(Buffer.from(pdf.data, 'base64').subarray(0, 5).toString('latin1')).toBe('%PDF-')
+    expect(pdf.pages).toBeGreaterThanOrEqual(1)
   }, 120_000)
 })

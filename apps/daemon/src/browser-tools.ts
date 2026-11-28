@@ -1158,6 +1158,12 @@ export class BrowserTools {
    * helper). opened false: no print window came
    */
   printViaChrome?: (name: string) => Promise<{ opened: boolean; path?: string; error?: string }>
+  /**
+   * The browser is Dool2's own hidden Chromium (ADR 0046), not the person's Chrome + extension. Its hidden windows have no
+   * print dialog for the PC helper to drive, and its `pdf` command prints with Page.printToPDF directly, so browser_save_pdf
+   * goes straight to that instead of pressing the site's print button (printViaChrome)
+   */
+  builtinBrowser = false
   /** browser_save_pdf met an extension too old to print a PDF: the daemon says so in the conversation once it updates */
   pdfTooOld?: (tabId: number) => void
   requestTap?: (
@@ -1461,7 +1467,7 @@ export class BrowserTools {
         // A site's own print button: pressed plainly it opened Chrome's print window, which froze the tab and nobody
         // was at the PC to close it (test PC 11-27, a resident certificate). Pressed through the print path, the file
         // the site prints is kept as a PDF and no print window opens
-        if (a.__printing !== true && this.savePdf) {
+        if (a.__printing !== true && this.savePdf && !this.builtinBrowser) {
           const name = this.pages.get(tabId)?.refs.get(String(a.ref ?? ''))?.name ?? ''
           if (PRINT_BUTTON.test(name))
             return this.saveSitePrint(tabId, this.pressRef(tabId, String(a.ref)), '')
@@ -1565,7 +1571,7 @@ export class BrowserTools {
         // print on a family certificate viewer and the person got a copy of the screen, not what the site prints
         // (test PC 11-27). Asked for a part (ref) or the whole page (whole), the page print is what was meant
         let printNote = ''
-        if (typeof a.ref !== 'string' && a.whole !== true && this.printViaChrome) {
+        if (typeof a.ref !== 'string' && a.whole !== true && this.printViaChrome && !this.builtinBrowser) {
           const press = await this.findPrintButton(tabId)
           if (press) {
             const viaSite = await this.saveSitePrint(tabId, press, String(a.name ?? ''))
@@ -3725,7 +3731,8 @@ export class BrowserTools {
         () => ({ content: [{ type: 'text' as const, text: 'Pressed.' }] }),
         (e: Error) => ({ isError: true, content: [{ type: 'text' as const, text: e.message }] }),
       )
-    if (this.savePdf && label && PRINT_BUTTON.test(label)) return this.saveSitePrint(tabId, press, '')
+    if (this.savePdf && !this.builtinBrowser && label && PRINT_BUTTON.test(label))
+      return this.saveSitePrint(tabId, press, '')
     const pressed = await press()
     if (pressed.isError) return pressed
     const there = label

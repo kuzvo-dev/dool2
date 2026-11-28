@@ -852,6 +852,8 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
   )
   // Pages read are kept per chat, for the finish check's evidence (ADR 0038)
   browserTools.chatOf = () => callerScope.getStore()
+  // Dool2's own hidden Chromium prints with Page.printToPDF (no print window), so browser_save_pdf skips the PC-helper print path
+  browserTools.builtinBrowser = builtInBrowser !== undefined
   browserTools.userLang = lang
   // Clicks and typing give only what changed on the page; DOOL2_CLICK_CHANGES=0 gives whole pages (to compare in evals)
   browserTools.changesOnly = process.env.DOOL2_CLICK_CHANGES !== '0'
@@ -3374,23 +3376,25 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
   browserTools.savePdf = (name, pdf, preview) => keepPageFile(name, 'pdf', pdf, 'browser_save_pdf', preview)
   browserTools.saveFile = (name, ext, data) => keepPageFile(name, ext, data, 'browser_cdp')
   // A site's print button opened Chrome's print window: save it as a PDF the way a person picks Save as PDF
-  // (the PC helper drives only that window; the AI cannot reach Chrome's own windows)
-  browserTools.printViaChrome = async (name) => {
-    const dir = fileTools.dooriDir()
-    if (!dir) return { opened: false, error: 'No Dool2 folder on this PC' }
-    await mkdir(dir, { recursive: true })
-    const path = freeName(dir, `${cleanName(name).slice(0, 80) || 'document'}.pdf`)
-    const r = (await hands.call('print_pdf', { dir, name: basename(path), timeoutMs: 40_000 }, 70_000)) as {
-      opened?: boolean
+  // (the PC helper drives only that window; the AI cannot reach Chrome's own windows). Dool2's own hidden Chromium has no
+  // such window — it prints with Page.printToPDF (builtinBrowser above), so the helper print path is only for the extension
+  if (!builtInBrowser)
+    browserTools.printViaChrome = async (name) => {
+      const dir = fileTools.dooriDir()
+      if (!dir) return { opened: false, error: 'No Dool2 folder on this PC' }
+      await mkdir(dir, { recursive: true })
+      const path = freeName(dir, `${cleanName(name).slice(0, 80) || 'document'}.pdf`)
+      const r = (await hands.call('print_pdf', { dir, name: basename(path), timeoutMs: 40_000 }, 70_000)) as {
+        opened?: boolean
+      }
+      if (!r?.opened) return { opened: false }
+      for (let i = 0; i < 40 && !existsSync(path); i++) await new Promise((ok) => setTimeout(ok, 500))
+      if (!existsSync(path)) return { opened: true, error: 'the file did not appear after Save' }
+      const shown = fileTools.shown(path)
+      fileTools.onWritten?.({ name: basename(path), kind: 'pdf', path: shown })
+      journal.write('file-tool', { tool: 'browser_print_pdf', ok: true })
+      return { opened: true, path: shown }
     }
-    if (!r?.opened) return { opened: false }
-    for (let i = 0; i < 40 && !existsSync(path); i++) await new Promise((ok) => setTimeout(ok, 500))
-    if (!existsSync(path)) return { opened: true, error: 'the file did not appear after Save' }
-    const shown = fileTools.shown(path)
-    fileTools.onWritten?.({ name: basename(path), kind: 'pdf', path: shown })
-    journal.write('file-tool', { tool: 'browser_print_pdf', ok: true })
-    return { opened: true, path: shown }
-  }
   browserTools.requestCode = (tabId, field, label, hint, host, kind, firstRef, image) => {
     const threadId = workingThread()
     // The last digits of the ID number: not stored, only put into this field
