@@ -47,6 +47,48 @@ describe('agentd HTTP API', () => {
     expect(res.status).toBe(401)
   })
 
+  it('POST /pair requires the token (401 without)', async () => {
+    running = await startHttpServer({ agentd: makeAgentd(), token: TOKEN })
+    const res = await fetch(`${running.url}/pair`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        deviceId: 'd1',
+        publicKeyPem: '-----BEGIN PUBLIC KEY-----\nAA\n-----END PUBLIC KEY-----\n',
+        pairedAt: 1,
+      }),
+    })
+    expect(res.status).toBe(401)
+  })
+
+  it('POST /pair registers a public key and refuses a private key', async () => {
+    running = await startHttpServer({ agentd: makeAgentd(), token: TOKEN })
+    const headers = { 'content-type': 'application/json', authorization: `Bearer ${TOKEN}` }
+    const ok = await fetch(`${running.url}/pair`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({
+        deviceId: 'd1',
+        publicKeyPem: '-----BEGIN PUBLIC KEY-----\nAA\n-----END PUBLIC KEY-----\n',
+        pairedAt: 1,
+      }),
+    })
+    expect(ok.status).toBe(200)
+    expect(((await ok.json()) as { ok: boolean }).ok).toBe(true)
+
+    // A body that carries a private key is refused — pairing transfers only the public key.
+    const bad = await fetch(`${running.url}/pair`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({
+        deviceId: 'd1',
+        publicKeyPem: '-----BEGIN PRIVATE KEY-----\nAA\n-----END PRIVATE KEY-----\n',
+        pairedAt: 1,
+      }),
+    })
+    expect(bad.status).toBe(400)
+  })
+
   it('POST /message with the token streams turn events and a final result', async () => {
     running = await startHttpServer({ agentd: makeAgentd(), token: TOKEN })
     const res = await fetch(`${running.url}/message`, {

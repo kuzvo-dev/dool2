@@ -3,8 +3,14 @@
 // drive it. Endpoints:
 //
 //   GET  /health                      -> { ok: true }                      (no token)
-//   POST /message { message, url?, level? }  -> SSE stream of turn events, one `data:` JSON object per event,
-//                                               then a final `event: result` with the SendResult summary.
+//   POST /pair { deviceId, publicKeyPem, label?, pairedAt } -> PairResponse. Registers the phone's device PUBLIC key so
+//                                               later approvals can be verified. Transfers only the public key; a body
+//                                               carrying a private key is refused. This is the network half of
+//                                               @dool2/phone pairDevice (DeviceRegistrar).
+//   POST /message { message, url?, level?, approved? }  -> SSE stream of turn events, one `data:` JSON object per
+//                                               event, then a final `event: result` with the SendResult summary.
+//                                               `approved` is the envelope hashes already signed via /approve, so the
+//                                               engine resumes exactly those actions (ADR 0047).
 //   POST /approve { hash, signature } -> the ApproveResult (phone signature verified + consumed)
 //   GET  /pending                     -> the approval cards still awaiting a signature
 //   GET  /drafts                      -> the review-pending learned site-skill drafts + the library coverage KPIs
@@ -79,6 +85,26 @@ async function handle(
   // Everything else needs the token.
   if (!tokenOk(req, opts.token)) return void sendJson(res, 401, { error: 'unauthorized' })
 
+  // Pairing (ADR 0043/0047): the phone registers its device PUBLIC key so the daemon can verify later signatures. The
+  // body is a @dool2/phone PairRequest; only the public key is used. The token + Host/Origin checks above already gate
+  // this like every other endpoint (a first-registration pairing code is not part of the pairing module's shapes, so
+  // the loopback bearer token is the authorization). A private key in the body is refused outright — pairing is
+  // public-key only.
+  if (req.method === 'POST' && path === '/pair') {
+    const body = await readJson(req)
+    const publicKeyPem = typeof body.publicKeyPem === 'string' ? body.publicKeyPem : undefined
+    if (!publicKeyPem?.includes('PUBLIC KEY')) {
+      return void sendJson(res, 400, { ok: false, reason: 'publicKeyPem (SPKI Ed25519 PEM) is required' })
+    }
+    if (publicKeyPem.includes('PRIVATE')) {
+      return void sendJson(res, 400, { ok: false, reason: 'pairing transfers only the public key' })
+    }
+    opts.agentd.registerDevice(publicKeyPem)
+    const deviceId = typeof body.deviceId === 'string' ? body.deviceId : '(unnamed)'
+    log(`paired device ${deviceId}`)
+    return void sendJson(res, 200, { ok: true })
+  }
+
   if (req.method === 'GET' && path === '/pending') {
     return void sendJson(res, 200, { pending: opts.agentd.pending() })
   }
@@ -148,6 +174,11 @@ async function handle(
     const sendOpts: Parameters<Agentd['send']>[1] = {}
     if (typeof body.url === 'string') sendOpts.url = body.url
     if (body.level === 'ask' || body.level === 'auto' || body.level === 'full') sendOpts.level = body.level
+    // Resume (ADR 0047): hashes the phone already signed via /approve. send() keeps only the ones the daemon has
+    // actually recorded as approved, so a client cannot fake an approval by passing an arbitrary hash here.
+    if (Array.isArray(body.approved)) {
+      sendOpts.approved = body.approved.filter((h): h is string => typeof h === 'string')
+    }
     return void (await streamTurn(res, opts.agentd, message, sendOpts, log))
   }
 
