@@ -114,6 +114,13 @@ export interface SendResult {
 export interface SendOptions {
   /** The URL of the active tab, if any, handed to the engine so skills can match and the gate can read the page. */
   url?: string
+  /**
+   * The prior conversation (oldest first), so a turn in a running chat carries what was already said and Dool2 does
+   * not forget the back-and-forth. Only the visible chat text — user and assistant turns — never tool JSON, internal
+   * events, or secrets. Passed straight to the engine, which puts it before the new message. Omitted => a stateless
+   * single-message turn, as before. The phone chat (legacy-phone.ts) supplies this from its running conversation.
+   */
+  history?: { role: 'user' | 'assistant'; content: string }[]
   /** Override the session autonomy level for this one turn. */
   level?: AutonomyLevel
   /**
@@ -434,7 +441,11 @@ export class Agentd {
           classify,
           ...(approvedForTurn.size > 0 ? { isApproved: (h: string) => approvedForTurn.has(h) } : {}),
         },
-        { message, ...(opts.url !== undefined ? { url: opts.url } : {}) },
+        {
+          message,
+          ...(opts.url !== undefined ? { url: opts.url } : {}),
+          ...(opts.history !== undefined ? { history: opts.history } : {}),
+        },
       )
     } catch (err) {
       // Stop the recorder on failure too, so it never leaks a subscription; a partial turn is not drafted.

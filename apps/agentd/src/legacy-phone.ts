@@ -67,6 +67,13 @@ const CONV_MAX_LIMIT = 200
 /** The shipped app caps a sent message at 4000 chars (apps/daemon link.ts `ask`); mirror it so replies match. */
 const ASK_MAX = 4000
 
+/**
+ * How many prior chat messages (user + assistant) one turn carries into the engine as context, newest-biased. Bounds
+ * the prompt so a long conversation does not grow it without limit; ~20 messages is roughly ten exchanges, enough for
+ * a short follow-up ("that one, not the other") to resolve without re-sending the whole history.
+ */
+const HISTORY_MAX = 20
+
 /** A P-256 approve-key as SPKI DER in base64url (~122 chars). The same guard the v1 daemon used (apps/daemon link.ts). */
 const SPKI_RE = /^[\w-]{100,200}$/
 
@@ -295,6 +302,18 @@ export class LegacyPhoneLink {
     return { at: this.#now(), issues: [], lagMs: 0, load: 0, agents: 1 }
   }
 
+  /**
+   * The running conversation as engine history: the visible user + assistant chat text, oldest first, capped to the
+   * most recent HISTORY_MAX messages. `tool`/`system` rows (never produced here, but allowed by StoredMessage) are
+   * dropped, so only the chat the user actually saw is carried — no tool JSON, no internal events, no secrets.
+   */
+  #history(): { role: 'user' | 'assistant'; content: string }[] {
+    const chat = this.#messages
+      .filter((m) => m.role === 'user' || m.role === 'assistant')
+      .map((m) => ({ role: m.role as 'user' | 'assistant', content: m.text }))
+    return chat.slice(Math.max(0, chat.length - HISTORY_MAX))
+  }
+
   /** The current conversation as the app reads it (ConversationState). */
   #conversationState(limit: number): ConversationState {
     const n = Math.min(limit, this.#messages.length)
@@ -343,6 +362,12 @@ export class LegacyPhoneLink {
     this.#turn = turn
     this.#busy = true
 
+    // Capture the conversation so far — BEFORE appending this new user message — as history for the engine turn, so the
+    // brain remembers the back-and-forth instead of answering each phone message in isolation. The new message is sent
+    // separately (as `text`) and the engine appends it after the history; the assistant answer is saved to #messages
+    // below, so the NEXT turn's history includes both this message and this answer.
+    const history = this.#history()
+
     const user = this.#addMessage('user', text)
     await this.#broadcastStream({ type: 'saved', message: user })
     await this.#broadcastStatus()
@@ -350,6 +375,7 @@ export class LegacyPhoneLink {
     let answer = ''
     try {
       await this.#agentd.send(text, {
+        history,
         onEvent: (ev) => {
           void this.#onEvent(turn, ev, (chunk) => {
             answer += chunk
