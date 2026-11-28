@@ -328,6 +328,25 @@ function gatedBrain(text: string, gate: Promise<void>): Brain {
   }
 }
 
+/**
+ * A brain that records the messages (role + content) it is handed each run, then answers with a fixed line. Lets a
+ * test see exactly what history the daemon threaded into the engine turn.
+ */
+function recordingBrain(answer: string, seen: { role: string; content: string }[][]): Brain {
+  return {
+    id: 'pi',
+    label: 'recording',
+    async ready() {
+      return true
+    },
+    async *run(input) {
+      seen.push(input.messages.map((m) => ({ role: m.role, content: m.content })))
+      yield { kind: 'text', text: answer }
+      yield { kind: 'turn_end', stop: 'done' }
+    },
+  }
+}
+
 /** Every `stream` event the phone received, in order. */
 function streams(msgs: PcToPhone[]): DaemonStreamEvent[] {
   return msgs
@@ -417,6 +436,25 @@ describe('v1-compat phone chat', () => {
     )
     expect(status.at(-1)?.busy).toBe(false)
     expect(streams(msgs).some((e) => e.type === 'end')).toBe(true)
+  })
+
+  it('threads the running conversation into the next turn, so a follow-up has context', async () => {
+    const seen: { role: string; content: string }[][] = []
+    const h = await setup(recordingBrain('파스타 추천해요.', seen))
+    await h.phone.pair()
+
+    // First message: no prior history, just the one user message.
+    await h.phone.ask('오늘 저녁 뭐 먹을까?')
+    expect(seen[0]).toEqual([{ role: 'user', content: '오늘 저녁 뭐 먹을까?' }])
+
+    // Follow-up on the same connection: the engine turn now carries the earlier user message AND the assistant's
+    // saved answer as history, then the new user message last — so "그럼 그거 말고" resolves against real context.
+    await h.phone.ask('그럼 그거 말고')
+    expect(seen[1]).toEqual([
+      { role: 'user', content: '오늘 저녁 뭐 먹을까?' },
+      { role: 'assistant', content: '파스타 추천해요.' },
+      { role: 'user', content: '그럼 그거 말고' },
+    ])
   })
 
   it('still surfaces a pay approval as a card and resumes it via decide, during chat', async () => {

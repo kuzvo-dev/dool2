@@ -24,6 +24,13 @@ import { type ApprovalOutcome, createToolRuntime, type GateDecisionLog } from '.
 export interface TurnRequest {
   message: string
   url?: string
+  /**
+   * The prior conversation, oldest first, so a turn in a real back-and-forth carries what was already said instead of
+   * starting blank (the phone chat is the main caller). Only the visible chat text — user and assistant turns — never
+   * tool JSON, internal events, or secrets. The engine puts it before the new user message: the brain sees
+   * `[...history, { role: 'user', content: message }]`. Absent/empty behaves exactly as a single-message turn did.
+   */
+  history?: { role: 'user' | 'assistant'; content: string }[]
 }
 
 /** Everything the engine needs to run a turn. Dependency-injected so tests pass fakes and the daemon passes reality. */
@@ -121,7 +128,12 @@ export async function runTurn(opts: EngineOptions, request: TurnRequest): Promis
     ...(opts.isApproved !== undefined ? { isApproved: opts.isApproved } : {}),
   })
 
-  const messages: TurnInput['messages'] = [{ role: 'user', content: request.message }]
+  // History first (the back-and-forth so far), then the new user message last. Empty/absent history => a single-message
+  // turn, identical to before. The brain never sees tool JSON or secrets here — history is only the visible chat text.
+  const messages: TurnInput['messages'] = [
+    ...(request.history ?? []),
+    { role: 'user', content: request.message },
+  ]
   let stop: TurnResult['stop'] = 'done'
 
   try {
