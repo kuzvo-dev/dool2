@@ -12,6 +12,16 @@ export {
   type SendOptions,
   type SendResult,
 } from './agentd.js'
+export {
+  type BrainChoice,
+  type BrainConfig,
+  type BrainProvider,
+  brainConfigFromEnv,
+  type ChooseBrainDeps,
+  chooseBrain,
+  DEFAULT_PI_MODEL,
+  demoBrain,
+} from './brain-config.js'
 export { type BuildBridgesOptions, type BuiltBridges, buildHostBridges } from './bridges.js'
 export { type HttpServerOptions, type RunningHttpServer, startHttpServer } from './http.js'
 export { defaultVaultItems, InMemoryVault, makeVaultBridge } from './vault.js'

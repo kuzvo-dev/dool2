@@ -32,6 +32,18 @@ importers:
       '@dool2/approvals':
         specifier: workspace:*
         version: link:../../packages/approvals
+      '@dool2/brain-claude':
+        specifier: workspace:*
+        version: link:../../packages/brain-claude
+      '@dool2/brain-cli-util':
+        specifier: workspace:*
+        version: link:../../packages/brain-cli-util
+      '@dool2/brain-codex':
+        specifier: workspace:*
+        version: link:../../packages/brain-codex
+      '@dool2/brain-pi':
+        specifier: workspace:*
+        version: link:../../packages/brain-pi
       '@dool2/brains':
         specifier: workspace:*
         version: link:../../packages/brains
