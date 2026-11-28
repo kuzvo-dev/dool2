@@ -69,7 +69,9 @@ function recordingPage(
 }
 
 function deps(page: PageBridge, extra: Partial<VaultBridgeDeps> = {}): VaultBridgeDeps {
-  return { page, level: () => 'ask', skills: () => BUILTIN, ...extra }
+  // Default unlocked so a fill test exercises the fill; a lock/`never` test overrides `unlocked` via `extra`. The
+  // vault's own live lock model (default locked, expiry) is covered in vault-live-policy.test.ts.
+  return { page, level: () => 'ask', skills: () => BUILTIN, unlocked: () => true, ...extra }
 }
 
 function bridgesWith(vault: InMemoryVault, page: PageBridge): HostBridges {

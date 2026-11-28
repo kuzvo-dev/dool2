@@ -48,6 +48,9 @@ function recordingPage(nodes: PageSnapshot['nodes']): PageBridge & { fills: Arra
 }
 
 function bridgesWith(vault: InMemoryVault, page: PageBridge, level: () => AutonomyLevel): HostBridges {
+  // The vault is locked by default (ADR 0047); unlock it so these fill tests exercise the fill itself. The live lock
+  // model is covered on its own in vault-live-policy.test.ts.
+  vault.unlock()
   const fake = makeFakeBridges()
   return { page, vault: makeVaultBridge(vault, { page, level }), pc: fake.pc, fs: fake.fs }
 }
