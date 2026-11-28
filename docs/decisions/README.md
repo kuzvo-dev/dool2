@@ -33,7 +33,7 @@ We record decisions that affect the structure of the project, together with why 
 | [0027](0027-finish-check.md) | Before finishing a task, Dool2 checks once more and, if something is left, continues on its own | Accepted (back on 2026-11-25 with drafts) |
 | [0028](0028-web-release-update.md) | The desktop app is downloaded from the web, and new versions are fetched by the app itself from a signed notice | Accepted |
 | [0029](0029-language-and-region.md) | Language and region are separate settings; the repo is English, the product is multilingual | Accepted |
-| [0030](0030-auto-approve.md) | Auto-approve: everything except payments without an approval card | Accepted (review added 2026-11-25) |
+| [0030](0030-auto-approve.md) | Auto-approve: everything except payments without an approval card | Accepted (review added 2026-11-25; extended by 0047, becomes level 2) |
 | [0031](0031-quick-check-watch.md) | Quick checks: watches check every minute without the AI, and wake it only on a change | Accepted |
 | [0032](0032-pinned-instructions.md) | Instructions are pinned per segment; what changes rides on the next message | Accepted |
 | [0033](0033-tools-on-demand.md) | Rarely used tools are found and run on demand | Accepted |
@@ -50,6 +50,7 @@ We record decisions that affect the structure of the project, together with why 
 | [0044](0044-recipes.md) | Recipes: keep the steps that got a request done, and offer them on the next request like it | Accepted |
 | [0045](0045-tools-are-shortcuts.md) | Dool2 thinks for itself: broad hands, tools as shortcuts, safety at the action | Accepted |
 | [0046](0046-built-in-browser.md) | Dool2's own browser: a downloaded Chromium, hidden, no extension | Accepted |
+| [0047](0047-autonomy-levels.md) | Three autonomy levels the user chooses: ask, auto, full-auto (auto-approve of 0030 becomes level 2) | Accepted (extends 0030, amends 0011/0023) |
 
 ## How to write a new decision
 
