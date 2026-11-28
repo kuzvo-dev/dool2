@@ -1,4 +1,5 @@
 export * from './bridge.js'
+export * from './cdp-caller.js'
 export * from './cdp-pipe.js'
 export * from './chrome.js'
 export * from './chromium.js'
