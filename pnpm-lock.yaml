@@ -231,6 +231,12 @@ importers:
         specifier: workspace:*
         version: link:../protocol
 
+  packages/approvals:
+    dependencies:
+      '@dool2/core':
+        specifier: workspace:*
+        version: link:../core
+
   packages/brains:
     dependencies:
       '@dool2/core':

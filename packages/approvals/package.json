@@ -1,0 +1,22 @@
+{
+  "name": "@dool2/approvals",
+  "version": "0.0.0",
+  "private": true,
+  "license": "Apache-2.0",
+  "description": "Dool2 approvals: the phone-signature layer that turns the gate's `sign` decision into a verifiable approval bound to the exact action. The phone's secure chip signs over the action hash; the daemon re-checks that the action it executes matches the signed one, so it presses only the one button that was approved (ADR 0043, 0047).",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run --passWithNoTests"
+  },
+  "dependencies": {
+    "@dool2/core": "workspace:*"
+  }
+}
