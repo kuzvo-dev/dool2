@@ -5,10 +5,10 @@ import { createWriteStream } from 'node:fs'
 import { access, constants, mkdir, mkdtemp, readdir, readFile, rm } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { join, posix, win32 } from 'node:path'
-import { runOnce } from '@dool2/engine'
 import type { Lang } from '@dool2/i18n'
 import { type ChromeStatus, EXTENSION_IDS, type InstallPhase, type InstallStatus } from '@dool2/protocol'
 import { CHROME_TEXT, type ChromeText } from './locales/chrome.js'
+import { runOnce } from './process.js'
 
 /** Google's Apple developer team ID (checked with codesign) */
 export const GOOGLE_TEAM_ID = 'EQHXZ8M8AV'

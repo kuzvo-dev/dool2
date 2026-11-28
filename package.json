@@ -13,16 +13,7 @@
     "typecheck": "turbo run typecheck",
     "test": "turbo run test",
     "lint": "biome check . && node scripts/check-hangul.mjs",
-    "format": "biome check --write .",
-    "dev:daemon": "pnpm build && pnpm --filter @dool2/daemon dev",
-    "dev:desktop": "pnpm build && pnpm --filter @dool2/desktop dev",
-    "connector": "node apps/daemon/scripts/connector.mjs",
-    "eval:static": "node evals/static.mjs",
-    "eval:run": "node evals/run.mjs",
-    "eval:score": "node evals/score.mjs",
-    "eval:nightly": "node evals/nightly.mjs",
-    "report:harness": "node apps/daemon/scripts/report-harness.mjs",
-    "prompts": "node scripts/prompts-gen.mjs"
+    "format": "biome check --write ."
   },
   "devDependencies": {
     "@biomejs/biome": "2.6.7",

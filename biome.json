@@ -9,16 +9,8 @@
       "!**/.turbo",
       "!**/.wrangler",
       "!**/out",
-      "!apps/desktop/stage",
-      "!apps/phone/android",
-      "!apps/desktop/release",
-      "!apps/desktop/build-res",
       "!docs",
-      "!skills",
-      "!packages/skills/skills",
-      "!prompts",
-      "!packages/engine/src/locales/prompts.gen.ts",
-      "!evals/bank"
+      "!packages/skills/skills"
     ]
   },
   "formatter": {

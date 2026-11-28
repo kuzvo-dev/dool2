@@ -1,8 +1,0 @@
-{
-  "extends": "../../tsconfig.base.json",
-  "compilerOptions": {
-    "rootDir": "src",
-    "outDir": "dist"
-  },
-  "include": ["src/main.ts", "src/preload.cts", "src/secrets.ts", "src/power.ts", "src/render-file.ts"]
-}

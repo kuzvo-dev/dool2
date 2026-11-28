@@ -15,9 +15,9 @@
 import { mkdir, rm, writeFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { posix } from 'node:path'
-import { runOnce } from '@dool2/engine'
 import { CHROME_STORE_UPDATE_URL } from '@dool2/protocol'
 import type { Exec } from './chrome.js'
+import { runOnce } from './process.js'
 
 export type ExternalTarget =
   | { kind: 'file'; browser: string; dir: string; file: string; body: string }

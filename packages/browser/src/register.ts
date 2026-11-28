@@ -7,9 +7,9 @@
 import { access, chmod, mkdir, writeFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { join, posix } from 'node:path'
-import { runOnce } from '@dool2/engine'
 import { BROWSER_HOST_NAME, EXTENSION_IDS } from '@dool2/protocol'
 import type { Exec } from './chrome.js'
+import { runOnce } from './process.js'
 
 /** Program that starts the host. The packaged app runs Electron as Node (ELECTRON_RUN_AS_NODE) */
 export interface HostRuntime {

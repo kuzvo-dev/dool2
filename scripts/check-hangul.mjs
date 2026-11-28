@@ -18,9 +18,7 @@ const CODE = /\.(c|m)?(t|j)sx?$|\.(html|css|swift|java|kt|sh|ya?ml|json|webmanif
 const ALLOWED = [
   /(^|\/)locales\//,
   /(^|\/)region\/kr\//,
-  /^skills\//,
   /^packages\/skills\/skills\//,
-  /^evals\//,
   /^docs\//,
   /(^|\/)fixtures\//,
   /\.test\.(c|m)?(t|j)sx?$/,
