@@ -90,6 +90,16 @@ export function baseDomain(host: string): string {
   return parts.slice(-2).join('.')
 }
 
+/**
+ * True when two hosts belong to the same site — the test the recorder uses to keep only a page's OWN internal API
+ * calls and drop cross-site ones. Equal base domains count (so `order.coupang.com` and `coupang.com` match, and an
+ * equivalent subdomain of the same registrable domain matches too).
+ */
+export function sameRecordingSite(a: string, b: string): boolean {
+  if (!a || !b) return false
+  return baseDomain(a) === baseDomain(b)
+}
+
 /** The first label of a base domain, used as the default skill name (`coupang`). */
 function nameFromHost(base: string): string {
   return base.split('.')[0] || base

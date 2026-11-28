@@ -320,6 +320,12 @@ export interface VaultBridgeDeps {
   unlocked?: () => boolean
   /** Extra equivalent-domain groups for URL binding; the built-in Korean groups (ADR 0029) always apply. */
   urlBinding?: UrlBindingSettings
+  /**
+   * Report the login fields the vault located on the page, for the learn-by-watching recorder (ADR 0046). Carries
+   * page refs / selectors only — the fields the vault typed into — never a secret value. Called after a successful
+   * login/TOTP fill. Omitted -> nothing is reported.
+   */
+  onLoginFields?: (fields: { username?: string; password?: string; submit?: string; totp?: string }) => void
 }
 
 /**
@@ -392,6 +398,12 @@ export function makeVaultBridge(vault: InMemoryVault, deps: VaultBridgeDeps): Va
       // already-gated vault.fillLogin, so it is not separately reported to the autonomy gate (same note as page.fill).
       const submitRef = login?.submit ? resolveHint(snapshot, login.submit) : undefined
       if (submitRef !== undefined) await page.click(submitRef)
+      // Report the located fields (refs only, no secret) to the learn-by-watching recorder, if one is listening.
+      deps.onLoginFields?.({
+        ...(targets.usernameSelector !== undefined ? { username: targets.usernameSelector } : {}),
+        password: targets.passwordSelector,
+        ...(submitRef !== undefined ? { submit: submitRef } : {}),
+      })
       vault.recordFill(id, 'login')
     },
 
@@ -408,6 +420,7 @@ export function makeVaultBridge(vault: InMemoryVault, deps: VaultBridgeDeps): Va
       if (!selector) throw new Error(`No one-time-code field found on ${snapshot.url} to fill ${id} into`)
       // @dool2/vault computes the code with computeTotp and types it; the AI never sees seed or code.
       await vaultFillTotp(item, pageFiller(page), selector)
+      deps.onLoginFields?.({ totp: selector })
       vault.recordFill(id, 'totp')
     },
 

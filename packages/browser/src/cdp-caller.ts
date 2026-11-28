@@ -491,6 +491,10 @@ export class CdpBrowserCaller {
   private readonly screencastSubs = new Map<number, Set<(frame: ScreencastFrame) => void>>()
   /** tabId → throttle state while a screencast runs on that tab (deliver only every everyNth-th frame) */
   private readonly screencastState = new Map<number, { everyNth: number; seen: number }>()
+  /** Live subscribers of CDP Network events on Dool2's own tabs (the session recorder; ADR 0046 learn-by-watching) */
+  private readonly networkSinks = new Set<(method: string, params: Record<string, unknown>) => void>()
+  /** Whether the Network domain should be enabled on each tab (set once a recorder subscribes) so new tabs capture too */
+  private networkWanted = false
   private unsubEvents?: () => void
   private nextTabId = 1
   private lastTabId?: number
@@ -600,6 +604,8 @@ export class CdpBrowserCaller {
       if (method === 'Page.javascriptDialogOpening') this.onDialog(params, sessionId)
       else if (method === 'Page.screencastFrame') this.onScreencastFrameEvent(params, sessionId)
       else if (method === 'Target.detachedFromTarget') this.onDetached(params)
+      else if (method === 'Network.requestWillBeSent' || method === 'Network.responseReceived')
+        this.onNetworkEvent(method, params, sessionId)
     })
   }
 
@@ -629,6 +635,8 @@ export class CdpBrowserCaller {
         childSession,
       )
       .catch(() => {})
+    // Capture a cross-origin frame's own internal API calls too, when a recorder is listening.
+    if (this.networkWanted) this.browser?.send?.('Network.enable', {}, childSession).catch(() => {})
   }
 
   /** A child target went away: forget its session and any frame it drove, so a stale frame ref resolves to nothing */
@@ -694,6 +702,50 @@ export class CdpBrowserCaller {
         // a subscriber error must not break the stream for others
       }
     }
+  }
+
+  /**
+   * A CDP Network event on one of Dool2's own tabs (page or child-frame session). Forward it to every subscriber (the
+   * session recorder). Owner-scoped: an event whose session is not one of Dool2's tabs is ignored, so a recorder only
+   * ever sees traffic from tabs Dool2 opened. Nothing is persisted here — the recorder keeps only safe, de-duplicated
+   * facts (@dool2/browser recorder.ts), never cookies/tokens or response bodies.
+   */
+  private onNetworkEvent(method: string, params: Record<string, unknown>, sessionId: string): void {
+    if (this.networkSinks.size === 0) return
+    if (!this.sessionTab.has(sessionId)) return
+    for (const cb of this.networkSinks) {
+      try {
+        cb(method, params)
+      } catch {
+        // a sink error must not break the stream for others
+      }
+    }
+  }
+
+  /**
+   * Subscribe to CDP Network events on Dool2's own tabs (the learn-by-watching recorder). Returns an unsubscribe.
+   * Marks the Network domain as wanted, so tabs opened later enable it too; call {@link enableNetwork} to turn it on
+   * for tabs that are already open.
+   */
+  onNetwork(cb: (method: string, params: Record<string, unknown>) => void): () => void {
+    this.networkSinks.add(cb)
+    this.networkWanted = true
+    return () => {
+      this.networkSinks.delete(cb)
+      if (this.networkSinks.size === 0) this.networkWanted = false
+    }
+  }
+
+  /**
+   * Turn on the CDP Network domain on every tab that is already open (and mark it wanted for future tabs), so a
+   * recorder's subscribers start receiving request/response events. Best-effort: a tab whose session cannot be reached
+   * is skipped. Enabling Network is invisible to the page (no UI, no Runtime.enable).
+   */
+  async enableNetwork(): Promise<void> {
+    this.networkWanted = true
+    const tasks: Promise<unknown>[] = []
+    for (const tab of this.tabs.values()) tasks.push(tab.page.send('Network.enable').catch(() => {}))
+    await Promise.all(tasks)
   }
 
   /**
@@ -782,6 +834,8 @@ export class CdpBrowserCaller {
     await page
       .send('Target.setAutoAttach', { autoAttach: true, flatten: true, waitForDebuggerOnStart: false })
       .catch(() => {})
+    // When a recorder is listening, enable the Network domain so this tab's internal API calls reach it (ADR 0046).
+    if (this.networkWanted) await page.send('Network.enable').catch(() => {})
     const tabId = this.nextTabId++
     const tab: Tab = { page, url, title: '', frameSessions: new Map() }
     this.tabs.set(tabId, tab)
@@ -1403,6 +1457,8 @@ export class CdpBrowserCaller {
     this.sessionTab.clear()
     this.screencastState.clear()
     this.screencastSubs.clear()
+    this.networkSinks.clear()
+    this.networkWanted = false
     this.unsubEvents?.()
     this.unsubEvents = undefined
     const b = this.browser

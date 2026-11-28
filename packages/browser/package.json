@@ -19,7 +19,11 @@
   },
   "dependencies": {
     "@dool2/i18n": "workspace:*",
-    "@dool2/protocol": "workspace:*"
+    "@dool2/protocol": "workspace:*",
+    "@dool2/skill-learn": "workspace:*"
+  },
+  "devDependencies": {
+    "@dool2/skill-sdk": "workspace:*"
   },
   "bin": {
     "dool2-browser-host": "./dist/host-main.js"

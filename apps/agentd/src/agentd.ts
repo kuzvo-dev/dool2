@@ -36,6 +36,8 @@ import {
   type TurnResult,
 } from '@dool2/engine'
 import type { HostBridges } from '@dool2/sandbox'
+import type { CoverageStats } from '@dool2/skill-learn'
+import type { LearnController, LocalDraft } from './learn.js'
 
 /** One thing that happened during a turn, as streamed to a client (HTTP) or printed (CLI). */
 export type AgentdEvent =
@@ -55,6 +57,21 @@ export type AgentdEvent =
     }
   | { type: 'approvalNeeded'; card: ApprovalCard }
   | { type: 'blocked'; label: string; tier: ApprovalOutcome['tier']; reason: string }
+  | {
+      /**
+       * A review-pending site-skill draft was produced from this turn (learn-by-watching, ADR 0046). The desktop shows
+       * a "new site-skill draft is ready" banner (copy lives in @dool2/i18n) and offers a review. Never auto-published;
+       * it stays local until a maintainer signs it into a pack.
+       */
+      type: 'draft'
+      id: string
+      host: string
+      needsReview: true
+      /** Whether this folded into an existing draft for the host (true) or started a new one (false). */
+      merged: boolean
+      /** The library KPIs after this draft, for the dashboard. */
+      coverage: CoverageStats
+    }
   | { type: 'turn_end'; stop: TurnResult['stop'] }
 
 /** What the phone needs to sign an action: the exact envelope and its hash, plus the facts to show the user. */
@@ -117,6 +134,11 @@ export interface AgentdOptions {
   devicePublicKeyPem?: string
   /** Time-to-live for a pending approval. Defaults to @dool2/approvals DEFAULT_TTL_MS. */
   approvalTtlMs?: number
+  /**
+   * Learn-by-watching (ADR 0046): records each turn's internal API calls + UI steps + login fields and folds them
+   * into a review-pending local site-skill draft. Omitted (or a controller with recording off) -> no drafting.
+   */
+  learn?: LearnController
 }
 
 /** The outcome of approve(): ok (and now consumed + recorded), or a machine reason it was rejected. */
@@ -136,6 +158,7 @@ export class Agentd {
   readonly #classify: ActionClassifier | undefined
   #devicePublicKeyPem: string | undefined
   readonly #approvalTtlMs: number | undefined
+  readonly #learn: LearnController | undefined
 
   readonly #store: ApprovalStore
   /** hash -> the pending approval awaiting a phone signature. Cleared on approve or when a new turn supersedes it. */
@@ -154,6 +177,7 @@ export class Agentd {
     this.#classify = opts.classify
     this.#devicePublicKeyPem = opts.devicePublicKeyPem
     this.#approvalTtlMs = opts.approvalTtlMs
+    this.#learn = opts.learn
     // ApprovalStore's ttl defaults when the argument is undefined, so passing it straight through is fine.
     this.#store = new ApprovalStore(opts.approvalTtlMs)
   }
@@ -181,6 +205,16 @@ export class Agentd {
     return this.#approved.has(hash)
   }
 
+  /** The review-pending site-skill drafts learned so far (empty when recording is off). The desktop reviews these. */
+  drafts(): LocalDraft[] {
+    return this.#learn?.store.list() ?? []
+  }
+
+  /** The self-growing library KPIs (coverage of visited sites, click-free ratio), or undefined when recording is off. */
+  coverage(): CoverageStats | undefined {
+    return this.#learn?.store.coverage()
+  }
+
   /**
    * Run one turn. The engine drives the brain, the code hand, and the gate; Agentd then turns each `approvalNeeded`
    * into a signable ActionEnvelope + PendingApproval and streams every event through `onEvent`.
@@ -193,17 +227,28 @@ export class Agentd {
     // action (single source: @dool2/approvals envelopeForAction), and lets exactly those run.
     const approvedForTurn = new Set((opts.approved ?? []).filter((h) => this.#approved.has(h)))
 
-    const result = await runTurn(
-      {
-        brain: this.#brain,
-        bridges: this.#bridges,
-        skills: this.#skills,
-        level: opts.level ?? this.#level,
-        ...(this.#classify !== undefined ? { classify: this.#classify } : {}),
-        ...(approvedForTurn.size > 0 ? { isApproved: (h: string) => approvedForTurn.has(h) } : {}),
-      },
-      { message, ...(opts.url !== undefined ? { url: opts.url } : {}) },
-    )
+    // Learn-by-watching (ADR 0046): start a recorder for this turn (when on). It captures the internal API calls off
+    // CDP, while the acting page/vault bridges report the UI steps + login fields through the LearnController sink.
+    const recorder = this.#learn ? await this.#learn.begin(message, opts.url) : undefined
+
+    let result: TurnResult
+    try {
+      result = await runTurn(
+        {
+          brain: this.#brain,
+          bridges: this.#bridges,
+          skills: this.#skills,
+          level: opts.level ?? this.#level,
+          ...(this.#classify !== undefined ? { classify: this.#classify } : {}),
+          ...(approvedForTurn.size > 0 ? { isApproved: (h: string) => approvedForTurn.has(h) } : {}),
+        },
+        { message, ...(opts.url !== undefined ? { url: opts.url } : {}) },
+      )
+    } catch (err) {
+      // Stop the recorder on failure too, so it never leaks a subscription; a partial turn is not drafted.
+      this.#learn?.end(recorder)
+      throw err
+    }
 
     // Single-use across the session: an approved action that actually ran this turn is spent.
     for (const hash of result.consumedApprovals) this.#approved.delete(hash)
@@ -238,6 +283,19 @@ export class Agentd {
       const card = this.#registerApproval(outcome)
       approvalsNeeded.push(card)
       emit({ type: 'approvalNeeded', card })
+    }
+
+    // Fold the turn's recording into a review-pending local draft and tell the client a draft appeared.
+    const learned = this.#learn?.end(recorder)
+    if (learned) {
+      emit({
+        type: 'draft',
+        id: learned.draft.id,
+        host: learned.draft.host,
+        needsReview: true,
+        merged: learned.merged,
+        coverage: this.#learn?.store.coverage() ?? { covered: 0, total: 0, clickFreeRatio: 0 },
+      })
     }
 
     return {
