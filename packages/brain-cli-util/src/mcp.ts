@@ -59,13 +59,18 @@ function mcpConfigJson(binding: McpBinding): string {
 
 /**
  * Claude Code flags to attach the MCP server (verified against Claude Code 2.x `claude --help`): load our server from
- * inline JSON, ignore any other MCP config, and allow exactly the few Dool2 tools so no per-call prompt appears.
+ * inline JSON, ignore any other MCP config, turn OFF every built-in tool (`--tools ""`) so Dool2 acts only through its
+ * own gated hands — never Claude Code's shell/file/web tools (AGENTS.md: the agent's own shell, file and web features
+ * are off) — and allow exactly the few Dool2 MCP tools so no per-call prompt appears. Without `--tools ""` the model
+ * keeps Claude Code's native Bash/Read/Edit/WebFetch and answers as a coding agent, bypassing the Dool2 gate.
  */
 export function claudeMcpArgs(binding: McpBinding): string[] {
   return [
     '--mcp-config',
     mcpConfigJson(binding),
     '--strict-mcp-config',
+    '--tools',
+    '',
     '--allowedTools',
     ...mcpAllowedToolNames(),
   ]
