@@ -437,6 +437,72 @@ export function toolPlace(name: string, input?: unknown, here?: string): string 
   return undefined
 }
 
+/**
+ * Working-indicator stems for the turn phases that are not a tool call, as word stems the caller follows with " 중"
+ * (toolAct's shape): Dool2 reasoning, waiting for a phone approval, and an action a hard cap refused. The daemon shows
+ * these to the shipped phone app so a turn is not silent between the tool steps (legacy-phone.ts).
+ */
+const WORK_STATUS: Record<'thinking' | 'awaitingApproval' | 'blocked', Record<Lang, string>> = {
+  thinking: { ko: '생각하는', en: 'Thinking' },
+  awaitingApproval: { ko: '승인 기다리는', en: 'Waiting for approval' },
+  blocked: { ko: '막혀서 못 한 일 알리는', en: 'Reporting what it could not do' },
+}
+
+/** The working-indicator stem for a non-tool turn phase (thinking / waiting on approval / blocked by a hard cap). */
+export function workStatus(phase: keyof typeof WORK_STATUS, lang: Lang = 'ko'): string {
+  return WORK_STATUS[phase][lang]
+}
+
+/** The page/pc/vault/fs verbs the `code` hand (ADR 0045/0046) runs, in the order a step is named by (headline first):
+ *  navigation and acting verbs read better than a bare read, so a snippet that both navigates and reads shows the
+ *  navigation. Each stem follows toolLabel's "<stem> 중" convention and reuses the same wording as the v1 browser tools.
+ *  `urlCall`: the method whose first string argument is a URL, so the masked host can go in the step's detail. */
+const CODE_HAND_VERBS: { re: RegExp; label: Record<Lang, string>; urlCall?: string }[] = [
+  { re: /\bpage\.goto\s*\(/, label: { ko: '웹페이지 여는', en: 'Opening a web page' }, urlCall: 'page.goto' },
+  { re: /\bpage\.click\s*\(/, label: { ko: '버튼 누르는', en: 'Clicking' } },
+  { re: /\bpage\.(?:type|fill)\s*\(/, label: { ko: '입력하는', en: 'Typing' } },
+  { re: /\bpage\.press\s*\(/, label: { ko: '키 누르는', en: 'Pressing a key' } },
+  { re: /\bpage\.fetch\s*\(/, label: { ko: '정보 가져오는', en: 'Fetching data' }, urlCall: 'page.fetch' },
+  { re: /\bpage\.snapshot\s*\(/, label: { ko: '화면 읽는', en: 'Reading the screen' } },
+  { re: /\bpc\./, label: { ko: 'PC 화면 다루는', en: 'Working the PC screen' } },
+  { re: /\bvault\.fillPaymentPin\s*\(/, label: { ko: '결제 비밀번호 넣는', en: 'Entering the payment PIN' } },
+  {
+    re: /\bvault\.(?:fillLogin|fillTotp)\s*\(/,
+    label: { ko: '로그인 칸 채우는', en: 'Filling the sign-in fields' },
+  },
+  { re: /\bvault\.listItems\s*\(/, label: { ko: '금고 보는', en: 'Checking the vault' } },
+  { re: /\bfs\./, label: { ko: '파일 다루는', en: 'Working with files' } },
+]
+
+/** The host of a URL (never the path or query, which can carry tokens/secrets), or undefined. */
+function hostOf(url: string): string | undefined {
+  try {
+    return new URL(url).host || undefined
+  } catch {
+    return undefined
+  }
+}
+
+/** The first string-literal argument of a `receiver.method(` call in a snippet (single, double, or back quotes). */
+function firstStringArg(code: string, call: string): string | undefined {
+  const re = new RegExp(`${call.replace(/\./g, '\\.')}\\s*\\(\\s*(['"\`])((?:\\\\.|(?!\\1).)*)\\1`)
+  return re.exec(code)?.[2]
+}
+
+/**
+ * Turn what the `code` hand is about to run into one working-indicator stem (the caller adds " 중") plus, for a
+ * navigation or a fetch, the masked host (never a path/query). Never returns the code, a node ref, or a typed value,
+ * so no secret crosses to the phone. An unknown snippet falls back to the neutral stem, so a new hand is never blank.
+ */
+export function codeHandLabel(code: string, lang: Lang = 'ko'): { label: string; host?: string } {
+  for (const v of CODE_HAND_VERBS) {
+    if (!v.re.test(code)) continue
+    const host = v.urlCall ? hostOf(firstStringArg(code, v.urlCall) ?? '') : undefined
+    return { label: v.label[lang], ...(host ? { host } : {}) }
+  }
+  return { label: lang === 'en' ? 'Working' : '일하는' }
+}
+
 /** Mark for a photo sent from the phone: "[사진: file name]" at the end of the message (a protocol marker, kept in Korean) */
 export const PHOTO_MARK = '[사진: '
 /** Strip the photo mark from the message: { text, photo } */

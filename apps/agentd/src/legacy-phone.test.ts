@@ -477,6 +477,94 @@ describe('v1-compat phone chat', () => {
   })
 })
 
+/** Every `agent`.`tool` work-line step the phone received (name/title/detail), in order. */
+function toolSteps(
+  msgs: PcToPhone[],
+): { name: string; title?: string; detail?: { k: string; v: string }[] }[] {
+  return streams(msgs).flatMap((e) =>
+    e.type === 'agent' && e.event.type === 'tool'
+      ? [
+          {
+            name: e.event.name,
+            ...(e.event.title ? { title: e.event.title } : {}),
+            ...(e.event.detail ? { detail: e.event.detail } : {}),
+          },
+        ]
+      : [],
+  )
+}
+
+/**
+ * A brain that shows live work: it reasons (thinking), drives the `code` hand to open a page (whose URL carries a
+ * secret token) and read it, then answers. Mirrors how the real brain narrates and acts across a turn.
+ */
+function progressBrain(answer: string): Brain {
+  return {
+    id: 'pi',
+    label: 'progress',
+    async ready() {
+      return true
+    },
+    async *run(input) {
+      if (input.messages.some((m) => m.role === 'tool')) {
+        yield { kind: 'text', text: answer }
+        yield { kind: 'turn_end', stop: 'done' }
+        return
+      }
+      yield { kind: 'thinking', text: '어디서 예약할지 생각 중' }
+      yield {
+        kind: 'tool_call',
+        call: {
+          id: 'c1',
+          name: 'code',
+          args: {
+            code: 'await page.goto("https://www.catchtable.co.kr/book?token=SECRET123"); return JSON.stringify(await page.snapshot())',
+          },
+        },
+      }
+      yield { kind: 'turn_end', stop: 'tool' }
+    },
+  }
+}
+
+describe('v1-compat phone live progress', () => {
+  it('surfaces thinking + a code step + the answer, and a busy→idle transition', async () => {
+    const h = await setup(progressBrain('캐치테이블에서 예약했어요.'))
+    await h.phone.pair()
+    await h.phone.ask('강남 파스타집 예약해줘')
+    const msgs = await h.phone.received()
+    const steps = toolSteps(msgs)
+
+    // (a) a visible "thinking/working" status line (the app renders it as "생각하는 중").
+    expect(steps.some((s) => s.title === '생각하는')).toBe(true)
+
+    // (b) a human Korean step for the `code` hand: opening a page, with only the masked host in the detail.
+    const open = steps.find((s) => s.title === '웹페이지 여는')
+    expect(open).toBeDefined()
+    expect(open?.detail).toEqual([{ k: 'url', v: 'www.catchtable.co.kr' }])
+
+    // (c) the final answer still streams through as text and is saved.
+    expect(streamedText(msgs)).toBe('캐치테이블에서 예약했어요.')
+    const saved = streams(msgs).find((e) => e.type === 'saved' && e.message.role === 'assistant')
+    expect(saved && saved.type === 'saved' ? saved.message.text : '').toBe('캐치테이블에서 예약했어요.')
+
+    // (d) busy while it works, idle once it is done (the app starts and stops its spinner).
+    const status = msgs.filter(
+      (m): m is Extract<PcToPhone, { kind: 'conversation-status' }> => m.kind === 'conversation-status',
+    )
+    expect(status[0]?.busy).toBe(true)
+    expect(status.at(-1)?.busy).toBe(false)
+
+    // No raw code, tool JSON, or secret-bearing URL ever reaches the wire — only the Korean step and masked host.
+    const wire = JSON.stringify(streams(msgs))
+    expect(wire).not.toContain('SECRET123')
+    expect(wire).not.toContain('page.goto')
+    expect(wire).not.toContain('page.snapshot')
+    // Every work-line step is sent as the `code` hand with no args (the app labels it from our title, not the input).
+    for (const s of steps) expect(s.name).toBe('code')
+  })
+})
+
 describe('the v2 Ed25519-over-hash approval path is untouched', () => {
   it('verifyApproval still accepts a hash-signature and rejects a tampered one', () => {
     const { privateKeyPem, publicKeyPem } = generateDeviceKeyPair()

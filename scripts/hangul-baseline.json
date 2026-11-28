@@ -9,7 +9,7 @@
   "packages/protocol/src/ideas.ts": 515,
   "packages/protocol/src/index.ts": 16,
   "packages/protocol/src/pay-methods.ts": 46,
-  "packages/protocol/src/rich.ts": 125,
+  "packages/protocol/src/rich.ts": 143,
   "packages/protocol/src/schedule.ts": 15,
   "packages/protocol/src/work-steps.ts": 21,
   "packages/ui/preview.html": 204,
