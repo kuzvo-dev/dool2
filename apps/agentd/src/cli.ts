@@ -179,7 +179,9 @@ async function cmdServe(args: Args): Promise<number> {
   const http = await startHttpServer({ agentd, token, port, log: (l) => console.log(`[agentd] ${l}`) })
   console.log(`agentd serving at ${http.url}  brain=${brainLabel}`)
   console.log(`token: ${token}`)
-  console.log('POST /message  POST /approve  GET /pending  GET /drafts  GET /health')
+  console.log(
+    'POST /message  POST /approve  POST /level  POST /spending-cap  POST /revoke-full-auto  GET /spending  GET /pending  GET /drafts  GET /health',
+  )
 
   const stop = async (): Promise<void> => {
     await http.close()

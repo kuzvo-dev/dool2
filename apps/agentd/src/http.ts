@@ -88,6 +88,49 @@ async function handle(
     return void sendJson(res, 200, { drafts: opts.agentd.drafts(), coverage: opts.agentd.coverage() })
   }
 
+  // Autonomy level change (ADR 0047). Raising to full-auto requires a phone-signed consent in the body; ask/auto do
+  // not. On refusal the daemon stays at the previous level and returns a machine reason.
+  if (req.method === 'POST' && path === '/level') {
+    const body = await readJson(req)
+    if (body.level !== 'ask' && body.level !== 'auto' && body.level !== 'full') {
+      return void sendJson(res, 400, { error: 'level must be ask, auto or full' })
+    }
+    const consent =
+      body.consent && typeof body.consent === 'object'
+        ? (body.consent as Parameters<Agentd['setLevel']>[1])
+        : undefined
+    const result = opts.agentd.setLevel(body.level, consent)
+    log(`setLevel ${body.level} -> ${result.ok ? 'ok' : result.reason}`)
+    return void sendJson(res, result.ok ? 200 : 400, result)
+  }
+
+  // Turn full-auto off (a revoke or a device lock).
+  if (req.method === 'POST' && path === '/revoke-full-auto') {
+    opts.agentd.revokeFullAuto()
+    return void sendJson(res, 200, { ok: true, level: opts.agentd.level })
+  }
+
+  // The current spend state: won spent this period, the user cap, and the effective cap = min(user, org).
+  if (req.method === 'GET' && path === '/spending') {
+    return void sendJson(res, 200, opts.agentd.spending())
+  }
+
+  // Spending cap: onboarding sets it unsigned ({ cap }); a later change requires a phone-signed update ({ update }).
+  if (req.method === 'POST' && path === '/spending-cap') {
+    const body = await readJson(req)
+    if (body.update && typeof body.update === 'object') {
+      const result = opts.agentd.updateSpendingCap(body.update as Parameters<Agentd['updateSpendingCap']>[0])
+      log(`updateSpendingCap -> ${result.ok ? 'ok' : result.reason}`)
+      return void sendJson(res, result.ok ? 200 : 400, result)
+    }
+    const cap = body.cap as { amountKrw?: unknown; period?: unknown } | undefined
+    if (!cap || typeof cap.amountKrw !== 'number' || (cap.period !== 'day' && cap.period !== 'month')) {
+      return void sendJson(res, 400, { error: 'cap { amountKrw: number, period: day|month } is required' })
+    }
+    opts.agentd.setSpendingCap({ amountKrw: cap.amountKrw, period: cap.period })
+    return void sendJson(res, 200, { ok: true, ...opts.agentd.spending() })
+  }
+
   if (req.method === 'POST' && path === '/approve') {
     const body = await readJson(req)
     const hash = typeof body.hash === 'string' ? body.hash : undefined

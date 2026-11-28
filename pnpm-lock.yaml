@@ -56,6 +56,9 @@ importers:
       '@dool2/engine':
         specifier: workspace:*
         version: link:../../packages/engine
+      '@dool2/org':
+        specifier: workspace:*
+        version: link:../../packages/org
       '@dool2/page-bridge':
         specifier: workspace:*
         version: link:../../packages/page-bridge

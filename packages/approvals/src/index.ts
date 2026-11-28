@@ -5,6 +5,7 @@
 // (match.ts), and the approval expires and can be used only once (pending.ts). Safety sits in code, not the prompt
 // (ADR 0043, 0047); secrets never reach this package or the AI.
 export * from './action.js'
+export * from './consent.js'
 export * from './envelope.js'
 export * from './match.js'
 export * from './pending.js'
