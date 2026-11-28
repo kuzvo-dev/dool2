@@ -5,11 +5,30 @@
 // This is the only place that owns the process; the parsers are pure (lines in, TurnEvents out), so they are trivial
 // to test with a fake child. No forged identity lives here: the binary and its args are passed straight through.
 
+import { mkdirSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import type { Brain, BrainId } from '@dool2/brains'
 import type { RunHandle, ToolHandler, TurnEvent, TurnInput } from '@dool2/core'
 import { defaultMcpConnector, type McpBinding, type McpConnector } from './mcp.js'
 import { defaultSpawn, which as defaultWhich } from './spawn.js'
 import type { CliBrainBaseOptions, CliStreamParser, MakeParserOptions, SpawnCli } from './types.js'
+
+/**
+ * A stable, empty working directory for the CLI child. Never the daemon's own cwd: a coding CLI (Claude Code) reads a
+ * CLAUDE.md, git state, and file listing from its cwd and folds that into its context, which would leak whatever
+ * project the daemon runs in into Dool2's answers. An empty temp folder has none of that. Best-effort mkdir.
+ */
+let neutralCwdPath: string | undefined
+function neutralCwd(): string {
+  if (!neutralCwdPath) {
+    neutralCwdPath = join(tmpdir(), 'dool2-brain-cwd')
+    try {
+      mkdirSync(neutralCwdPath, { recursive: true })
+    } catch {}
+  }
+  return neutralCwdPath
+}
 
 /** Run one turn against a CLI: spawn, feed stdin, stream stdout lines through `parser`, end with one turn_end. */
 export async function* runCli(args: {
@@ -20,11 +39,13 @@ export async function* runCli(args: {
   stdin?: string
   env?: NodeJS.ProcessEnv
   signal?: AbortSignal
+  cwd?: string
 }): AsyncIterable<TurnEvent> {
   const proc = args.spawn(args.command, args.argv, {
     ...(args.stdin !== undefined ? { stdin: args.stdin } : {}),
     ...(args.env ? { env: args.env } : {}),
     ...(args.signal ? { signal: args.signal } : {}),
+    ...(args.cwd ? { cwd: args.cwd } : {}),
   })
   let ended = false
   try {
@@ -155,6 +176,7 @@ export function createCliBrain(spec: CliBrainSpec, opts: CliBrainBaseOptions = {
           parser,
           ...(spec.buildStdin(input) !== undefined ? { stdin: spec.buildStdin(input) } : {}),
           signal: controller.signal,
+          cwd: opts.cwd ?? neutralCwd(),
         })
       } finally {
         controller.abort()
