@@ -294,6 +294,19 @@ importers:
 
   packages/packs: {}
 
+  packages/page-bridge:
+    dependencies:
+      '@dool2/core':
+        specifier: workspace:*
+        version: link:../core
+      '@dool2/sandbox':
+        specifier: workspace:*
+        version: link:../sandbox
+    devDependencies:
+      '@dool2/browser':
+        specifier: workspace:*
+        version: link:../browser
+
   packages/protocol:
     dependencies:
       '@dool2/i18n':
