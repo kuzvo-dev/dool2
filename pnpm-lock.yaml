@@ -81,6 +81,39 @@ importers:
         specifier: workspace:*
         version: link:../core
 
+  packages/brain-claude:
+    dependencies:
+      '@dool2/brain-cli-util':
+        specifier: workspace:*
+        version: link:../brain-cli-util
+      '@dool2/brains':
+        specifier: workspace:*
+        version: link:../brains
+      '@dool2/core':
+        specifier: workspace:*
+        version: link:../core
+
+  packages/brain-cli-util:
+    dependencies:
+      '@dool2/brains':
+        specifier: workspace:*
+        version: link:../brains
+      '@dool2/core':
+        specifier: workspace:*
+        version: link:../core
+
+  packages/brain-codex:
+    dependencies:
+      '@dool2/brain-cli-util':
+        specifier: workspace:*
+        version: link:../brain-cli-util
+      '@dool2/brains':
+        specifier: workspace:*
+        version: link:../brains
+      '@dool2/core':
+        specifier: workspace:*
+        version: link:../core
+
   packages/brain-pi:
     dependencies:
       '@dool2/brains':
