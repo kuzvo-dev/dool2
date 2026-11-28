@@ -17,27 +17,37 @@
 import {
   type ActionEnvelope,
   ApprovalStore,
+  type CapUpdateEnvelope,
+  type ConsentEnvelope,
   type ConsumeFailure,
   type ExecutedAction,
+  envelopeForAction,
   envelopeHash,
   matchesApproved,
   type PendingApproval,
   pendingApproval,
+  verifyCapUpdate,
+  verifyConsent,
 } from '@dool2/approvals'
 import type { Brain } from '@dool2/brains'
-import type { AutonomyLevel } from '@dool2/core'
+import type { ActionTier, AutonomyLevel, SpendingCap } from '@dool2/core'
 import {
   type ActionClassifier,
   type ApprovalOutcome,
+  defaultClassify,
   type EngineSkill,
   type GateDecisionLog,
+  type RefinedAction,
   runTurn,
   type TranscriptItem,
   type TurnResult,
 } from '@dool2/engine'
+import { clampAutonomy, type OrgPolicy } from '@dool2/org'
 import type { HostBridges } from '@dool2/sandbox'
 import type { CoverageStats } from '@dool2/skill-learn'
 import type { LearnController, LocalDraft } from './learn.js'
+import { MerchantMemory, normalizeMerchant } from './merchants.js'
+import { effectiveCapKrw, SpendLedger } from './spending.js'
 
 /** One thing that happened during a turn, as streamed to a client (HTTP) or printed (CLI). */
 export type AgentdEvent =
@@ -139,7 +149,70 @@ export interface AgentdOptions {
    * into a review-pending local site-skill draft. Omitted (or a controller with recording off) -> no drafting.
    */
   learn?: LearnController
+  /**
+   * The onboarding-set spending cap (ADR 0047). A cap must exist before full-auto can be enabled; without one,
+   * setLevel('full') refuses. Change it later with setSpendingCap (onboarding) or updateSpendingCap (phone-signed).
+   */
+  spendingCap?: SpendingCap
+  /**
+   * The org policy (@dool2/org), MDM-delivered. It clamps the autonomy level (an org capped at `auto` makes full-auto
+   * unreachable even with consent) and contributes a spending ceiling composed as min(userCap, orgCap).
+   */
+  orgPolicy?: OrgPolicy
+  /** Preloaded merchant memory (merchants paid before). Defaults to empty; the daemon grows it as pays run. */
+  merchants?: MerchantMemory
+  /**
+   * The small tool-less reviewer (ADR 0030/0047). At full-auto, an "unrelated" verdict on an auto-run action becomes
+   * a notification (recorded + surfaced), not a block. Omitted -> nothing is flagged. ask/auto keep card/block.
+   */
+  reviewer?: Reviewer
+  /** Clock seam (unix ms), for the spend-period window and consent expiry. Defaults to Date.now. */
+  now?: () => number
+  /** Max age in ms a signed full-auto consent stays valid when verified. Omit for no expiry. */
+  consentMaxAgeMs?: number
 }
+
+/** The phone-signed one-time consent that unlocks full-auto: the exact envelope the phone signed plus its signature. */
+export interface FullAutoConsent {
+  envelope: ConsentEnvelope
+  signature: string
+}
+
+/** A phone-signed change to the spending cap: the signed cap-update envelope plus its signature. */
+export interface SignedCapUpdate {
+  envelope: CapUpdateEnvelope
+  signature: string
+}
+
+/** The outcome of setLevel(): ok (and now at `level`), or a machine reason the change was refused (level unchanged). */
+export type SetLevelResult =
+  | { ok: true; level: AutonomyLevel }
+  | {
+      ok: false
+      reason: 'org-forbids-full' | 'consent-required' | 'consent-invalid' | 'no-device-key' | 'no-cap'
+      level: AutonomyLevel
+    }
+
+/** The outcome of updateSpendingCap(): ok (and now at `cap`), or a machine reason the phone-signed change was refused. */
+export type CapUpdateResult =
+  | { ok: true; cap: SpendingCap }
+  | { ok: false; reason: 'no-device-key' | 'bad-signature' }
+
+/** What the tool-less reviewer is shown: the user's request and the normalized facts of one acting call. */
+export interface ReviewInput {
+  message: string
+  label: string
+  tier: ActionTier
+}
+
+/** The reviewer's verdict: whether the action matches what the user asked, and (when not) a short reason. */
+export interface ReviewVerdict {
+  related: boolean
+  reason?: string
+}
+
+/** The small tool-less reviewer. Pure and quick; it sees only the request and the action's public facts. */
+export type Reviewer = (input: ReviewInput) => ReviewVerdict
 
 /** The outcome of approve(): ok (and now consumed + recorded), or a machine reason it was rejected. */
 export type ApproveResult =
@@ -159,6 +232,15 @@ export class Agentd {
   #devicePublicKeyPem: string | undefined
   readonly #approvalTtlMs: number | undefined
   readonly #learn: LearnController | undefined
+  readonly #orgPolicy: OrgPolicy
+  readonly #merchants: MerchantMemory
+  readonly #reviewer: Reviewer | undefined
+  readonly #now: () => number
+  readonly #consentMaxAgeMs: number | undefined
+  /** The spend ledger, present exactly when a spending cap is set. No ledger -> full-auto is unreachable. */
+  #ledger: SpendLedger | undefined
+  /** The stored, verified full-auto consent. Present only while full-auto is active via a phone signature. */
+  #consent: FullAutoConsent | undefined
 
   readonly #store: ApprovalStore
   /** hash -> the pending approval awaiting a phone signature. Cleared on approve or when a new turn supersedes it. */
@@ -178,6 +260,14 @@ export class Agentd {
     this.#devicePublicKeyPem = opts.devicePublicKeyPem
     this.#approvalTtlMs = opts.approvalTtlMs
     this.#learn = opts.learn
+    this.#orgPolicy = opts.orgPolicy ?? {}
+    this.#merchants = opts.merchants ?? new MerchantMemory()
+    this.#reviewer = opts.reviewer
+    this.#now = opts.now ?? Date.now
+    this.#consentMaxAgeMs = opts.consentMaxAgeMs
+    this.#ledger = opts.spendingCap ? new SpendLedger(opts.spendingCap, this.#now()) : undefined
+    // Clamp the initial level to the org maximum, so a `full` start under an `auto` org never bypasses the clamp.
+    this.#level = this.#clampToOrg(opts.level ?? 'ask')
     // ApprovalStore's ttl defaults when the argument is undefined, so passing it straight through is fine.
     this.#store = new ApprovalStore(opts.approvalTtlMs)
   }
@@ -186,8 +276,88 @@ export class Agentd {
     return this.#level
   }
 
-  setLevel(level: AutonomyLevel): void {
-    this.#level = level
+  /** Whether full-auto is currently active. */
+  get fullAutoActive(): boolean {
+    return this.#level === 'full'
+  }
+
+  /** Clamp a requested level down to the org's maximum (ask < auto < full); no org cap means no clamp. */
+  #clampToOrg(level: AutonomyLevel): AutonomyLevel {
+    return this.#orgPolicy.maxAutonomyLevel ? clampAutonomy(level, this.#orgPolicy.maxAutonomyLevel) : level
+  }
+
+  /**
+   * Change the autonomy level, enforced in code (ADR 0047). ask/auto need no consent and are clamped down to any org
+   * maximum. Raising to `full` (full-auto) is the gated step: it REQUIRES a spending cap, a registered device key,
+   * and a valid phone-signed one-time consent, and it is refused outright when the org caps autonomy below full.
+   * On any refusal the level is left unchanged.
+   */
+  setLevel(level: AutonomyLevel, consent?: FullAutoConsent): SetLevelResult {
+    if (level !== 'full') {
+      // Leaving full-auto drops the stored consent; the stored payment PIN (vault) is cleared by the level dropping.
+      this.#level = this.#clampToOrg(level)
+      this.#consent = undefined
+      return { ok: true, level: this.#level }
+    }
+    const refuse = (reason: Extract<SetLevelResult, { ok: false }>['reason']): SetLevelResult => ({
+      ok: false,
+      reason,
+      level: this.#level,
+    })
+    if (this.#clampToOrg('full') !== 'full') return refuse('org-forbids-full')
+    if (!this.#ledger) return refuse('no-cap')
+    if (!consent) return refuse('consent-required')
+    if (!this.#devicePublicKeyPem) return refuse('no-device-key')
+    const verified = verifyConsent(
+      consent.envelope,
+      consent.signature,
+      this.#devicePublicKeyPem,
+      this.#consentMaxAgeMs !== undefined ? { now: this.#now(), maxAgeMs: this.#consentMaxAgeMs } : {},
+    )
+    if (!verified.ok) return refuse('consent-invalid')
+    this.#level = 'full'
+    this.#consent = consent
+    return { ok: true, level: 'full' }
+  }
+
+  /** Turn full-auto off (a revoke or a device lock): the level drops to `ask` and the stored consent is cleared. */
+  revokeFullAuto(): void {
+    this.#level = 'ask'
+    this.#consent = undefined
+  }
+
+  /** Alias for revokeFullAuto(): a device lock resets full-auto the same way. */
+  lock(): void {
+    this.revokeFullAuto()
+  }
+
+  /** Set the spending cap at onboarding (local, unsigned). Creates the ledger if there is none yet. */
+  setSpendingCap(cap: SpendingCap): void {
+    if (this.#ledger) this.#ledger.setCap(cap, this.#now())
+    else this.#ledger = new SpendLedger(cap, this.#now())
+  }
+
+  /** Change the spending cap with a phone-signed update (ADR 0047). Refused without a device key or a valid signature. */
+  updateSpendingCap(signed: SignedCapUpdate): CapUpdateResult {
+    if (!this.#devicePublicKeyPem) return { ok: false, reason: 'no-device-key' }
+    if (!verifyCapUpdate(signed.envelope, signed.signature, this.#devicePublicKeyPem)) {
+      return { ok: false, reason: 'bad-signature' }
+    }
+    const cap: SpendingCap = { amountKrw: signed.envelope.amountKrw, period: signed.envelope.period }
+    this.setSpendingCap(cap)
+    return { ok: true, cap }
+  }
+
+  /** The current spend state: won spent this period, the user cap, and the effective cap = min(user, org). */
+  spending(): { spentThisPeriod: number; cap?: SpendingCap; effectiveCapKrw?: number } {
+    const spent = this.#ledger?.spent(this.#now()) ?? 0
+    const eff = effectiveCapKrw(this.#ledger?.cap.amountKrw, this.#orgPolicy.spendingCapKrw)
+    const out: { spentThisPeriod: number; cap?: SpendingCap; effectiveCapKrw?: number } = {
+      spentThisPeriod: spent,
+    }
+    if (this.#ledger) out.cap = this.#ledger.cap
+    if (eff !== undefined) out.effectiveCapKrw = eff
+    return out
   }
 
   /** Register (or replace) the phone's device public key — done at pairing. Approvals cannot be verified without it. */
@@ -221,11 +391,19 @@ export class Agentd {
    */
   async send(message: string, opts: SendOptions = {}): Promise<SendResult> {
     const emit = opts.onEvent ?? (() => {})
+    const level = opts.level ?? this.#level
 
     // The resume set for this turn: only hashes the daemon has actually verified + recorded as approved count, so a
     // client cannot pre-approve an action by passing an arbitrary hash. The engine computes the same hash for the
     // action (single source: @dool2/approvals envelopeForAction), and lets exactly those run.
     const approvedForTurn = new Set((opts.approved ?? []).filter((h) => this.#approved.has(h)))
+
+    // The classifier that refines each acting call for the gate. A caller/constructor override wins; otherwise the
+    // daemon's own classifier fills `merchantKnown` (from merchant memory) and `underCap` (from the spend ledger and
+    // the effective cap) that only the daemon knows. It also stashes, per pay action, the merchant + amount keyed by
+    // the exact hash the engine computes, so a pay that actually runs can be recorded against the cap afterwards.
+    const payStash = new Map<string, { merchant: string; amountKrw?: number }>()
+    const classify = this.#classify ?? this.#daemonClassify(opts.url, payStash)
 
     // Learn-by-watching (ADR 0046): start a recorder for this turn (when on). It captures the internal API calls off
     // CDP, while the acting page/vault bridges report the UI steps + login fields through the LearnController sink.
@@ -238,8 +416,8 @@ export class Agentd {
           brain: this.#brain,
           bridges: this.#bridges,
           skills: this.#skills,
-          level: opts.level ?? this.#level,
-          ...(this.#classify !== undefined ? { classify: this.#classify } : {}),
+          level,
+          classify,
           ...(approvedForTurn.size > 0 ? { isApproved: (h: string) => approvedForTurn.has(h) } : {}),
         },
         { message, ...(opts.url !== undefined ? { url: opts.url } : {}) },
@@ -270,6 +448,44 @@ export class Agentd {
       })
     }
     for (const text of result.notices) emit({ type: 'notice', text })
+
+    // Record spend + grow merchant memory for pay actions that ACTUALLY ran this turn (ADR 0047): a `notify` pay at
+    // full-auto, or a `sign` pay that was resumed after a phone signature (decision run, reason approved). Spend
+    // counts against the cap only in full-auto; a merchant is remembered whenever a pay to it ran, at any level, so a
+    // merchant paid once (even via a card) is known next time.
+    const notices = [...result.notices]
+    for (const g of result.gateDecisions) {
+      if (g.tier !== 'pay' || !g.allowed) continue
+      const ran = g.decision === 'notify' || (g.decision === 'run' && g.reason === 'approved')
+      if (!ran) continue
+      const env = envelopeForAction({
+        tier: 'pay',
+        label: g.label,
+        ...(g.amountKrw !== undefined ? { amountKrw: g.amountKrw } : {}),
+      })
+      const stashed = payStash.get(envelopeHash(env))
+      if (this.#ledger && level === 'full' && g.amountKrw !== undefined)
+        this.#ledger.record(g.amountKrw, this.#now())
+      if (stashed?.merchant) this.#merchants.remember(stashed.merchant)
+    }
+
+    // Reviewer-as-notification at full-auto (ADR 0047): the small reviewer judges each auto-run contact/delete/pay; an
+    // "unrelated" verdict becomes a recorded notification rather than a block (ask/auto keep the card/block behavior,
+    // which the gate already produces as a `review`/`sign` outcome below). The action already ran — we only notify.
+    if (level === 'full' && this.#reviewer) {
+      for (const g of result.gateDecisions) {
+        if (!g.allowed || g.tier === 'read' || g.tier === 'act') continue
+        const ran = g.decision === 'notify' || (g.decision === 'run' && g.reason === 'approved')
+        if (!ran) continue
+        const verdict = this.#reviewer({ message, label: g.label, tier: g.tier })
+        if (verdict.related) continue
+        const text = `Reviewer flagged "${g.label}" as possibly unrelated to your request${
+          verdict.reason ? ` (${verdict.reason})` : ''
+        }; it ran under full-auto and you are being notified.`
+        notices.push(text)
+        emit({ type: 'notice', text })
+      }
+    }
 
     // Turn each gated-but-not-run action into either a signable approval card or a blocked notice.
     const approvalsNeeded: ApprovalCard[] = []
@@ -302,10 +518,47 @@ export class Agentd {
       system: result.system,
       transcript: result.transcript,
       gateDecisions: result.gateDecisions,
-      notices: result.notices,
+      notices,
       approvalsNeeded,
       blocked,
       stop: result.stop,
+    }
+  }
+
+  /**
+   * The daemon's own action classifier: it starts from the engine's defaultClassify (tier + amount from the page) and,
+   * for a pay, adds the two facts only the daemon holds — `merchantKnown` from merchant memory and `underCap` from the
+   * spend ledger against the effective cap (min of the user cap and any org ceiling). It also stashes each pay's
+   * merchant + amount keyed by the exact hash the engine computes, so a pay that runs can be recorded afterwards.
+   */
+  #daemonClassify(
+    turnUrl: string | undefined,
+    payStash: Map<string, { merchant: string; amountKrw?: number }>,
+  ): ActionClassifier {
+    const ledger = this.#ledger
+    const merchants = this.#merchants
+    const orgCap = this.#orgPolicy.spendingCapKrw
+    const now = this.#now
+    return (action, ctx) => {
+      const base = defaultClassify(action, ctx)
+      if (base.tier !== 'pay') return base
+      const merchant = normalizeMerchant(ctx.snapshot?.url ?? turnUrl ?? '')
+      const refined: RefinedAction = { ...base }
+      if (merchant) refined.merchantKnown = merchants.has(merchant)
+      if (ledger && base.amountKrw !== undefined) {
+        const eff = effectiveCapKrw(ledger.cap.amountKrw, orgCap)
+        if (eff !== undefined) refined.underCap = !ledger.wouldExceed(base.amountKrw, eff, now())
+      }
+      const env = envelopeForAction({
+        tier: 'pay',
+        label: action.label,
+        ...(base.amountKrw !== undefined ? { amountKrw: base.amountKrw } : {}),
+      })
+      payStash.set(envelopeHash(env), {
+        merchant,
+        ...(base.amountKrw !== undefined ? { amountKrw: base.amountKrw } : {}),
+      })
+      return refined
     }
   }
 

@@ -8,9 +8,16 @@ export {
   type AgentdOptions,
   type ApprovalCard,
   type ApproveResult,
+  type CapUpdateResult,
   envelopeHash,
+  type FullAutoConsent,
+  type Reviewer,
+  type ReviewInput,
+  type ReviewVerdict,
   type SendOptions,
   type SendResult,
+  type SetLevelResult,
+  type SignedCapUpdate,
 } from './agentd.js'
 export {
   type BrainChoice,
@@ -34,6 +41,14 @@ export {
   type RecorderSink,
   recordingHasContent,
 } from './learn.js'
+export { MerchantMemory, normalizeMerchant } from './merchants.js'
+export {
+  type CapPeriod,
+  effectiveCapKrw,
+  periodStart,
+  type SpendingCap,
+  SpendLedger,
+} from './spending.js'
 export {
   DEFAULT_AGENT_WINDOW_MS,
   DEFAULT_UNLOCK_TTL_MS,

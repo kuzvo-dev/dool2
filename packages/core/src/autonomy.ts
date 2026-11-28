@@ -33,6 +33,19 @@ export interface ActionContext {
   underCap?: boolean
 }
 
+/** The window a full-auto spending cap is measured over (ADR 0047). */
+export type CapPeriod = 'day' | 'month'
+
+/**
+ * The full-auto spending cap (ADR 0047): a cap always exists in full-auto. The amount is set at onboarding and
+ * changed later with a phone-signed update; the daemon tracks spend within `period` and refuses a pay that would
+ * cross the effective cap (min of this and any org ceiling).
+ */
+export interface SpendingCap {
+  amountKrw: number
+  period: CapPeriod
+}
+
 export interface GateResult {
   decision: GateDecision
   /** Short machine reason, for the activity log */
