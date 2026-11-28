@@ -180,7 +180,7 @@ async function cmdServe(args: Args): Promise<number> {
   console.log(`agentd serving at ${http.url}  brain=${brainLabel}`)
   console.log(`token: ${token}`)
   console.log(
-    'POST /message  POST /approve  POST /level  POST /spending-cap  POST /revoke-full-auto  GET /spending  GET /pending  GET /drafts  GET /health',
+    'POST /pair  POST /message  POST /approve  POST /level  POST /spending-cap  POST /revoke-full-auto  GET /spending  GET /pending  GET /drafts  GET /health',
   )
 
   const stop = async (): Promise<void> => {

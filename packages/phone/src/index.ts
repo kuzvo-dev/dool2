@@ -16,6 +16,13 @@
 // recipient, site), never a password, card number or PIN. The private key never leaves the keystore seam.
 
 export { type ApprovalNeeded, buildCard, type CardView } from './approval-card.js'
+export {
+  DaemonHttpClient,
+  type DaemonHttpClientOptions,
+  type SendOverHttp,
+  type TurnGateDecision,
+  type TurnSummary,
+} from './http-client.js'
 export { InMemoryKeyStore, type KeyStore } from './keystore.js'
 export type { CardCopy, CardLang } from './locales/index.js'
 export { DEFAULT_CARD_LANG, locales } from './locales/index.js'
