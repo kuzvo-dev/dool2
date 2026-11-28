@@ -1,0 +1,30 @@
+{
+  "name": "@dool2/desktop",
+  "version": "0.0.0",
+  "private": true,
+  "license": "Apache-2.0",
+  "description": "Dool2 v2 desktop app: runs the daemon in-process, a chat with Dool2, and a live view of the invisible browser",
+  "type": "module",
+  "main": "dist/main.js",
+  "scripts": {
+    "build": "tsc -p tsconfig.json && node scripts/build-renderer.mjs",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.renderer.json --noEmit",
+    "test": "vitest run --passWithNoTests",
+    "dev": "electron .",
+    "smoke": "DOOL2_SMOKE=1 electron ."
+  },
+  "dependencies": {
+    "@dool2/agentd": "workspace:*",
+    "@dool2/brains": "workspace:*",
+    "@dool2/browser": "workspace:*",
+    "@dool2/core": "workspace:*",
+    "@dool2/engine": "workspace:*",
+    "@dool2/i18n": "workspace:*",
+    "@dool2/page-bridge": "workspace:*",
+    "@dool2/sandbox": "workspace:*"
+  },
+  "devDependencies": {
+    "electron": "^45.3.2",
+    "esbuild": "^0.28.2"
+  }
+}
