@@ -34,7 +34,8 @@ interface PendingCard {
 }
 
 interface Dool2Api {
-  config(): Promise<{ lang: Lang; level: AutonomyLevel; smoke: boolean }>
+  config(): Promise<{ lang: Lang; level: AutonomyLevel; smoke: boolean; view: string }>
+  pairing(): Promise<{ code: string; paired: boolean }>
   send(text: string): Promise<void>
   setLevel(level: AutonomyLevel): Promise<void>
   watchBrowser(on: boolean): Promise<void>
@@ -354,11 +355,18 @@ function meView(): HTMLElement {
   const level = el('section', 'me-sec')
   level.append(el('h3', undefined, t.levelLabel), el('p', 'sub', t.levelSub))
   level.append(el('div', 'level-opts', ...LEVELS.map((l) => levelOption(l, currentLevel))))
+
+  // Phone pairing (ADR 0047): the pairing code the phone enters, and the live connection status. From api.pairing().
+  const pair = el('section', 'me-sec')
+  pair.id = 'pair-sec'
+  pair.append(el('h3', undefined, t.pair.title), el('p', 'sub', t.pair.intro))
+  pair.append(el('div', 'pair-body'))
+
   const review = el('section', 'me-sec')
   review.id = 'review-sec'
   review.append(el('h3', undefined, t.review.title), el('p', 'sub', t.review.intro))
   review.append(el('div', 'drafts', el('div', 'draft-status', t.review.empty)))
-  view.append(level, review)
+  view.append(level, pair, review)
   return view
 }
 
@@ -367,7 +375,24 @@ function renderMe(level?: AutonomyLevel): void {
   const center = $('center')
   center.className = 'center-view'
   center.replaceChildren(meView())
+  void renderPairing()
   void drafts.setOpen(true).then(() => renderDrafts())
+}
+
+/** Fill the pairing card: the big pairing code, a status row (not connected / connected), and the privacy note. */
+async function renderPairing(): Promise<void> {
+  const host = document.querySelector('#pair-sec .pair-body')
+  if (!host) return
+  const info = await api.pairing().catch(() => ({ code: '— — —', paired: false }))
+  const card = el('div', 'pair-card')
+  const code = el('div', 'pair-code-row')
+  code.append(el('div', 'pair-code-label', t.pair.codeLabel), el('div', 'pair-code mono', info.code))
+  const status = el('div', `pair-status ${info.paired ? 'on' : ''}`.trim())
+  status.append(el('span', `dot ${info.paired ? 'work' : 'ask'}`))
+  status.append(el('span', undefined, info.paired ? t.pair.connected : t.pair.waiting))
+  const note = el('div', 'pair-note', icon('shield'), t.pair.hint)
+  card.append(code, status, note)
+  host.replaceChildren(card)
 }
 
 function renderDrafts(): void {
@@ -578,6 +603,8 @@ async function main(): Promise<void> {
   buildPanel()
   $('app').classList.add('panel-open')
   renderCenter()
+  // The smoke run can open a specific tab to screenshot it (DOOL2_SMOKE_VIEW=me opens the pairing screen).
+  if (config.view === 'me') setTab('me')
 
   api.onEvent((event) => {
     if (drafts.noteEvent(event)) {

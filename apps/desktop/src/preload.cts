@@ -6,9 +6,16 @@ import electron = require('electron')
 const { contextBridge, ipcRenderer } = electron
 
 contextBridge.exposeInMainWorld('dool2', {
-  /** Window config read once at start: UI language, current level, and whether this is a smoke run. */
-  config: (): Promise<{ lang: 'ko' | 'en'; level: 'ask' | 'auto' | 'full'; smoke: boolean }> =>
-    ipcRenderer.invoke('dool2:config'),
+  /** Window config read once at start: UI language, current level, whether this is a smoke run, and which tab the
+   *  smoke run should open (empty = chat). */
+  config: (): Promise<{
+    lang: 'ko' | 'en'
+    level: 'ask' | 'auto' | 'full'
+    smoke: boolean
+    view: string
+  }> => ipcRenderer.invoke('dool2:config'),
+  /** The pairing state: the code the phone enters, and whether a phone has paired (daemon pair state). */
+  pairing: (): Promise<{ code: string; paired: boolean }> => ipcRenderer.invoke('dool2:pairing'),
   /** Send a user message. Resolves when the turn ends; events stream in through onEvent meanwhile. */
   send: (text: string): Promise<void> => ipcRenderer.invoke('dool2:send', text),
   /** Change the autonomy level (ADR 0047). */

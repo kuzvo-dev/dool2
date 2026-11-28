@@ -365,6 +365,11 @@ export class Agentd {
     this.#devicePublicKeyPem = publicKeyPem
   }
 
+  /** Whether a phone has paired (a device public key is registered). The desktop's pairing screen reflects this. */
+  hasDevice(): boolean {
+    return this.#devicePublicKeyPem !== undefined
+  }
+
   /** The approval cards still awaiting a phone signature, in registration order. */
   pending(): ApprovalCard[] {
     return [...this.#pending.values()].map(toCardFromPending)
