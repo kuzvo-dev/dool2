@@ -37,6 +37,7 @@ export const which: WhichFn = async (name) => {
 export const defaultSpawn: SpawnCli = (command, args, opts): CliProcess => {
   const child = spawn(command, args, {
     env: opts.env ?? process.env,
+    ...(opts.cwd ? { cwd: opts.cwd } : {}),
     stdio: ['pipe', 'pipe', 'pipe'],
     windowsHide: true,
   })

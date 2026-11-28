@@ -24,7 +24,7 @@ export interface CliExit {
 export type SpawnCli = (
   command: string,
   args: string[],
-  opts: { env?: NodeJS.ProcessEnv; stdin?: string; signal?: AbortSignal },
+  opts: { env?: NodeJS.ProcessEnv; stdin?: string; signal?: AbortSignal; cwd?: string },
 ) => CliProcess
 
 /** Finds a binary on disk without running it (offline-safe). The default (spawn.ts) searches PATH + install dirs. */
@@ -61,6 +61,12 @@ export interface CliBrainBaseOptions {
   spawn?: SpawnCli
   /** Injected binary finder; defaults to the real one. */
   which?: WhichFn
+  /**
+   * Working directory for the CLI child process. Defaults to a neutral empty folder (never the daemon's own cwd), so a
+   * coding CLI like Claude Code does NOT read a CLAUDE.md, git repo, or file listing from wherever the daemon happens
+   * to run and leak that project context into Dool2's answers. The daemon may pin it (e.g. a per-user work dir).
+   */
+  cwd?: string
   /**
    * Cheap, offline-safe sign-in probe used by ready(). Receives the resolved binary path and returns whether the CLI
    * is logged in. Defaults to the brain's own official status command (no paid turn). Tests inject a stub.
