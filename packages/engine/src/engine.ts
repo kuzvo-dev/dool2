@@ -14,6 +14,7 @@
 //      Feed the ToolResult back through the RunHandle and continue until the brain ends a round without a tool call.
 //   3. Emit a clean transcript of events + the list of gate decisions (for the activity log / dashboard).
 
+import { type ActionEnvelope, envelopeForAction, envelopeHash } from '@dool2/approvals'
 import type { Brain } from '@dool2/brains'
 import {
   type AutonomyLevel,
@@ -57,6 +58,14 @@ export interface EngineOptions {
   limits?: Partial<SandboxLimits>
   /** Safety cap on brain rounds in a turn, so a loop cannot spin forever. Default 16. */
   maxRounds?: number
+  /**
+   * The resume seam (ADR 0047): whether an action the gate wants a phone signature for has already been signed. Given
+   * the exact envelope hash the engine computes for a gated `sign` action (via @dool2/approvals envelopeForAction +
+   * envelopeHash — the SAME builder agentd mints the approval card from), return true to let that one action run. The
+   * engine marks each approved hash consumed so it is single-use within the turn. Omitted → nothing is pre-approved and
+   * every `sign` pauses as before.
+   */
+  isApproved?: (envelopeHash: string) => boolean
 }
 
 /** One entry in the turn transcript: the brain's events, the tool results, and gate notices, in order. */
@@ -88,6 +97,14 @@ export interface ApprovalOutcome {
   decision: GateDecision
   reason: string
   amountKrw?: number
+  /**
+   * The canonical envelope this action binds to, built by @dool2/approvals envelopeForAction — the single source of
+   * truth for the hash. The daemon registers THIS exact envelope as the approval card, so the hash the phone signs
+   * equals the hash the engine checks when the action is re-run (see EngineOptions.isApproved).
+   */
+  envelope: ActionEnvelope
+  /** sha256 hex of {@link envelope}. The approval-card hash, the phone-signed value, and the resume lookup key. */
+  hash: string
 }
 
 /** The result of one turn. */
@@ -104,6 +121,11 @@ export interface TurnResult {
   approvals: ApprovalOutcome[]
   /** Short human notes for `notify` decisions ("done: ...") the daemon shows the user after the fact. */
   notices: string[]
+  /**
+   * The hashes of pre-approved actions that actually ran this turn (the resume seam fired). The daemon drops these
+   * from its approved set afterwards, so a signature clears exactly one run of the action across the whole session.
+   */
+  consumedApprovals: string[]
   /** How the turn ended. */
   stop: 'done' | 'error' | 'aborted'
 }
@@ -151,6 +173,9 @@ export async function runTurn(opts: EngineOptions, request: TurnRequest): Promis
   // Pending approvals for the code call currently running. Reset per `code` tool call; the sandbox's onAction hook
   // (below) pushes into it and throws, so the acting bridge call never runs.
   let pending: ApprovalOutcome[] = []
+  // Approved-action hashes that fired this turn, so they are single-use (within the turn, and the daemon drops them
+  // from its session set afterwards).
+  const consumed = new Set<string>()
 
   const onAction = async (action: GatedAction): Promise<void> => {
     const refined = classify(action, { ...(lastSnapshot !== undefined ? { snapshot: lastSnapshot } : {}) })
@@ -160,15 +185,30 @@ export async function runTurn(opts: EngineOptions, request: TurnRequest): Promis
       ...(refined.underCap !== undefined ? { underCap: refined.underCap } : {}),
     }
     const { decision, reason } = decide(level, refined.tier, ctx)
+    const amount = refined.amountKrw !== undefined ? { amountKrw: refined.amountKrw } : {}
+
+    // The envelope + hash for this exact action, from the one shared builder. Used both to recognise a pre-approved
+    // action (resume) and to hand the daemon the exact envelope to turn into a phone card.
+    const envelope = envelopeForAction({ tier: refined.tier, label: action.label, ...amount })
+    const hash = envelopeHash(envelope)
+
+    // Resume seam: a `sign` the user already signed for runs once. The hash the daemon approved is byte-for-byte this
+    // hash, because both sides build the envelope with envelopeForAction.
+    if (decision === 'sign' && opts.isApproved?.(hash) === true && !consumed.has(hash)) {
+      consumed.add(hash)
+      gateDecisions.push({
+        label: action.label,
+        tier: refined.tier,
+        decision: 'run',
+        reason: 'approved',
+        allowed: true,
+        ...amount,
+      })
+      return
+    }
+
     const allowed = decision === 'run' || decision === 'notify'
-    gateDecisions.push({
-      label: action.label,
-      tier: refined.tier,
-      decision,
-      reason,
-      allowed,
-      ...(refined.amountKrw !== undefined ? { amountKrw: refined.amountKrw } : {}),
-    })
+    gateDecisions.push({ label: action.label, tier: refined.tier, decision, reason, allowed, ...amount })
     if (decision === 'notify') notices.push(`done: ${action.label} (${reason})`)
     if (allowed) return
     const outcome: ApprovalOutcome = {
@@ -177,7 +217,9 @@ export async function runTurn(opts: EngineOptions, request: TurnRequest): Promis
       tier: refined.tier,
       decision,
       reason,
-      ...(refined.amountKrw !== undefined ? { amountKrw: refined.amountKrw } : {}),
+      envelope,
+      hash,
+      ...amount,
     }
     pending.push(outcome)
     approvals.push(outcome)
@@ -259,7 +301,16 @@ export async function runTurn(opts: EngineOptions, request: TurnRequest): Promis
     sandbox.dispose()
   }
 
-  return { system, injectedSkills: injected, transcript, gateDecisions, approvals, notices, stop }
+  return {
+    system,
+    injectedSkills: injected,
+    transcript,
+    gateDecisions,
+    approvals,
+    notices,
+    consumedApprovals: [...consumed],
+    stop,
+  }
 }
 
 // --- tools ---------------------------------------------------------------------------------------------------------

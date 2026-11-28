@@ -175,5 +175,14 @@ export function createPageBridge(caller: BrowserCallerLike, opts: CreatePageBrid
       await report('press', [key])
       await call('press', { tabId: id, key })
     },
+
+    // The vault's secret fill. It maps to the same browser `type` command as {@link type}, but is a distinct host
+    // method that is NOT exposed to the brain (it is absent from @dool2/sandbox BRIDGE_METHODS). It is not reported to
+    // `onAction`: the fill is a sub-step of an already-gated vault action (vault.fillLogin/fillTotp/fillPaymentPin), so
+    // gating it here too would weigh the same action twice. The value is typed into the field and never read back.
+    async fill(ref: string, value: string): Promise<void> {
+      const id = requireTab('fill')
+      await call('type', { tabId: id, ref, text: value })
+    },
   }
 }
