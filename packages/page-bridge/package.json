@@ -1,0 +1,26 @@
+{
+  "name": "@dool2/page-bridge",
+  "version": "0.0.0",
+  "private": true,
+  "license": "Apache-2.0",
+  "description": "Real `page` host-bridge adapter: behind the sandbox's read-only page bridge, drives Dool2's own hidden Chromium through the CdpBrowserCaller (ADR 0046)",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run --passWithNoTests"
+  },
+  "dependencies": {
+    "@dool2/core": "workspace:*",
+    "@dool2/sandbox": "workspace:*"
+  },
+  "devDependencies": {
+    "@dool2/browser": "workspace:*"
+  }
+}
