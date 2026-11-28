@@ -225,6 +225,18 @@ importers:
         specifier: workspace:*
         version: link:../core
 
+  packages/org:
+    dependencies:
+      '@dool2/core':
+        specifier: workspace:*
+        version: link:../core
+      '@dool2/skill-sdk':
+        specifier: workspace:*
+        version: link:../skill-sdk
+      '@dool2/vault':
+        specifier: workspace:*
+        version: link:../vault
+
   packages/packs: {}
 
   packages/page-bridge:
