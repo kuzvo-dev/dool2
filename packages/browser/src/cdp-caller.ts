@@ -9,8 +9,11 @@
 // navigate/back and pdf (Page.printToPDF — cleaner than a print dialog, nothing pops up). A ref `eN` from a snapshot is
 // resolved back to its element by re-running the very same DOM walk in a fresh isolated world and stopping at the Nth
 // interactive element (findNth below), so the counting that assigns `eN` and the counting that finds it never diverge.
-// Still not here (they throw a clear error naming the command): vault fill, dropdown options/choose, element shots, form
-// read, frames and popup adoption — a full login→lookup→PDF needs those.
+// Frames are handled: the snapshot walks the top document and each child frame (same-process frames on the page session,
+// cross-origin OOPIFs on their own auto-attached session), emitting frame-qualified refs (`f1e2`) that click/type/hover/
+// scroll resolve back to the right frame and offset to a top-level point — needed for Korean simple-identity (gov/bank)
+// login widgets and payment windows that live inside iframes. Still not here (they throw a clear error naming the command):
+// vault fill, dropdown options/choose, element shots, form read and popup adoption.
 //
 // It also adds the DATA path: `fetch` runs the site's own window.fetch inside the page's main world under the user's
 // live session (cookies), so a skill can call a site's internal API instead of clicking through the UI — the biggest
@@ -42,6 +45,16 @@ export interface CdpBrowserLike {
   close(graceMs?: number): Promise<void>
   /** DevTools events (method, params, sessionId); returns an unsubscribe. Optional: a stub may leave it out */
   onEvent?(fn: (method: string, params: Record<string, unknown>, sessionId?: string) => void): () => void
+  /**
+   * A DevTools command on a specific flat session (a cross-origin child frame's own session). ChromiumBrowser.send has
+   * exactly this shape; a stub may omit it, in which case cross-origin frames are simply not walked.
+   */
+  send?<T extends Record<string, unknown> = Record<string, unknown>>(
+    method: string,
+    params?: Record<string, unknown>,
+    sessionId?: string,
+    timeoutMs?: number,
+  ): Promise<T>
 }
 
 export interface CdpBrowserCallerOptions {
@@ -86,6 +99,15 @@ const DEFAULT_FETCH_CAP = 2 * 1024 * 1024
 /** Default wall-clock for a fetch (the in-page AbortController fires at this; the pipe call waits a touch longer). */
 const DEFAULT_FETCH_TIMEOUT = 30_000
 
+/**
+ * Frame guards, so a page full of ad/tracker iframes never explodes a snapshot. Depth/breadth caps bound the DOM-walk
+ * work; a frame whose owner box is smaller than MIN_FRAME_PX in either dimension (or hidden) is skipped (and with it its
+ * subtree) — ad slots, 1×1 beacons and display:none frames carry nothing a user acts on.
+ */
+const MAX_FRAMES = 24 // total documents walked, counting the top one
+const MAX_FRAME_DEPTH = 5 // how deep the iframe nesting is followed
+const MIN_FRAME_PX = 24 // frames narrower/shorter than this are treated as decorative and skipped
+
 /** One screencast frame delivered to an onScreencastFrame subscriber: base64 image bytes + its mime type. */
 export interface ScreencastFrame {
   data: string
@@ -100,13 +122,94 @@ interface SiteDialog {
   defaultPrompt?: string
 }
 
+/**
+ * Where a frame-qualified ref (`fMeN`) resolves: which CDP session owns that frame, the DevTools frameId, and the
+ * absolute offset of the frame's viewport origin on the top page (so an element's frame-relative centre becomes a
+ * top-level click point). Built per snapshot and stored on the tab, exactly so a later click/type can find the frame
+ * again (the frame→session+offset map the plan calls for). sessionId is undefined for same-process frames (they ride
+ * the page session) and a child session id for a cross-origin OOPIF.
+ */
+interface FrameLoc {
+  frameId: string
+  sessionId?: string
+  offsetX: number
+  offsetY: number
+}
+
+/** A child iframe/frame element box, as FRAME_WALK_FN reports it for its own document (viewport-relative) */
+interface FrameBox {
+  x: number
+  y: number
+  w: number
+  h: number
+  visible: boolean
+}
+
 interface Tab {
   page: CdpPageLike
   url: string
   title: string
   /** JS dialogs this caller closed by itself since the last snapshot (reported so the daemon/AI can react) */
   dialogNotes?: SiteDialog[]
+  /** DevTools session id → the frame it drives, for cross-origin (OOPIF) child frames auto-attached on this tab */
+  frameSessions: Map<string, string>
+  /** prefix (`f1`, `f2`, …) → where that frame resolves; rebuilt on every snapshot so refs stay in step with the walk */
+  frames?: Map<string, FrameLoc>
 }
+
+/** A ref parsed into its frame prefix (`''` for the top document, `f1`/`f2`/… for a frame) and element index */
+function parseRef(ref: string): { prefix: string; index: number } | null {
+  const m = /^(f\d+)?e(\d+)$/.exec(ref)
+  if (!m) return null
+  const index = Number(m[2])
+  if (!index) return null
+  return { prefix: m[1] ?? '', index }
+}
+
+/** The flat DFS order of a frame tree, parent before children, with each frame's position among its siblings */
+interface WalkFrame {
+  ordinal: number
+  frameId: string
+  parentOrdinal: number | null
+  childIndex: number
+  depth: number
+}
+
+interface FrameTreeNode {
+  frame: { id: string }
+  childFrames?: FrameTreeNode[]
+}
+
+/**
+ * Flatten a Page.getFrameTree into a DFS pre-order list (the top document is ordinal 0, so its prefix is `''`). Bounded
+ * by MAX_FRAMES (total) and MAX_FRAME_DEPTH (nesting), so an ad-heavy page cannot blow up the walk. Each frame keeps the
+ * ordinal of its parent and its index among that parent's children, which lines up with the parent document's
+ * `querySelectorAll('iframe, frame')` order (FRAME_WALK_FN.frames) for offsetting and skipping.
+ */
+function flattenFrames(root: FrameTreeNode, caps: { maxFrames: number; maxDepth: number }): WalkFrame[] {
+  const out: WalkFrame[] = []
+  let ordinal = 0
+  const visit = (node: FrameTreeNode, parentOrdinal: number | null, depth: number, childIndex: number) => {
+    if (out.length >= caps.maxFrames) return
+    const o = ordinal++
+    out.push({ ordinal: o, frameId: node.frame.id, parentOrdinal, childIndex, depth })
+    if (depth >= caps.maxDepth) return
+    const kids = node.childFrames ?? []
+    for (let i = 0; i < kids.length; i++) {
+      if (out.length >= caps.maxFrames) break
+      visit(kids[i] as FrameTreeNode, o, depth + 1, i)
+    }
+  }
+  visit(root, null, 0, -1)
+  return out
+}
+
+/** A function that runs a DevTools command on one session (the page's own, or a child frame's) */
+type SessionSend = <T extends Record<string, unknown> = Record<string, unknown>>(
+  method: string,
+  params: Record<string, unknown>,
+  timeoutMs: number,
+) => Promise<T>
 
 /**
  * Shared in-page helpers: the role test, the visibility test and findNth. Both the snapshot walk and the ref resolver embed
@@ -166,12 +269,17 @@ const WALK_HELPERS = `
 `
 
 /**
- * The DOM walk that builds a snapshot. Runs in an isolated world (no Runtime.enable on the page), returns the page text with
- * inline ref marks `[eN role "name"]` whose role words match the daemon's SNAP_ROLES. Interactive elements get a stable eN for
- * this snapshot; names come from aria-label/title/alt/value/text (trimmed, quotes → single, capped). Password field values are
- * never emitted. A heading/line structure is enough (no frame recursion yet).
+ * The DOM walk that builds a snapshot of ONE frame's document. Runs in an isolated world (no Runtime.enable on the page),
+ * returns `{ text, frames }` where `text` carries inline ref marks `[<prefix>eN role "name"]` whose role words match the
+ * daemon's SNAP_ROLES, and `frames` is the list of this document's own child iframe/frame element boxes in document order
+ * (used by the caller to position and skip child frames). `prefix` is '' for the top document (refs `e1`, `e2`, …) and
+ * `fM` for a child frame (refs `f1e1`, `f1e2`, …), so a ref stays globally unique across frames while the per-frame element
+ * counting is identical to the top walk (findNth below counts the same way inside each frame). Interactive elements get a
+ * stable eN within their frame; names come from aria-label/title/alt/value/text (trimmed, quotes → single, capped). Password
+ * field values are never emitted. The walk itself does NOT descend into iframes (SKIP lists iframe); each frame is walked in
+ * its own context and stitched together by the caller.
  */
-const SNAPSHOT_FN = `function(maxChars, R){
+const FRAME_WALK_FN = `function(maxChars, R, prefix){
   ${WALK_HELPERS}
   var n = 0, out = '';
   function nameOf(el, role){
@@ -204,7 +312,7 @@ const SNAPSHOT_FN = `function(maxChars, R){
     if (!visible(el)) return;
     var role = roleOf(el);
     if (role){
-      var id = 'e' + (++n);
+      var id = (prefix || '') + 'e' + (++n);
       var name = nameOf(el, role);
       out += ' [' + id + ' ' + role + (name ? ' "' + name + '"' : '') + '] ';
       return;
@@ -217,7 +325,19 @@ const SNAPSHOT_FN = `function(maxChars, R){
     if (isBlock && !/\\n$/.test(out)) out += '\\n';
   }
   if (document.body) walk(document.body);
-  return out.replace(/[ \\t]+\\n/g, '\\n').replace(/\\n{3,}/g, '\\n\\n').trim();
+  // Child frame boxes, in document order — matches the order Page.getFrameTree lists this frame's children, so the
+  // caller can line box[i] up with the i-th child frame to offset its coordinates and skip tiny/hidden frames.
+  var boxes = [];
+  var frameEls = document.querySelectorAll('iframe, frame');
+  for (var i = 0; i < frameEls.length; i++){
+    var fe = frameEls[i];
+    var fr = fe.getBoundingClientRect();
+    var fst = fe.ownerDocument.defaultView.getComputedStyle(fe);
+    var fvis = !(fst.display === 'none' || fst.visibility === 'hidden' || Number(fst.opacity) === 0) && fr.width > 0 && fr.height > 0;
+    // content-box origin in this document's viewport: the frame element's top-left plus its border width
+    boxes.push({ x: fr.left + (fe.clientLeft || 0), y: fr.top + (fe.clientTop || 0), w: fr.width, h: fr.height, visible: fvis });
+  }
+  return { text: out.replace(/[ \\t]+\\n/g, '\\n').replace(/\\n{3,}/g, '\\n\\n').trim(), frames: boxes };
 }`
 
 /** Resolve a ref: find the Nth interactive element, scroll it into view, and report its centre and kind (for a click) */
@@ -346,12 +466,6 @@ const KEY_INFO: Record<string, { key: string; code: string; keyCode: number; tex
   Space: { key: ' ', code: 'Space', keyCode: 32, text: ' ' },
 }
 
-/** The index of a page ref like "e12" → 12 (0 if it is not an eN ref) */
-function refIndex(ref: string): number {
-  const m = /^e(\d+)$/.exec(ref)
-  return m ? Number(m[1]) : 0
-}
-
 /** How many printed pages a PDF holds (counts /Type /Page objects; at least 1). For the human note only */
 function countPdfPages(buf: Buffer): number {
   const s = buf.toString('latin1')
@@ -371,6 +485,8 @@ export class CdpBrowserCaller {
   private readonly tabs = new Map<number, Tab>()
   /** sessionId → tabId, so a DevTools dialog event is matched to its tab */
   private readonly bySession = new Map<string, number>()
+  /** Every attached session (the page's own plus each child frame's) → tabId, so an auto-attach event finds its tab */
+  private readonly sessionTab = new Map<string, number>()
   /** tabId → live subscribers of that tab's screencast frames (the desktop mirror; owner-scoped) */
   private readonly screencastSubs = new Map<number, Set<(frame: ScreencastFrame) => void>>()
   /** tabId → throttle state while a screencast runs on that tab (deliver only every everyNth-th frame) */
@@ -445,7 +561,7 @@ export class CdpBrowserCaller {
       default:
         throw new Error(
           `Dool2's built-in browser cannot "${cmd}" yet. It can so far: ${SUPPORTED.join(', ')}. ` +
-            `Vault fill, dropdown options, frames and popups arrive in a later update.`,
+            `Vault fill, dropdown options and popups arrive in a later update.`,
         )
     }
   }
@@ -474,10 +590,58 @@ export class CdpBrowserCaller {
   private watchEvents(b: CdpBrowserLike): void {
     this.unsubEvents?.()
     this.unsubEvents = b.onEvent?.((method, params, sessionId) => {
+      // Target.attachedToTarget carries the NEW child session in params.sessionId; the envelope sessionId is the
+      // parent (which is why attach is handled before the early return — a top-level attach has no envelope session).
+      if (method === 'Target.attachedToTarget') {
+        this.onAttached(params, sessionId)
+        return
+      }
       if (!sessionId) return
       if (method === 'Page.javascriptDialogOpening') this.onDialog(params, sessionId)
       else if (method === 'Page.screencastFrame') this.onScreencastFrameEvent(params, sessionId)
+      else if (method === 'Target.detachedFromTarget') this.onDetached(params)
     })
+  }
+
+  /**
+   * A child target attached under one of our tabs (auto-attach, flatten). We only track iframe targets — a cross-origin
+   * (OOPIF) child frame lives in its own renderer, so its DOM is only reachable through its own session. Record
+   * frameId → child session on the owning tab, remember the session→tab link (so a nested attach finds its tab too), and
+   * turn auto-attach on in the child so an OOPIF nested inside this one also attaches. Owner-scoped: an attach whose
+   * parent session we do not know (not one of Dool2's tabs) is ignored.
+   */
+  private onAttached(params: Record<string, unknown>, parentSession?: string): void {
+    const info = params.targetInfo as { targetId?: string; type?: string } | undefined
+    if (!info || info.type !== 'iframe') return
+    const childSession = typeof params.sessionId === 'string' ? params.sessionId : ''
+    const frameId = typeof info.targetId === 'string' ? info.targetId : ''
+    if (!childSession || !frameId) return
+    const tabId = parentSession ? this.sessionTab.get(parentSession) : undefined
+    if (tabId === undefined) return
+    const tab = this.tabs.get(tabId)
+    if (!tab) return
+    tab.frameSessions.set(frameId, childSession)
+    this.sessionTab.set(childSession, tabId)
+    this.browser
+      ?.send?.(
+        'Target.setAutoAttach',
+        { autoAttach: true, flatten: true, waitForDebuggerOnStart: false },
+        childSession,
+      )
+      .catch(() => {})
+  }
+
+  /** A child target went away: forget its session and any frame it drove, so a stale frame ref resolves to nothing */
+  private onDetached(params: Record<string, unknown>): void {
+    const childSession = typeof params.sessionId === 'string' ? params.sessionId : ''
+    if (!childSession) return
+    const tabId = this.sessionTab.get(childSession)
+    this.sessionTab.delete(childSession)
+    if (tabId === undefined) return
+    const tab = this.tabs.get(tabId)
+    if (!tab) return
+    for (const [frameId, sid] of tab.frameSessions)
+      if (sid === childSession) tab.frameSessions.delete(frameId)
   }
 
   /** Closes a JS dialog by itself so a stray alert/confirm never hangs the page, and remembers it for the next snapshot */
@@ -613,10 +777,18 @@ export class CdpBrowserCaller {
     const page = await browser.openPage('about:blank')
     // Page is enabled so this caller hears javascript dialogs opening (Runtime stays off — sites can notice Runtime.enable)
     await page.send('Page.enable').catch(() => {})
+    // Auto-attach (flatten) so each cross-origin child frame (OOPIF) gets its own session we can walk. Same-process
+    // frames need no session — they ride this page session. waitForDebuggerOnStart:false so a frame never pauses.
+    await page
+      .send('Target.setAutoAttach', { autoAttach: true, flatten: true, waitForDebuggerOnStart: false })
+      .catch(() => {})
     const tabId = this.nextTabId++
-    const tab: Tab = { page, url, title: '' }
+    const tab: Tab = { page, url, title: '', frameSessions: new Map() }
     this.tabs.set(tabId, tab)
-    if (page.sessionId) this.bySession.set(page.sessionId, tabId)
+    if (page.sessionId) {
+      this.bySession.set(page.sessionId, tabId)
+      this.sessionTab.set(page.sessionId, tabId)
+    }
     this.lastTabId = tabId
     await page.navigate(url)
     await this.waitReady(page, timeoutMs ?? 30_000)
@@ -664,6 +836,7 @@ export class CdpBrowserCaller {
     if (tab) {
       this.tabs.delete(id)
       if (tab.page.sessionId) this.bySession.delete(tab.page.sessionId)
+      for (const [sid, tid] of this.sessionTab) if (tid === id) this.sessionTab.delete(sid)
       if (this.lastTabId === id) this.lastTabId = undefined
       this.screencastState.delete(id)
       this.screencastSubs.delete(id)
@@ -688,13 +861,8 @@ export class CdpBrowserCaller {
     const id = Number(args.tabId)
     const maxChars = Number.isFinite(Number(args.maxChars)) ? Math.max(0, Number(args.maxChars)) : 40_000
     await this.refresh(tab)
-    const full = await this.evalInWorld<string>(
-      tab.page,
-      SNAPSHOT_FN,
-      [maxChars, SNAP_ROLE_WORDS],
-      timeoutMs ?? 20_000,
-    )
-    const text = (full ?? '').slice(0, maxChars)
+    const full = await this.walkFrames(tab, maxChars, timeoutMs ?? 20_000)
+    const text = full.slice(0, maxChars)
     const notes = tab.dialogNotes
     tab.dialogNotes = undefined
     return {
@@ -702,10 +870,96 @@ export class CdpBrowserCaller {
       url: tab.url,
       title: tab.title,
       text,
-      truncated: (full ?? '').length > maxChars,
+      truncated: full.length > maxChars,
       captcha: false,
       ...(notes && notes.length ? { dialogNotes: notes } : {}),
     }
+  }
+
+  /**
+   * Walk the top document and each child frame, stitch the texts together, and (re)build the tab's frame map so a later
+   * click/type can resolve a frame-qualified ref (`fMeN`). The top document keeps the plain `eN` refs and its text comes
+   * first unchanged; each kept child frame follows under a `[frame fM url]` line with its `fMeN` refs. Same-process
+   * frames are walked on the page session; a cross-origin (OOPIF) frame is walked on its own auto-attached session. A
+   * frame whose owner box is hidden or smaller than MIN_FRAME_PX (and its subtree) is skipped, as is a frame we cannot
+   * reach (e.g. an OOPIF whose session has not attached yet) — the top document is always returned. When the page has no
+   * frames this reduces to exactly the old single top-document walk.
+   */
+  private async walkFrames(tab: Tab, maxChars: number, timeoutMs: number): Promise<string> {
+    const pageSend: SessionSend = (method, params, t) => tab.page.send(method, params, t)
+    let ordered: WalkFrame[]
+    try {
+      const { frameTree } = await tab.page.send<{ frameTree: FrameTreeNode }>(
+        'Page.getFrameTree',
+        {},
+        timeoutMs,
+      )
+      ordered = flattenFrames(frameTree, { maxFrames: MAX_FRAMES, maxDepth: MAX_FRAME_DEPTH })
+    } catch {
+      ordered = []
+    }
+    const frames = new Map<string, FrameLoc>()
+    const walkedBoxes = new Map<number, FrameBox[]>() // ordinal → its child frame boxes (for offset + skip)
+    const skipped = new Set<number>()
+    const parts: string[] = []
+
+    for (const f of ordered) {
+      const prefix = f.ordinal === 0 ? '' : `f${f.ordinal}`
+      let send = pageSend
+      let offsetX = 0
+      let offsetY = 0
+      let childSession: string | undefined
+
+      if (f.parentOrdinal !== null) {
+        // A child frame whose parent was itself skipped or unreachable is skipped too (parents come first in DFS order)
+        if (skipped.has(f.parentOrdinal) || !walkedBoxes.has(f.parentOrdinal)) {
+          skipped.add(f.ordinal)
+          continue
+        }
+        const box = walkedBoxes.get(f.parentOrdinal)?.[f.childIndex]
+        if (!box || !box.visible || box.w < MIN_FRAME_PX || box.h < MIN_FRAME_PX) {
+          skipped.add(f.ordinal)
+          continue
+        }
+        const parentLoc = f.parentOrdinal === 0 ? undefined : frames.get(`f${f.parentOrdinal}`)
+        offsetX = (parentLoc?.offsetX ?? 0) + box.x
+        offsetY = (parentLoc?.offsetY ?? 0) + box.y
+        childSession = tab.frameSessions.get(f.frameId)
+        if (childSession) {
+          const browserSend = this.browser?.send?.bind(this.browser)
+          if (!browserSend) {
+            // No way to reach a cross-origin frame without the browser-level send; skip it (top doc still returned)
+            skipped.add(f.ordinal)
+            continue
+          }
+          const cs = childSession
+          send = (method, params, t) => browserSend(method, params, cs, t)
+        }
+      }
+
+      let walk: { text?: string; frames?: FrameBox[] } | undefined
+      try {
+        walk = await this.evalFrame<{ text?: string; frames?: FrameBox[] }>(
+          send,
+          f.frameId,
+          FRAME_WALK_FN,
+          [maxChars, SNAP_ROLE_WORDS, prefix],
+          timeoutMs,
+        )
+      } catch {
+        skipped.add(f.ordinal)
+        continue
+      }
+      walkedBoxes.set(f.ordinal, walk?.frames ?? [])
+      if (f.ordinal !== 0)
+        frames.set(prefix, { frameId: f.frameId, sessionId: childSession, offsetX, offsetY })
+      const body = (walk?.text ?? '').trim()
+      if (f.ordinal === 0) parts.push(body)
+      else if (body) parts.push(`[frame ${prefix}]\n${body}`)
+    }
+
+    tab.frames = frames
+    return parts.filter((p) => p.length > 0).join('\n\n')
   }
 
   private async screenshot(
@@ -760,18 +1014,20 @@ export class CdpBrowserCaller {
       return { url: tab.url }
     }
     const ref = String(args.ref ?? '')
-    const n = refIndex(ref)
-    if (!n) throw new Error(`"${ref}" is not a page ref (eN) from the last snapshot; read the page first.`)
-    const prep = await this.evalInWorld<{ found?: boolean; x?: number; y?: number; w?: number; h?: number }>(
-      tab.page,
+    const loc = await this.resolveRef(tab, ref, t)
+    const prep = await this.evalFrame<{ found?: boolean; x?: number; y?: number; w?: number; h?: number }>(
+      loc.send,
+      loc.frameId,
       CLICK_PREP_FN,
-      [n, SNAP_ROLE_WORDS],
+      [loc.index, SNAP_ROLE_WORDS],
       t,
     )
     if (!prep?.found || typeof prep.x !== 'number' || typeof prep.y !== 'number')
       throw new Error(`Ref ${ref} is not on the page any more; read it again (browser_read).`)
     const delivered = (prep.w ?? 0) > 0 && (prep.h ?? 0) > 0
-    await this.dispatchClick(tab.page, prep.x, prep.y, t)
+    // The frame-relative centre becomes a top-level click point by adding the frame's viewport offset (0 for the top
+    // document); the mouse event is always dispatched on the page session, which routes to whichever frame is hit.
+    await this.dispatchClick(tab.page, prep.x + loc.offsetX, prep.y + loc.offsetY, t)
     await this.settle(tab)
     return { url: tab.url, ...(delivered ? {} : { delivered: false }) }
   }
@@ -793,9 +1049,16 @@ export class CdpBrowserCaller {
     const tab = this.tab(args)
     const t = timeoutMs ?? 20_000
     const ref = String(args.ref ?? '')
-    const n = refIndex(ref)
-    if (!n) throw new Error(`"${ref}" is not a page ref (eN); read the page first.`)
-    const prep = await this.evalInWorld<{ found?: boolean }>(tab.page, TYPE_PREP_FN, [n, SNAP_ROLE_WORDS], t)
+    const loc = await this.resolveRef(tab, ref, t)
+    // TYPE_PREP runs in the ref's frame and focuses the field there (works for a same-process or a cross-origin frame);
+    // Input.insertText is then dispatched on the page session and lands in whatever frame now holds focus.
+    const prep = await this.evalFrame<{ found?: boolean }>(
+      loc.send,
+      loc.frameId,
+      TYPE_PREP_FN,
+      [loc.index, SNAP_ROLE_WORDS],
+      t,
+    )
     if (!prep?.found) throw new Error(`Ref ${ref} is not on the page any more; read it again.`)
     // The value is inserted into the focused element; it is never read back, logged or put into an error here
     const text = String(args.text ?? '')
@@ -816,19 +1079,19 @@ export class CdpBrowserCaller {
     const tab = this.tab(args)
     const t = timeoutMs ?? 20_000
     const ref = String(args.ref ?? '')
-    const n = refIndex(ref)
-    if (!n) throw new Error(`"${ref}" is not a page ref (eN); read the page first.`)
-    const prep = await this.evalInWorld<{ found?: boolean; x?: number; y?: number }>(
-      tab.page,
+    const loc = await this.resolveRef(tab, ref, t)
+    const prep = await this.evalFrame<{ found?: boolean; x?: number; y?: number }>(
+      loc.send,
+      loc.frameId,
       CLICK_PREP_FN,
-      [n, SNAP_ROLE_WORDS],
+      [loc.index, SNAP_ROLE_WORDS],
       t,
     )
     if (!prep?.found || typeof prep.x !== 'number' || typeof prep.y !== 'number')
       throw new Error(`Ref ${ref} is not on the page any more.`)
     await tab.page.send(
       'Input.dispatchMouseEvent',
-      { type: 'mouseMoved', x: prep.x, y: prep.y, button: 'none', buttons: 0 },
+      { type: 'mouseMoved', x: prep.x + loc.offsetX, y: prep.y + loc.offsetY, button: 'none', buttons: 0 },
       t,
     )
     return { url: tab.url }
@@ -842,16 +1105,78 @@ export class CdpBrowserCaller {
     scroll: { target: string; before: number; after: number; max: number; atEnd: boolean }
   }> {
     const tab = this.tab(args)
+    const t = timeoutMs ?? 15_000
     const dir = args.direction === 'up' ? 'up' : 'down'
-    const n = typeof args.ref === 'string' ? refIndex(args.ref) : 0
-    const r = await this.evalInWorld<{
+    // A ref scrolls that element into view inside its own frame; no ref scrolls the top document's window.
+    const hasRef = typeof args.ref === 'string' && args.ref.length > 0
+    const loc = hasRef
+      ? await this.resolveRef(tab, String(args.ref), t)
+      : {
+          send: ((m, p, tt) => tab.page.send(m, p, tt)) as SessionSend,
+          frameId: await this.topFrameId(tab, t),
+          index: 0,
+          offsetX: 0,
+          offsetY: 0,
+        }
+    const r = await this.evalFrame<{
       target: string
       before: number
       after: number
       max: number
       atEnd: boolean
-    }>(tab.page, SCROLL_FN, [n, dir, SNAP_ROLE_WORDS], timeoutMs ?? 15_000)
+    }>(loc.send, loc.frameId, SCROLL_FN, [loc.index, dir, SNAP_ROLE_WORDS], t)
     return { url: tab.url, scroll: r }
+  }
+
+  /** The top document's frameId (for a page-level walk/scroll that has no frame ref) */
+  private async topFrameId(tab: Tab, timeoutMs: number): Promise<string> {
+    const { frameTree } = await tab.page.send<{ frameTree: FrameTreeNode }>(
+      'Page.getFrameTree',
+      {},
+      timeoutMs,
+    )
+    return frameTree?.frame?.id
+  }
+
+  /**
+   * Resolve a ref to the frame it lives in: the session that drives that frame, its DevTools frameId, the absolute
+   * offset of its viewport on the top page, and the element index for findNth. A plain `eN` ref resolves to the top
+   * document (offset 0). A frame-qualified `fMeN` ref is looked up in the tab's last-snapshot frame map; if the frame is
+   * gone (or its cross-origin session is unreachable) it errors cleanly asking for a fresh read.
+   */
+  private async resolveRef(
+    tab: Tab,
+    ref: string,
+    timeoutMs: number,
+  ): Promise<{ send: SessionSend; frameId: string; index: number; offsetX: number; offsetY: number }> {
+    const p = parseRef(ref)
+    if (!p)
+      throw new Error(`"${ref}" is not a page ref (eN or fMeN) from the last snapshot; read the page first.`)
+    if (!p.prefix) {
+      return {
+        send: (m, pp, t) => tab.page.send(m, pp, t),
+        frameId: await this.topFrameId(tab, timeoutMs),
+        index: p.index,
+        offsetX: 0,
+        offsetY: 0,
+      }
+    }
+    const fl = tab.frames?.get(p.prefix)
+    if (!fl)
+      throw new Error(
+        `Frame ref ${ref} is not from the last snapshot (the frame may be gone); read the page again (browser_read).`,
+      )
+    const browserSend = this.browser?.send?.bind(this.browser)
+    if (fl.sessionId && !browserSend)
+      throw new Error(
+        `Frame ref ${ref} needs its cross-origin session, which is unavailable; read the page again.`,
+      )
+    const childId = fl.sessionId
+    const send: SessionSend =
+      childId && browserSend
+        ? (m, pp, t) => browserSend(m, pp, childId, t)
+        : (m, pp, t) => tab.page.send(m, pp, t)
+    return { send, frameId: fl.frameId, index: p.index, offsetX: fl.offsetX, offsetY: fl.offsetY }
   }
 
   private async pdf(
@@ -1013,27 +1338,26 @@ export class CdpBrowserCaller {
   }
 
   /**
-   * Runs a function in a fresh isolated world of the page's main frame and returns its value. Keeps the Runtime domain off
-   * the page (sites can notice Runtime.enable); Page.getFrameTree and Page.createIsolatedWorld need no Page.enable
+   * Runs a function in a fresh isolated world of one frame (identified by frameId) on a given session, and returns its
+   * value. For the top document the session is the page's own; for a cross-origin child frame it is that frame's
+   * auto-attached session — in both cases Page.createIsolatedWorld + Runtime.callFunctionOn run against the right
+   * renderer. Keeps the Runtime domain off the page (sites can notice Runtime.enable); createIsolatedWorld needs no
+   * Page.enable. The snapshot walk and every ref resolver (click/type/hover/scroll) go through here, so the counting
+   * that assigns a ref and the counting that finds it stay identical within each frame.
    */
-  private async evalInWorld<T>(
-    page: CdpPageLike,
+  private async evalFrame<T>(
+    send: SessionSend,
+    frameId: string,
     functionDeclaration: string,
     args: unknown[],
     timeoutMs: number,
   ): Promise<T> {
-    const { frameTree } = await page.send<{ frameTree: { frame: { id: string } } }>(
-      'Page.getFrameTree',
-      {},
-      timeoutMs,
-    )
-    const frameId = frameTree?.frame?.id
-    const { executionContextId } = await page.send<{ executionContextId: number }>(
+    const { executionContextId } = await send<{ executionContextId: number }>(
       'Page.createIsolatedWorld',
       { frameId, worldName: 'dool2-snapshot' },
       timeoutMs,
     )
-    const r = await page.send<{
+    const r = await send<{
       result?: { value?: T }
       exceptionDetails?: { text?: string; exception?: { description?: string } }
     }>(
@@ -1055,7 +1379,7 @@ export class CdpBrowserCaller {
   }
 
   /**
-   * Runs an expression in the page's MAIN world and returns its value. Unlike {@link evalInWorld} (isolated world, for
+   * Runs an expression in the page's MAIN world and returns its value. Unlike {@link evalFrame} (isolated world, for
    * the snapshot/ref DOM walks), this uses Runtime.evaluate on the default context so the data-path fetch is the site's
    * own `window.fetch` under its session. Runtime.evaluate needs no Runtime.enable (which sites can notice), so this
    * keeps the same low profile as the rest of the caller. awaitPromise resolves the async fetch IIFE before returning.
@@ -1076,6 +1400,7 @@ export class CdpBrowserCaller {
   async closeBrowser(): Promise<void> {
     this.tabs.clear()
     this.bySession.clear()
+    this.sessionTab.clear()
     this.screencastState.clear()
     this.screencastSubs.clear()
     this.unsubEvents?.()

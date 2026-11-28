@@ -4,8 +4,9 @@ import { CdpBrowserCaller, type CdpBrowserLike, type CdpPageLike } from './cdp-c
 // The daemon's SNAP_ROLES (apps/daemon/src/region/kr/browser.ts) and parseRefs regex, inlined so this package test
 // stays independent. A snapshot's text must carry marks this matches.
 const SNAP_ROLES = '링크|버튼|입력칸|검색칸|비밀번호칸|체크박스|라디오|스위치|탭|메뉴|선택지|선택 상자|항목'
+// Matches top-document refs (eN) and frame-qualified refs (fMeN), mirroring the daemon's parseRefs.
 function parseRefs(text: string): Map<string, { role: string; name: string }> {
-  const re = new RegExp(`\\[(e\\d+) (${SNAP_ROLES})(?: "([^"]*)")?[^\\]]*\\]`, 'g')
+  const re = new RegExp(`\\[((?:f\\d+)?e\\d+) (${SNAP_ROLES})(?: "([^"]*)")?[^\\]]*\\]`, 'g')
   const refs = new Map<string, { role: string; name: string }>()
   for (const m of text.matchAll(re)) refs.set(m[1] as string, { role: m[2] ?? '', name: m[3] ?? '' })
   return refs
@@ -19,15 +20,90 @@ const FAKE_PDF = Buffer.from(
   '%PDF-1.4\n1 0 obj<</Type /Page >>endobj\n2 0 obj<</Type /Page >>endobj\n',
 ).toString('base64')
 
+interface FrameBoxFake {
+  x: number
+  y: number
+  w: number
+  h: number
+  visible: boolean
+}
+interface FrameWalkFake {
+  text: string
+  frames?: FrameBoxFake[]
+}
+interface PrepFake {
+  found: boolean
+  x?: number
+  y?: number
+  w?: number
+  h?: number
+}
+
+/**
+ * A fake CDP session (used both for a page and for a cross-origin child frame). It records every command, maps each
+ * isolated world back to its frameId (so a per-frame walk/prep answers for the right frame), and returns canned
+ * FRAME_WALK / prep / scroll values. No real JS or browser is involved.
+ */
+class FakeSession {
+  readonly sent: { method: string; params?: Record<string, unknown> }[] = []
+  private readonly ctxFrame = new Map<number, string>()
+  private nextCtx = 10
+  constructor(
+    private readonly topFrameId: string,
+    private readonly frameWalk: Record<string, FrameWalkFake>,
+    private readonly framePrep: Record<string, PrepFake>,
+    private readonly fallbackSnapshot?: string,
+    private readonly fallbackPrep?: PrepFake,
+  ) {}
+  handle<T>(method: string, params: Record<string, unknown>): T {
+    this.sent.push({ method, params })
+    if (method === 'Page.getFrameTree')
+      return { frameTree: { frame: { id: this.topFrameId } } } as unknown as T
+    if (method === 'Page.createIsolatedWorld') {
+      const ctx = this.nextCtx++
+      this.ctxFrame.set(ctx, String(params.frameId ?? this.topFrameId))
+      return { executionContextId: ctx } as unknown as T
+    }
+    if (method === 'Runtime.callFunctionOn') {
+      const fn = String(params.functionDeclaration ?? '')
+      const frameId = this.ctxFrame.get(Number(params.executionContextId)) ?? this.topFrameId
+      if (fn.includes('maxChars')) {
+        const w = this.frameWalk[frameId] ?? { text: this.fallbackSnapshot ?? '', frames: [] }
+        return { result: { value: { text: w.text, frames: w.frames ?? [] } } } as unknown as T
+      }
+      if (fn.includes('textField')) {
+        const p = this.framePrep[frameId] ?? this.fallbackPrep
+        return {
+          result: { value: { found: p?.found ?? true, tag: 'input', type: 'text', textField: true } },
+        } as unknown as T
+      }
+      if (fn.includes('scrollBy'))
+        return {
+          result: { value: { target: 'page', before: 0, after: 800, max: 2000, atEnd: false } },
+        } as unknown as T
+      // CLICK_PREP_FN (resolve a ref to a point)
+      const p = this.framePrep[frameId] ?? this.fallbackPrep ?? { found: true, x: 100, y: 200, w: 50, h: 20 }
+      return { result: { value: { ...p, tag: 'button', type: '' } } } as unknown as T
+    }
+    return {} as T
+  }
+}
+
 interface PageOpts {
   url: string
   title: string
   snapshot?: string
   screenshot?: string
   /** click/hover ref resolve result; set found:false to act as a stale ref */
-  prep?: { found: boolean; x?: number; y?: number; w?: number; h?: number }
+  prep?: PrepFake
   /** Runtime.evaluate (the data-path fetch) result: whatever the in-page fetch expression would resolve to */
   fetchResult?: Record<string, unknown>
+  /** The frame tree Page.getFrameTree returns (default: a lone top frame F<id>) */
+  frameTree?: { frameTree: unknown }
+  /** Per-frameId canned FRAME_WALK result (text + child boxes). Default: top frame → { text: snapshot } */
+  frameWalk?: Record<string, FrameWalkFake>
+  /** Per-frameId canned click/type prep result */
+  framePrep?: Record<string, PrepFake>
 }
 
 class FakePage implements CdpPageLike {
@@ -38,20 +114,28 @@ class FakePage implements CdpPageLike {
   readonly navigated: string[] = []
   /** The last expression Runtime.evaluate was asked to run (the data-path fetch), for asserting how fetch runs */
   lastEvalExpr = ''
+  private readonly session: FakeSession
   constructor(
     id: string,
     private readonly opts: PageOpts,
   ) {
     this.targetId = id
     this.sessionId = `S-${id}`
+    this.session = new FakeSession(
+      `F-${id}`,
+      opts.frameWalk ?? {},
+      opts.framePrep ?? {},
+      opts.snapshot,
+      opts.prep,
+    )
   }
   async send<T extends Record<string, unknown> = Record<string, unknown>>(
     method: string,
     params: Record<string, unknown> = {},
   ): Promise<T> {
     this.sent.push({ method, params })
-    if (method === 'Page.getFrameTree') return { frameTree: { frame: { id: 'F1' } } } as unknown as T
-    if (method === 'Page.createIsolatedWorld') return { executionContextId: 7 } as unknown as T
+    if (method === 'Page.getFrameTree')
+      return (this.opts.frameTree ?? { frameTree: { frame: { id: `F-${this.targetId}` } } }) as unknown as T
     if (method === 'Page.printToPDF') return { data: FAKE_PDF } as unknown as T
     if (method === 'Page.captureScreenshot')
       return { data: this.opts.screenshot ?? 'JPEGDATA' } as unknown as T
@@ -60,26 +144,8 @@ class FakePage implements CdpPageLike {
       this.lastEvalExpr = String(params.expression ?? '')
       return { result: { value: this.opts.fetchResult ?? {} } } as unknown as T
     }
-    if (method === 'Runtime.callFunctionOn') {
-      const fn = String(params.functionDeclaration ?? '')
-      if (fn.includes('maxChars')) return { result: { value: this.opts.snapshot ?? '' } } as unknown as T
-      if (fn.includes('textField'))
-        return {
-          result: {
-            value: { found: this.opts.prep?.found ?? true, tag: 'input', type: 'text', textField: true },
-          },
-        } as unknown as T
-      if (fn.includes('scrollBy'))
-        return {
-          result: { value: { target: 'page', before: 0, after: 800, max: 2000, atEnd: false } },
-        } as unknown as T
-      // CLICK_PREP_FN (resolve a ref to a point)
-      return {
-        result: {
-          value: this.opts.prep ?? { found: true, x: 100, y: 200, w: 50, h: 20, tag: 'button', type: '' },
-        },
-      } as unknown as T
-    }
+    if (method === 'Page.createIsolatedWorld' || method === 'Runtime.callFunctionOn')
+      return this.session.handle<T>(method, params)
     return {} as T
   }
   async navigate(url: string): Promise<unknown> {
@@ -102,6 +168,8 @@ class FakePage implements CdpPageLike {
 class FakeBrowser implements CdpBrowserLike {
   running = true
   readonly pages: FakePage[] = []
+  /** sessionId → a fake cross-origin child-frame session, routed through send() */
+  readonly childSessions = new Map<string, FakeSession>()
   private n = 0
   private listeners: ((m: string, p: Record<string, unknown>, s?: string) => void)[] = []
   constructor(private readonly make: (i: number) => FakePage) {}
@@ -121,6 +189,22 @@ class FakeBrowser implements CdpBrowserLike {
   }
   emit(method: string, params: Record<string, unknown>, sessionId?: string): void {
     for (const l of this.listeners) l(method, params, sessionId)
+  }
+  /** Register a cross-origin child frame session that send(..., sessionId) will drive */
+  addChildSession(sessionId: string, session: FakeSession): void {
+    this.childSessions.set(sessionId, session)
+  }
+  /** Browser-wide send targeted at a flat session — a cross-origin child frame's own session here */
+  async send<T extends Record<string, unknown> = Record<string, unknown>>(
+    method: string,
+    params: Record<string, unknown> = {},
+    sessionId?: string,
+  ): Promise<T> {
+    if (sessionId) {
+      const child = this.childSessions.get(sessionId)
+      if (child) return child.handle<T>(method, params)
+    }
+    return {} as T
   }
 }
 
@@ -584,6 +668,146 @@ describe('CdpBrowserCaller', () => {
     const { c } = caller((i) => new FakePage(`T${i}`, { url: 'https://s.test/', title: 's' }))
     expect(c.status.connected).toBe(true)
   })
+
+  it('a top-level-only page carries no frame marks and the tab keeps no frame map', async () => {
+    const { c } = caller(
+      (i) => new FakePage(`T${i}`, { url: 'https://plain.test/', title: 'plain', snapshot: SNAP_TEXT }),
+    )
+    const { tabId } = (await c.call('open', { url: 'https://plain.test/' })) as { tabId: number }
+    const snap = (await c.call('snapshot', { tabId })) as { text: string }
+    expect(snap.text).toBe(SNAP_TEXT)
+    expect(snap.text).not.toContain('[frame')
+    // No frame ref can be resolved, since the page had none
+    await expect(c.call('click', { tabId, ref: 'f1e1' })).rejects.toThrow(/read the page again/)
+  })
+})
+
+// A page whose top document (TOP) holds a same-process child frame (KID). The top's FRAME_WALK reports the child's box
+// so the caller can offset and keep it; the child is walked on the page session (no cross-origin session needed).
+function sameOriginFramePage(id: string): FakePage {
+  return new FakePage(id, {
+    url: 'https://bank.test/login',
+    title: '로그인',
+    frameTree: { frameTree: { frame: { id: 'TOP' }, childFrames: [{ frame: { id: 'KID' } }] } },
+    frameWalk: {
+      TOP: { text: '간편인증 [e1 버튼 "열기"]', frames: [{ x: 50, y: 60, w: 300, h: 200, visible: true }] },
+      KID: { text: '[f1e1 입력칸 "아이디"] [f1e2 비밀번호칸]', frames: [] },
+    },
+    framePrep: { KID: { found: true, x: 10, y: 20, w: 40, h: 16 } },
+  })
+}
+
+describe('CdpBrowserCaller frames', () => {
+  it('snapshot walks a same-origin child frame and emits frame-qualified refs', async () => {
+    const { c } = caller((i) => sameOriginFramePage(`T${i}`))
+    const { tabId } = (await c.call('open', { url: 'https://bank.test/login' })) as { tabId: number }
+    const snap = (await c.call('snapshot', { tabId })) as { text: string }
+    expect(snap.text).toContain('[frame f1]')
+    const refs = parseRefs(snap.text)
+    expect(refs.get('e1')).toEqual({ role: '버튼', name: '열기' }) // top document, unchanged
+    expect(refs.get('f1e1')).toEqual({ role: '입력칸', name: '아이디' }) // inside the frame
+    expect(refs.get('f1e2')?.role).toBe('비밀번호칸')
+  })
+
+  it('click on a frame ref resolves to the frame and dispatches at offset coordinates', async () => {
+    const { c, browser } = caller((i) => sameOriginFramePage(`T${i}`))
+    const { tabId } = (await c.call('open', { url: 'https://bank.test/login' })) as { tabId: number }
+    await c.call('snapshot', { tabId }) // builds the frame map
+    await c.call('click', { tabId, ref: 'f1e1' })
+    const page = browser.pages[0] as FakePage
+    const pressed = page.sent.find((s) => s.params?.type === 'mousePressed')
+    // frame box (50,60) + element centre (10,20) → absolute top-level point (60,80), dispatched on the page session
+    expect(pressed?.params).toMatchObject({ x: 60, y: 80, button: 'left' })
+  })
+
+  it('type into a field inside a frame inserts the text after focusing it in that frame', async () => {
+    const { c, browser } = caller((i) => sameOriginFramePage(`T${i}`))
+    const { tabId } = (await c.call('open', { url: 'https://bank.test/login' })) as { tabId: number }
+    await c.call('snapshot', { tabId })
+    await c.call('type', { tabId, ref: 'f1e2', text: 'secret-id' })
+    const page = browser.pages[0] as FakePage
+    const insert = page.sent.find((s) => s.method === 'Input.insertText')
+    expect(insert?.params).toEqual({ text: 'secret-id' })
+  })
+
+  it('a frame-qualified ref that is not from the last snapshot errors cleanly', async () => {
+    const { c } = caller((i) => sameOriginFramePage(`T${i}`))
+    const { tabId } = (await c.call('open', { url: 'https://bank.test/login' })) as { tabId: number }
+    await c.call('snapshot', { tabId }) // only f1 exists
+    await expect(c.call('click', { tabId, ref: 'f9e1' })).rejects.toThrow(/read the page again/)
+  })
+
+  it('walks a cross-origin (OOPIF) child frame on its own auto-attached session and offsets its clicks', async () => {
+    const { c, browser } = caller(
+      (i) =>
+        new FakePage(`T${i}`, {
+          url: 'https://pay.test/checkout',
+          title: '결제',
+          frameTree: { frameTree: { frame: { id: 'TOP' }, childFrames: [{ frame: { id: 'OOPIF' } }] } },
+          frameWalk: {
+            TOP: {
+              text: '결제창 [e1 버튼 "닫기"]',
+              frames: [{ x: 100, y: 120, w: 400, h: 300, visible: true }],
+            },
+          },
+        }),
+    )
+    const { tabId } = (await c.call('open', { url: 'https://pay.test/checkout' })) as { tabId: number }
+    const page = browser.pages[0] as FakePage
+    // The cross-origin frame attaches with its own session; register a fake for it and tell the caller it arrived.
+    const child = new FakeSession(
+      'OOPIF',
+      { OOPIF: { text: '[f1e1 버튼 "결제하기"]', frames: [] } },
+      { OOPIF: { found: true, x: 30, y: 40, w: 80, h: 24 } },
+    )
+    browser.addChildSession('CS1', child)
+    browser.emit(
+      'Target.attachedToTarget',
+      { sessionId: 'CS1', targetInfo: { targetId: 'OOPIF', type: 'iframe' } },
+      page.sessionId,
+    )
+    const snap = (await c.call('snapshot', { tabId })) as { text: string }
+    // The frame's element shows up, walked in the child session (setAutoAttach → child sessionId → walk in it)
+    expect(snap.text).toContain('[frame f1]')
+    expect(parseRefs(snap.text).get('f1e1')).toEqual({ role: '버튼', name: '결제하기' })
+    expect(child.sent.some((s) => s.method === 'Page.createIsolatedWorld')).toBe(true)
+    // A click on the OOPIF ref resolves through the child session and lands at frame offset + element centre
+    await c.call('click', { tabId, ref: 'f1e1' })
+    const pressed = page.sent.find((s) => s.params?.type === 'mousePressed')
+    expect(pressed?.params).toMatchObject({ x: 130, y: 160, button: 'left' })
+  })
+
+  it('skips a tiny or hidden child frame (ad-slot guard)', async () => {
+    const { c } = caller(
+      (i) =>
+        new FakePage(`T${i}`, {
+          url: 'https://ads.test/',
+          title: 'ads',
+          frameTree: {
+            frameTree: {
+              frame: { id: 'TOP' },
+              childFrames: [{ frame: { id: 'AD' } }, { frame: { id: 'REAL' } }],
+            },
+          },
+          frameWalk: {
+            TOP: {
+              text: '본문 [e1 링크 "더보기"]',
+              frames: [
+                { x: 0, y: 0, w: 1, h: 1, visible: true }, // 1×1 beacon → skipped
+                { x: 0, y: 300, w: 320, h: 240, visible: true }, // real content frame
+              ],
+            },
+            REAL: { text: '[f2e1 버튼 "구매"]', frames: [] },
+            AD: { text: '[f1e1 링크 "광고"]', frames: [] },
+          },
+        }),
+    )
+    const { tabId } = (await c.call('open', { url: 'https://ads.test/' })) as { tabId: number }
+    const snap = (await c.call('snapshot', { tabId })) as { text: string }
+    const refs = parseRefs(snap.text)
+    expect(refs.has('f1e1')).toBe(false) // the 1×1 ad frame was not walked
+    expect(refs.get('f2e1')).toEqual({ role: '버튼', name: '구매' }) // the real frame still is
+  })
 })
 
 // Opt-in: downloads and launches the real Chromium, drives a tiny data: URL page end to end. Kept out of CI (it downloads a
@@ -657,5 +881,25 @@ IT('CdpBrowserCaller integration (real Chromium)', () => {
     expect(r.status).toBe(200)
     expect(r.url).toContain('example.com')
     expect(r.body.toLowerCase()).toContain('example')
+  }, 120_000)
+
+  it('snapshots a same-origin iframe and a click inside it changes the frame DOM', async () => {
+    c = new CdpBrowserCaller({ dataDir })
+    // The outer page holds a same-origin iframe (srcdoc) whose button relabels itself on click, so a re-snapshot of the
+    // frame proves the click landed inside the iframe (not the top document).
+    const inner = `<button onclick="this.textContent='clicked-in-frame'">frame button</button>`
+    const html = `<h1>outer</h1><iframe srcdoc="${inner.replace(/"/g, '&quot;')}" width="400" height="200"></iframe>`
+    const { tabId } = (await c.call(
+      'open',
+      { url: `data:text/html,${encodeURIComponent(html)}` },
+      60_000,
+    )) as { tabId: number }
+    const snap = (await c.call('snapshot', { tabId })) as { text: string }
+    // The frame's button shows up with a frame-qualified ref (f1e…), not a plain eN
+    const ref = snap.text.match(/\[(f\d+e\d+) [^\]]*frame button/)?.[1]
+    expect(ref).toBeTruthy()
+    await c.call('click', { tabId, ref })
+    const snap2 = (await c.call('snapshot', { tabId })) as { text: string }
+    expect(snap2.text).toContain('clicked-in-frame')
   }, 120_000)
 })
