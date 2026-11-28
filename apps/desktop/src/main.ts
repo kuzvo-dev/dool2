@@ -169,6 +169,9 @@ async function startRelayIfConfigured(): Promise<void> {
       agentd: session.agentd,
       relayUrl: RELAY_URL,
       pairingCode: PAIRING_DIGITS,
+      // The shipped phone app's vault screen + phone-first login sheets run against the engine's own vault over the
+      // relay (secret -> vault only, never the AI). Present only when the built-in browser is on (else no real vault).
+      ...(session.vault ? { vault: session.vault } : {}),
       log: (l) => console.log(`[relay] ${l}`),
     })
     console.log(`[relay] joined ${RELAY_URL} room ${relayBridge.room.slice(0, 8)}…`)

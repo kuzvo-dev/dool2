@@ -74,6 +74,14 @@ export interface RelayBridgeOptions {
   legacyPairingSecret?: string
   /** Called after a v1 phone's approval is verified + recorded, so the host can resume the gated action. */
   onLegacyApproved?: (approval: { hash: string; choice?: string }) => void
+  /**
+   * The engine's vault (the SAME InMemoryVault backing the code hand's vault bridge). Passed to the v1-compat link so
+   * the shipped app's vault screen + phone-first login sheets work over the relay without leaking a secret. Omitted =>
+   * those messages degrade to an empty list / a clear note.
+   */
+  vault?: ConstructorParameters<typeof LegacyPhoneLink>[0]['vault']
+  /** Lists the service connections the shipped app shows (connected + connectable). Omitted => an empty list. */
+  connections?: ConstructorParameters<typeof LegacyPhoneLink>[0]['connections']
 }
 
 export interface RelayBridge {
@@ -144,6 +152,8 @@ export async function startRelayBridge(opts: RelayBridgeOptions): Promise<RelayB
     send: (env) => client.send(env),
     ...(opts.pcName !== undefined ? { pcName: opts.pcName } : {}),
     ...(opts.onLegacyApproved ? { onApproved: opts.onLegacyApproved } : {}),
+    ...(opts.vault ? { vault: opts.vault } : {}),
+    ...(opts.connections ? { connections: opts.connections } : {}),
     ...(opts.log ? { log: opts.log } : {}),
     ...(opts.now ? { now: opts.now } : {}),
   })
