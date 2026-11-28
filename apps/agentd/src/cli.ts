@@ -24,6 +24,7 @@ import { Agentd, type AgentdEvent } from './agentd.js'
 import { brainConfigFromEnv, chooseBrain } from './brain-config.js'
 import { buildHostBridges } from './bridges.js'
 import { startHttpServer } from './http.js'
+import { LearnController } from './learn.js'
 
 interface Args {
   command: string
@@ -58,6 +59,14 @@ function builtinBrowserOn(): boolean {
   return v === '1' || v === 'true'
 }
 
+/** Learn-by-watching: on by default when the built-in browser is on; DOOL2_LEARN=0 turns it off, =1 forces it. */
+function learnOn(): boolean {
+  const v = process.env.DOOL2_LEARN
+  if (v === '0' || v === 'false') return false
+  if (v === '1' || v === 'true') return true
+  return builtinBrowserOn()
+}
+
 function dataDir(): string {
   return process.env.DOOL2_DATA_DIR ?? join(homedir(), '.dool2')
 }
@@ -75,12 +84,19 @@ function makeAgentd(
   // Load the built-in site-skill pack once; the vault reads each skill's `login` hints to find the right login fields
   // (Korean names included) on the matched site. Done once at startup; a getter hands the frozen list to the vault.
   const skills: readonly SkillMeta[] = loadBuiltinSkillMetas()
+  // Learn-by-watching: the controller is the recorder sink (page/vault report acting steps to it) AND the draft
+  // store. The browser caller lives inside buildHostBridges, so it hands back the recorder factory, which we set on
+  // the controller afterwards (breaking the construction order).
+  const learn = new LearnController()
   const built = buildHostBridges({
     builtinBrowser: builtinBrowserOn(),
     dataDir: dataDir(),
     skills: () => skills,
+    learn: learnOn(),
+    recorderSink: learn,
   })
-  const agentd = new Agentd({ brain, bridges: built.bridges, level })
+  if (built.newRecorder) learn.setFactory(built.newRecorder)
+  const agentd = new Agentd({ brain, bridges: built.bridges, level, learn })
   return { agentd, close: built.close, brainLabel: brain.label }
 }
 
@@ -112,6 +128,14 @@ function printEvent(event: AgentdEvent): void {
     case 'blocked':
       console.log(`  [blocked] "${event.label}" (${event.reason})`)
       break
+    case 'draft': {
+      const pct = Math.round(event.coverage.clickFreeRatio * 100)
+      console.log(
+        `  [draft] ${event.merged ? 'updated' : 'new'} site skill "${event.id}" (${event.host}) — review pending; ` +
+          `coverage ${event.coverage.covered}/${event.coverage.total}, click-free ${pct}%`,
+      )
+      break
+    }
     case 'turn_end':
       console.log(`  [turn end: ${event.stop}]`)
       break
@@ -155,7 +179,7 @@ async function cmdServe(args: Args): Promise<number> {
   const http = await startHttpServer({ agentd, token, port, log: (l) => console.log(`[agentd] ${l}`) })
   console.log(`agentd serving at ${http.url}  brain=${brainLabel}`)
   console.log(`token: ${token}`)
-  console.log('POST /message  POST /approve  GET /pending  GET /health')
+  console.log('POST /message  POST /approve  GET /pending  GET /drafts  GET /health')
 
   const stop = async (): Promise<void> => {
     await http.close()

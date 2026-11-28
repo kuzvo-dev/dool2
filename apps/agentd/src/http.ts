@@ -7,6 +7,7 @@
 //                                               then a final `event: result` with the SendResult summary.
 //   POST /approve { hash, signature } -> the ApproveResult (phone signature verified + consumed)
 //   GET  /pending                     -> the approval cards still awaiting a signature
+//   GET  /drafts                      -> the review-pending learned site-skill drafts + the library coverage KPIs
 //
 // Streaming uses Server-Sent Events: each AgentdEvent is written as it is emitted, so a client (the desktop app, or a
 // phone watching) sees text and tool calls live. Secrets never appear in any event or response.
@@ -80,6 +81,11 @@ async function handle(
 
   if (req.method === 'GET' && path === '/pending') {
     return void sendJson(res, 200, { pending: opts.agentd.pending() })
+  }
+
+  // The learn-by-watching review surface: the review-pending site-skill drafts + the library KPIs for the dashboard.
+  if (req.method === 'GET' && path === '/drafts') {
+    return void sendJson(res, 200, { drafts: opts.agentd.drafts(), coverage: opts.agentd.coverage() })
   }
 
   if (req.method === 'POST' && path === '/approve') {

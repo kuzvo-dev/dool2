@@ -25,6 +25,16 @@ export {
 export { type BuildBridgesOptions, type BuiltBridges, buildHostBridges } from './bridges.js'
 export { type HttpServerOptions, type RunningHttpServer, startHttpServer } from './http.js'
 export {
+  keywordsFromMessage,
+  LearnController,
+  type LearnDeps,
+  type LearnSnapshot,
+  type LocalDraft,
+  LocalDraftStore,
+  type RecorderSink,
+  recordingHasContent,
+} from './learn.js'
+export {
   DEFAULT_AGENT_WINDOW_MS,
   DEFAULT_UNLOCK_TTL_MS,
   defaultVaultItems,
