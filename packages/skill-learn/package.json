@@ -1,0 +1,24 @@
+{
+  "name": "@dool2/skill-learn",
+  "version": "0.0.0",
+  "private": true,
+  "license": "Apache-2.0",
+  "description": "Dool2 self-growing skill library: turn a session recording (the data path Dool2 found on a site plus the UI steps and login fields) into a drafted SKILL.md, refine it over time, and hand a batch to @dool2/packs for a signed, maintainer-reviewed pack. Coverage and click-free rate are the KPIs.",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run --passWithNoTests"
+  },
+  "dependencies": {
+    "@dool2/packs": "workspace:*",
+    "@dool2/skill-sdk": "workspace:*",
+    "@dool2/vault": "workspace:*"
+  }
+}
