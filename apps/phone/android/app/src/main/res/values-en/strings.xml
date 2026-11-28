@@ -1,5 +1,0 @@
-<?xml version='1.0' encoding='utf-8'?>
-<resources>
-    <string name="push_channel">Dool2 notifications</string>
-    <string name="push_channel_desc">Approval requests, steps for you, finished tasks</string>
-</resources>
