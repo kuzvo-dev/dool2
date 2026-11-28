@@ -11,7 +11,7 @@ import { fileURLToPath } from 'node:url'
 import type { AutonomyLevel } from '@dool2/core'
 import type { Lang } from '@dool2/i18n'
 import { app, BrowserWindow, ipcMain, nativeTheme, shell } from 'electron'
-import { DEMO_MESSAGE, demoBrain } from './demo.js'
+import { demoBrain } from './demo.js'
 import { demoDraftsSnapshot } from './locales/drafts-demo.js'
 import { mainText } from './locales/main.js'
 import { createSession, type Session } from './session.js'
@@ -39,10 +39,11 @@ let level: AutonomyLevel = 'ask'
 
 async function createWindow(): Promise<BrowserWindow> {
   const w = new BrowserWindow({
-    width: 1180,
-    height: 800,
-    minWidth: 720,
-    minHeight: 520,
+    // Matches the design preview (docs/design/screens/src/PC.dc.html, 1440×900) so the 3-column layout breathes.
+    width: 1440,
+    height: 900,
+    minWidth: 860,
+    minHeight: 560,
     title: mainText(uiLang()).appName,
     backgroundColor: '#ffffff',
     show: !SMOKE,
@@ -108,6 +109,10 @@ function registerIpc(): void {
     session?.agentd.setLevel(next)
   })
 
+  // The approval cards still awaiting a phone signature (same data the HTTP daemon serves at GET /pending). The
+  // renderer shows these in the up-next queue; offline/smoke this is empty and the seeded demo queue stands in.
+  ipcMain.handle('dool2:pending', () => session?.agentd.pending() ?? [])
+
   ipcMain.handle('dool2:watch-browser', async (_e, on: boolean) => {
     if (!win) return
     if (on) await startMirror(win)
@@ -136,24 +141,15 @@ function registerIpc(): void {
   ipcMain.handle('dool2:discard-draft', (_e, _id: string) => ({ ok: true, wired: false }))
 }
 
-/** Smoke screenshot: wait for the window to paint, send the canned turn, capture the chat, quit. No network. */
+/** Smoke screenshot: wait for the window to paint the seeded chat view (the full 3-column screen), capture it, quit.
+ *  No network. The seeded thread + Now tasks + Dool2's-screen card come from the renderer's demo seed (locales/seed.ts),
+ *  so the screenshot matches docs/design/screens/pc-light.png. The live demo brain stays reachable by typing. */
 async function smoke(w: BrowserWindow): Promise<void> {
   const ready = await new Promise<string>((resolve) => {
     ipcMain.once('dool2:ready', (_e, summary: string) => resolve(String(summary)))
     setTimeout(() => resolve('timeout'), 20_000)
   })
-  // Show the canned user message, then run the demo turn through the daemon and stream its events to the window.
-  if (!w.isDestroyed()) w.webContents.send('dool2:user-message', DEMO_MESSAGE)
-  await session?.agentd.send(DEMO_MESSAGE, {
-    level,
-    onEvent: (event) => {
-      if (!w.isDestroyed()) w.webContents.send('dool2:event', event)
-    },
-  })
-  // Open the "review new site-skill drafts" panel so the screenshot shows it with the demo drafts.
-  if (!w.isDestroyed())
-    await w.webContents.executeJavaScript("document.getElementById('review-toggle').click()").catch(() => {})
-  // Let the DOM paint the new lines and the fetched drafts before capturing.
+  // Let the fonts, character images and seeded DOM settle before capturing.
   await new Promise((r) => setTimeout(r, 800))
   const out = process.env.DOOL2_SMOKE_OUT ?? join(here, '..', 'out')
   await mkdir(out, { recursive: true })
@@ -167,7 +163,9 @@ async function smoke(w: BrowserWindow): Promise<void> {
 app.whenReady().then(async () => {
   app.setName(mainText(uiLang()).appName)
   if (SMOKE) {
-    const theme = process.env.DOOL2_SMOKE_THEME
+    // The canonical smoke is the light view, to compare against docs/design/screens/pc-light.png. Override with
+    // DOOL2_SMOKE_THEME=dark for the dark capture.
+    const theme = process.env.DOOL2_SMOKE_THEME ?? 'light'
     if (theme === 'dark' || theme === 'light') nativeTheme.themeSource = theme
   }
   session = createSession({
