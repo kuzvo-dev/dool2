@@ -30,6 +30,11 @@ interface FrameBoxFake {
 interface FrameWalkFake {
   text: string
   frames?: FrameBoxFake[]
+  /** What the walk returns for scope:'viewport' (default: same as `text`). Lets a test show viewport vs full lists */
+  viewportText?: string
+  /** Interactive marks sitting above/below the viewport (reported by the walk, turned into the "+N more" note) */
+  above?: number
+  below?: number
 }
 interface PrepFake {
   found: boolean
@@ -46,6 +51,8 @@ interface PrepFake {
  */
 class FakeSession {
   readonly sent: { method: string; params?: Record<string, unknown> }[] = []
+  /** How many DOM walks (FRAME_WALK_FN callFunctionOn) this session ran — the cache spy asserts against it */
+  walks = 0
   private readonly ctxFrame = new Map<number, string>()
   private nextCtx = 10
   constructor(
@@ -68,8 +75,22 @@ class FakeSession {
       const fn = String(params.functionDeclaration ?? '')
       const frameId = this.ctxFrame.get(Number(params.executionContextId)) ?? this.topFrameId
       if (fn.includes('maxChars')) {
+        this.walks++
+        // scope is the 4th argument the caller passes to FRAME_WALK_FN
+        const argv = (params.arguments as { value?: unknown }[] | undefined) ?? []
+        const scope = String(argv[3]?.value ?? 'viewport')
         const w = this.frameWalk[frameId] ?? { text: this.fallbackSnapshot ?? '', frames: [] }
-        return { result: { value: { text: w.text, frames: w.frames ?? [] } } } as unknown as T
+        const text = scope === 'viewport' && w.viewportText !== undefined ? w.viewportText : w.text
+        return {
+          result: {
+            value: {
+              text,
+              frames: w.frames ?? [],
+              above: scope === 'viewport' ? (w.above ?? 0) : 0,
+              below: scope === 'viewport' ? (w.below ?? 0) : 0,
+            },
+          },
+        } as unknown as T
       }
       if (fn.includes('textField')) {
         const p = this.framePrep[frameId] ?? this.fallbackPrep
@@ -114,6 +135,8 @@ class FakePage implements CdpPageLike {
   readonly navigated: string[] = []
   /** The last expression Runtime.evaluate was asked to run (the data-path fetch), for asserting how fetch runs */
   lastEvalExpr = ''
+  /** Element count the cheap signature probe reads; bump it to simulate a real DOM change between snapshots */
+  elementCount = 10
   private readonly session: FakeSession
   constructor(
     id: string,
@@ -148,6 +171,10 @@ class FakePage implements CdpPageLike {
       return this.session.handle<T>(method, params)
     return {} as T
   }
+  /** DOM walks run on this page's session (the cache test asserts the walk ran exactly once) */
+  get walkCount(): number {
+    return this.session.walks
+  }
   async navigate(url: string): Promise<unknown> {
     this.navigated.push(url)
     return {}
@@ -155,6 +182,9 @@ class FakePage implements CdpPageLike {
   async evaluate<T = unknown>(expression: string): Promise<T> {
     if (expression.includes('readyState')) return true as unknown as T
     if (expression.includes('innerWidth')) return { w: 1000, h: 800 } as unknown as T
+    // The cheap page signature probe (url + element count) for the snapshot cache
+    if (expression.includes('getElementsByTagName'))
+      return { u: this.opts.url, n: this.elementCount } as unknown as T
     if (expression.includes('location.href'))
       return { url: this.opts.url, title: this.opts.title } as unknown as T
     return undefined as unknown as T
@@ -807,6 +837,155 @@ describe('CdpBrowserCaller frames', () => {
     const refs = parseRefs(snap.text)
     expect(refs.has('f1e1')).toBe(false) // the 1×1 ad frame was not walked
     expect(refs.get('f2e1')).toEqual({ role: '버튼', name: '구매' }) // the real frame still is
+  })
+})
+
+describe('CdpBrowserCaller fast snapshots', () => {
+  // A page whose top document holds three buttons; only the middle one is in the viewport, one is above and one below.
+  function scrolledPage(id: string): FakePage {
+    return new FakePage(id, {
+      url: 'https://long.test/',
+      title: 'long',
+      frameWalk: {
+        'F-T0': {
+          text: '[e1 버튼 "맨위"] [e2 버튼 "가운데"] [e3 버튼 "맨아래"]',
+          viewportText: '[e2 버튼 "가운데"]',
+          above: 1,
+          below: 1,
+        },
+      },
+    })
+  }
+
+  it('defaults to the viewport, listing only in-view marks with a "+N more" note', async () => {
+    const { c } = caller((i) => scrolledPage(`T${i}`))
+    const { tabId } = (await c.call('open', { url: 'https://long.test/' })) as { tabId: number }
+    const snap = (await c.call('snapshot', { tabId })) as { text: string; scope: string }
+    expect(snap.scope).toBe('viewport')
+    const refs = parseRefs(snap.text)
+    expect(refs.has('e2')).toBe(true) // the in-view mark is listed
+    expect(refs.has('e1')).toBe(false) // above the fold — not listed
+    expect(refs.has('e3')).toBe(false) // below the fold — not listed
+    expect(snap.text).toContain('+1 more below, +1 more above — scroll or snapshot full')
+  })
+
+  it('scope:"full" lists every mark with no note, and a ref keeps the same eN across scopes', async () => {
+    const { c } = caller((i) => scrolledPage(`T${i}`))
+    const { tabId } = (await c.call('open', { url: 'https://long.test/' })) as { tabId: number }
+    const vp = (await c.call('snapshot', { tabId, scope: 'viewport' })) as { text: string }
+    const full = (await c.call('snapshot', { tabId, scope: 'full' })) as { text: string; scope: string }
+    expect(full.scope).toBe('full')
+    const refs = parseRefs(full.text)
+    expect(refs.get('e1')).toEqual({ role: '버튼', name: '맨위' })
+    expect(refs.get('e2')).toEqual({ role: '버튼', name: '가운데' })
+    expect(refs.get('e3')).toEqual({ role: '버튼', name: '맨아래' })
+    expect(full.text).not.toContain('more below')
+    // e2 is byte-for-byte the same mark whether listed in the viewport or the full document (stable ref)
+    expect(vp.text).toContain('[e2 버튼 "가운데"]')
+    expect(full.text).toContain('[e2 버튼 "가운데"]')
+  })
+
+  it('a ref from a full snapshot still resolves for click after a later viewport snapshot', async () => {
+    const { c, browser } = caller((i) => scrolledPage(`T${i}`))
+    const { tabId } = (await c.call('open', { url: 'https://long.test/' })) as { tabId: number }
+    await c.call('snapshot', { tabId, scope: 'full' }) // e1..e3 assigned
+    await c.call('snapshot', { tabId, scope: 'viewport' }) // lists only e2
+    // e1 (above the fold, not in the viewport list) still clicks — findNth counts it the same way
+    await c.call('click', { tabId, ref: 'e1' })
+    expect(mouseTypes(browser.pages[0] as FakePage)).toEqual(['mouseMoved', 'mousePressed', 'mouseReleased'])
+  })
+
+  // A page whose walk text the test mutates between snapshots (shared by reference), to drive diff/cache behaviour.
+  // The frame id is `F-T${i}`, so the shared walk map is keyed `F-T0`.
+  function mutablePage(shared: Record<string, FrameWalkFake>) {
+    return (i: number) => new FakePage(`T${i}`, { url: 'https://app.test/', title: 'app', frameWalk: shared })
+  }
+
+  it('mode:"auto" returns a compact diff naming the changed ref when the page barely changed', async () => {
+    const shared: Record<string, FrameWalkFake> = { 'F-T0': { text: '[e1 버튼 "열기"] [e2 링크 "홈"]' } }
+    const { c, browser } = caller(mutablePage(shared))
+    const { tabId } = (await c.call('open', { url: 'https://app.test/' })) as { tabId: number }
+    await c.call('snapshot', { tabId }) // baseline (full list, no prior snapshot)
+    // One mark changes; bump the element count so the signature moves and the cache re-walks
+    shared['F-T0']!.text = '[e1 버튼 "닫기"] [e2 링크 "홈"]'
+    ;(browser.pages[0] as FakePage).elementCount++
+    const snap = (await c.call('snapshot', { tabId })) as { text: string; mode: string }
+    expect(snap.mode).toBe('diff')
+    expect(snap.text).toContain('changed')
+    expect(snap.text).toContain('[e1 버튼 "닫기"]') // the changed mark, byte-identical
+    expect(snap.text).not.toContain('홈') // the unchanged mark is not repeated
+  })
+
+  it('mode:"auto" returns the full list and says so when the page changed a lot', async () => {
+    const shared: Record<string, FrameWalkFake> = { 'F-T0': { text: '[e1 버튼 "a"]' } }
+    const { c, browser } = caller(mutablePage(shared))
+    const { tabId } = (await c.call('open', { url: 'https://app.test/' })) as { tabId: number }
+    await c.call('snapshot', { tabId }) // baseline with one mark
+    // Ten new marks replace it — well past DIFF_THRESHOLD
+    shared['F-T0']!.text = Array.from({ length: 10 }, (_, i) => `[e${i + 1} 버튼 "b${i}"]`).join(' ')
+    ;(browser.pages[0] as FakePage).elementCount++
+    const snap = (await c.call('snapshot', { tabId })) as { text: string; mode: string }
+    expect(snap.mode).toBe('full')
+    expect(snap.text).toContain('changed a lot')
+    expect(parseRefs(snap.text).size).toBe(10) // the whole list is there
+  })
+
+  it('mode:"diff" forces a diff even when the change is large; mode:"full" forces the whole list', async () => {
+    const shared: Record<string, FrameWalkFake> = { 'F-T0': { text: '[e1 버튼 "a"]' } }
+    const { c, browser } = caller(mutablePage(shared))
+    const { tabId } = (await c.call('open', { url: 'https://app.test/' })) as { tabId: number }
+    await c.call('snapshot', { tabId })
+    shared['F-T0']!.text = Array.from({ length: 10 }, (_, i) => `[e${i + 1} 버튼 "b${i}"]`).join(' ')
+    ;(browser.pages[0] as FakePage).elementCount++
+    const forcedDiff = (await c.call('snapshot', { tabId, mode: 'diff' })) as { text: string; mode: string }
+    expect(forcedDiff.mode).toBe('diff')
+    expect(forcedDiff.text).toContain('(diff)')
+    // Force a full list back, even though nothing changed since the diff above
+    const forcedFull = (await c.call('snapshot', { tabId, mode: 'full' })) as { text: string; mode: string }
+    expect(forcedFull.mode).toBe('full')
+    expect(parseRefs(forcedFull.text).size).toBe(10)
+  })
+
+  it('caches an unchanged page: same refs, flagged cached, and no second DOM walk', async () => {
+    const { c, browser } = caller((i) => scrolledPage(`T${i}`))
+    const { tabId } = (await c.call('open', { url: 'https://long.test/' })) as { tabId: number }
+    const page = browser.pages[0] as FakePage
+    const first = (await c.call('snapshot', { tabId })) as { text: string; cached?: boolean }
+    expect(first.cached).toBeFalsy()
+    expect(page.walkCount).toBe(1)
+    const second = (await c.call('snapshot', { tabId })) as { text: string; cached?: boolean }
+    expect(second.cached).toBe(true)
+    expect(second.text).toBe(first.text) // identical refs, straight from the cache
+    expect(page.walkCount).toBe(1) // no re-walk
+  })
+
+  it('invalidates the cache after an acting call and on a real DOM change', async () => {
+    const { c, browser } = caller((i) => scrolledPage(`T${i}`))
+    const { tabId } = (await c.call('open', { url: 'https://long.test/' })) as { tabId: number }
+    const page = browser.pages[0] as FakePage
+    await c.call('snapshot', { tabId }) // walk 1
+    await c.call('click', { tabId, ref: 'e2' }) // acting call → cache dirty
+    const afterClick = (await c.call('snapshot', { tabId })) as { cached?: boolean }
+    expect(afterClick.cached).toBeFalsy()
+    expect(page.walkCount).toBe(2) // re-walked
+    // Now no acting call, but the DOM changes under us (element count moves) → signature differs → re-walk
+    page.elementCount++
+    const afterDomChange = (await c.call('snapshot', { tabId })) as { cached?: boolean }
+    expect(afterDomChange.cached).toBeFalsy()
+    expect(page.walkCount).toBe(3)
+  })
+
+  it('a forced full snapshot ignores the cache and always re-walks', async () => {
+    const { c, browser } = caller((i) => scrolledPage(`T${i}`))
+    const { tabId } = (await c.call('open', { url: 'https://long.test/' })) as { tabId: number }
+    const page = browser.pages[0] as FakePage
+    await c.call('snapshot', { tabId }) // walk 1
+    const cached = (await c.call('snapshot', { tabId })) as { cached?: boolean }
+    expect(cached.cached).toBe(true)
+    expect(page.walkCount).toBe(1)
+    const forced = (await c.call('snapshot', { tabId, mode: 'full' })) as { cached?: boolean }
+    expect(forced.cached).toBeFalsy()
+    expect(page.walkCount).toBe(2) // forced full re-walked despite a valid cache
   })
 })
 
