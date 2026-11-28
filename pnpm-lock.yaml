@@ -138,6 +138,10 @@ importers:
       '@dool2/core':
         specifier: workspace:*
         version: link:../core
+    devDependencies:
+      '@dool2/mcp-server':
+        specifier: workspace:*
+        version: link:../mcp-server
 
   packages/brain-cli-util:
     dependencies:
@@ -147,6 +151,9 @@ importers:
       '@dool2/core':
         specifier: workspace:*
         version: link:../core
+      '@dool2/mcp-server':
+        specifier: workspace:*
+        version: link:../mcp-server
 
   packages/brain-codex:
     dependencies:
@@ -211,6 +218,12 @@ importers:
         version: link:../vault
 
   packages/i18n: {}
+
+  packages/mcp-server:
+    dependencies:
+      '@dool2/core':
+        specifier: workspace:*
+        version: link:../core
 
   packages/packs: {}
 

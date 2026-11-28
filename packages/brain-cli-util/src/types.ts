@@ -3,6 +3,7 @@
 // identity: there is no user-agent override and no client id — the official binary runs unmodified and owns its auth.
 
 import type { TurnEvent } from '@dool2/core'
+import type { McpConnector } from './mcp.js'
 
 /** A spawned CLI child, reduced to what the bridge needs: its stdout lines and its exit. Injected in tests. */
 export interface CliProcess {
@@ -39,6 +40,17 @@ export interface CliStreamParser {
   end(exit: CliExit): TurnEvent[]
 }
 
+/** Options for a fresh parser. */
+export interface MakeParserOptions {
+  /**
+   * The CLI is driving its own tool calls over an attached MCP server. When true, a tool-use event is emitted as a
+   * `tool_call` marked `serviced` (the MCP server already ran it) and does NOT end the turn — the CLI continues in the
+   * same run and the turn ends at its own terminal event. When false (no MCP), a tool-use ends the turn so the engine
+   * can run the tool and re-invoke (the legacy path).
+   */
+  toolsViaMcp?: boolean
+}
+
 /** Options common to both CLI brains. `spawn`/`which` are injected so tests never touch a real CLI. */
 export interface CliBrainBaseOptions {
   /** Absolute path or bare name of the official binary. Defaults to the brain's binary name (resolved via `which`). */
@@ -54,4 +66,10 @@ export interface CliBrainBaseOptions {
    * is logged in. Defaults to the brain's own official status command (no paid turn). Tests inject a stub.
    */
   loginProbe?: (binPath: string) => Promise<boolean>
+  /**
+   * How to attach the MCP tool server so the CLI can call Dool2's tools. Used only when the run is given a tool
+   * handler (RunHandle.tools, set by the engine). Defaults to the real socket-backed connector; tests inject one over
+   * an in-memory transport. Set to `false` to disable MCP even when a handler is present (the legacy end-turn path).
+   */
+  mcpConnector?: McpConnector | false
 }

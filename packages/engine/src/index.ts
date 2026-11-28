@@ -5,15 +5,15 @@
 // No real browser/model yet — everything is injected.
 export type { ActionClassifier, ClassifyContext, RefinedAction } from './classify.js'
 export { defaultClassify } from './classify.js'
-export type {
-  ApprovalOutcome,
-  EngineOptions,
-  GateDecisionLog,
-  TranscriptItem,
-  TurnRequest,
-  TurnResult,
-} from './engine.js'
-export { Engine, GateStopError, runTurn } from './engine.js'
+export type { EngineOptions, TranscriptItem, TurnRequest, TurnResult } from './engine.js'
+export { Engine, runTurn } from './engine.js'
 export type { AssembledPrompt, EngineSkill, InjectedSkill, PromptContext } from './prompt.js'
 export { assembleSystemPrompt, BASE_PROMPT } from './prompt.js'
 export { scriptedBrain } from './scripted-brain.js'
+export type {
+  ApprovalOutcome,
+  GateDecisionLog,
+  ToolRuntime,
+  ToolRuntimeOptions,
+} from './tool-runtime.js'
+export { createToolRuntime, GateStopError } from './tool-runtime.js'

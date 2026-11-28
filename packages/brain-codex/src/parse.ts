@@ -7,7 +7,7 @@
 // turn with stop 'tool'; the daemon runs the tool, appends the result, and calls run() again. A plain answer ends at
 // `task_complete` with stop 'done'.
 
-import type { CliExit, CliStreamParser } from '@dool2/brain-cli-util'
+import type { CliExit, CliStreamParser, MakeParserOptions } from '@dool2/brain-cli-util'
 import type { ToolCall, ToolName, TurnEvent } from '@dool2/core'
 
 type Json = Record<string, unknown>
@@ -16,6 +16,12 @@ const isObj = (v: unknown): v is Json => typeof v === 'object' && v !== null
 class CodexParser implements CliStreamParser {
   private sawTextDelta = false
   private toolCalls = 0
+  /** When tools are serviced by an attached MCP server, a tool call does not end the turn — Codex keeps running. */
+  private readonly toolsViaMcp: boolean
+
+  constructor(opts?: MakeParserOptions) {
+    this.toolsViaMcp = opts?.toolsViaMcp === true
+  }
 
   push(line: unknown): TurnEvent[] {
     if (!isObj(line)) return []
@@ -33,7 +39,7 @@ class CodexParser implements CliStreamParser {
       case 'mcp_tool_call_begin':
         return this.onToolCall(msg)
       case 'task_complete':
-        return [{ kind: 'turn_end', stop: this.toolCalls > 0 ? 'tool' : 'done' }]
+        return [{ kind: 'turn_end', stop: this.terminalStop() }]
       case 'error':
         return [{ kind: 'turn_end', stop: 'error' }]
       // task_started, token_count, mcp_tool_call_end, exec_command_* and the rest carry nothing for the turn stream.
@@ -44,7 +50,12 @@ class CodexParser implements CliStreamParser {
 
   end(exit: CliExit): TurnEvent[] {
     if (exit.code !== 0 && exit.code !== null) return [{ kind: 'turn_end', stop: 'error' }]
-    return [{ kind: 'turn_end', stop: this.toolCalls > 0 ? 'tool' : 'done' }]
+    return [{ kind: 'turn_end', stop: this.terminalStop() }]
+  }
+
+  /** The clean-exit terminal stop: 'done' when tools round-trip over MCP, else 'tool' if a call was seen. */
+  private terminalStop(): 'done' | 'tool' {
+    return !this.toolsViaMcp && this.toolCalls > 0 ? 'tool' : 'done'
   }
 
   private textDelta(v: unknown): TurnEvent[] {
@@ -68,7 +79,11 @@ class CodexParser implements CliStreamParser {
       args: 'arguments' in inv ? inv.arguments : {},
     }
     this.toolCalls++
-    // One turn per run: hand control back so the daemon can run the tool and re-invoke with the result.
+    if (this.toolsViaMcp) {
+      // Codex called the tool over the attached MCP server; record it and keep reading until `task_complete`.
+      return [{ kind: 'tool_call', call, serviced: true }]
+    }
+    // Legacy path: one turn per run — hand control back so the daemon runs the tool and re-invokes.
     return [
       { kind: 'tool_call', call },
       { kind: 'turn_end', stop: 'tool' },
@@ -77,4 +92,4 @@ class CodexParser implements CliStreamParser {
 }
 
 /** A fresh parser for one Codex turn. */
-export const makeCodexParser = (): CliStreamParser => new CodexParser()
+export const makeCodexParser = (opts?: MakeParserOptions): CliStreamParser => new CodexParser(opts)

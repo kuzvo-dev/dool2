@@ -4,7 +4,7 @@
 // the binary and runs the CLI's own cheap `login status` (offline-safe, no paid turn); run() maps a TurnInput to one
 // turn. Same shared lifecycle as @dool2/brain-claude (see @dool2/brain-cli-util).
 
-import { createCliBrain } from '@dool2/brain-cli-util'
+import { codexMcpArgs, createCliBrain } from '@dool2/brain-cli-util'
 import type { Brain } from '@dool2/brains'
 import { buildCodexArgs, buildCodexStdin, CODEX_BINARY } from './args.js'
 import { makeCodexParser } from './parse.js'
@@ -25,6 +25,7 @@ export function createCodexBrain(opts: CodexBrainOptions = {}): Brain {
       buildArgs: buildCodexArgs,
       buildStdin: buildCodexStdin,
       makeParser: makeCodexParser,
+      mcpArgs: codexMcpArgs,
       statusArgs: ['login', 'status'],
       parseStatus: codexLoggedIn,
     },

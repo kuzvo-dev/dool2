@@ -27,6 +27,14 @@ export interface ToolResult {
   isError?: boolean
 }
 
+/**
+ * Runs one tool call and returns its result. This is the single seam between a brain that calls tools and the daemon
+ * that owns them: the daemon/engine builds a handler that runs `code` in the sandbox THROUGH the autonomy gate (and
+ * services the small tools), and both the in-process turn loop and the MCP tool server (the subscription CLIs) call
+ * exactly this. Secrets never cross it — a ToolResult carries only masked values, never a password/card/PIN.
+ */
+export type ToolHandler = (call: ToolCall) => Promise<ToolResult>
+
 /** A single step the gate must weigh (produced while a `code` tool runs and wants to act on a page). */
 export interface GatedAction {
   tier: ActionTier

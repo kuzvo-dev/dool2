@@ -15,6 +15,9 @@
     "@dool2/brains": "workspace:*",
     "@dool2/core": "workspace:*"
   },
+  "devDependencies": {
+    "@dool2/mcp-server": "workspace:*"
+  },
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
