@@ -21,7 +21,6 @@ import {
   type ExecutedAction,
   envelopeHash,
   matchesApproved,
-  newNonce,
   type PendingApproval,
   pendingApproval,
 } from '@dool2/approvals'
@@ -89,6 +88,13 @@ export interface SendOptions {
   url?: string
   /** Override the session autonomy level for this one turn. */
   level?: AutonomyLevel
+  /**
+   * Resume after a phone signature (ADR 0047): the envelope hashes already approved via approve(). Each one lets the
+   * engine run exactly that `sign` action instead of pausing again. A hash the daemon has not actually recorded as
+   * approved is ignored, so a client cannot fake an approval by passing a hash here. Hashes that run are dropped from
+   * the approved set afterwards (single-use across the session).
+   */
+  approved?: string[]
   /** Called for each event as the turn is replayed, so the HTTP layer can stream and the CLI can print live. */
   onEvent?: (event: AgentdEvent) => void
 }
@@ -182,6 +188,11 @@ export class Agentd {
   async send(message: string, opts: SendOptions = {}): Promise<SendResult> {
     const emit = opts.onEvent ?? (() => {})
 
+    // The resume set for this turn: only hashes the daemon has actually verified + recorded as approved count, so a
+    // client cannot pre-approve an action by passing an arbitrary hash. The engine computes the same hash for the
+    // action (single source: @dool2/approvals envelopeForAction), and lets exactly those run.
+    const approvedForTurn = new Set((opts.approved ?? []).filter((h) => this.#approved.has(h)))
+
     const result = await runTurn(
       {
         brain: this.#brain,
@@ -189,9 +200,13 @@ export class Agentd {
         skills: this.#skills,
         level: opts.level ?? this.#level,
         ...(this.#classify !== undefined ? { classify: this.#classify } : {}),
+        ...(approvedForTurn.size > 0 ? { isApproved: (h: string) => approvedForTurn.has(h) } : {}),
       },
       { message, ...(opts.url !== undefined ? { url: opts.url } : {}) },
     )
+
+    // Single-use across the session: an approved action that actually ran this turn is spent.
+    for (const hash of result.consumedApprovals) this.#approved.delete(hash)
 
     // Replay the transcript in order, so a streaming client sees text/tool calls/results as the engine recorded them.
     for (const item of result.transcript) {
@@ -244,19 +259,29 @@ export class Agentd {
    * action the approval is for still matches the envelope (matchesApproved — here trivially, since we reconstruct the
    * executed action from the envelope's own public facts; a real resume reads them off the page about to be acted on).
    *
-   * Resume seam (documented, not fully wired this PR): the engine throws inside the sandbox so a `sign` action never
-   * runs, and the turn finishes with the action surfaced here. Clearing it for real means re-running the action with
-   * the gate already satisfied. Agentd records the consumed envelope in #approved; the next step is for the engine to
-   * accept a set of pre-approved actions (by hash) so a follow-up send() lets exactly that action through the gate and
-   * actually presses the button. That hook does not exist in @dool2/engine yet, so today approve() verifies, consumes,
-   * and records — the button is not pressed automatically. isApproved(hash) exposes the record for that future step.
+   * Resume seam (now wired): the engine throws inside the sandbox so a `sign` action never runs, and the turn
+   * finishes with the action surfaced here. approve() verifies the signature, consumes the nonce, and records the
+   * envelope in #approved by its hash. The phone→daemon→resume sequence that actually presses the button is:
+   *   1. send(message)            → the gate stops a `sign` action; the turn ends with an approvalNeeded card (hash H).
+   *   2. phone signs H            → approve(H, signature) verifies + consumes, and records H in #approved.
+   *   3. send(message, { approved: [H] })  → the engine recomputes the same hash H for that action (single source:
+   *      @dool2/approvals envelopeForAction) and, finding it approved, lets it run once. The action is then dropped
+   *      from #approved (result.consumedApprovals), so the one signature clears exactly one run.
    */
   approve(hash: string, signature: string, now: number = Date.now()): ApproveResult {
     const pending = this.#pending.get(hash)
     if (!pending) return { ok: false, reason: 'unknown-hash' }
     if (!this.#devicePublicKeyPem) return { ok: false, reason: 'no-device-key' }
 
-    const consumed = this.#store.verifyAndConsume(pending.envelope, signature, this.#devicePublicKeyPem, now)
+    // Expiry rides on the pending record's real mint time, not the envelope's canonical (zeroed) createdAt (the
+    // timestamp is kept out of the hash so the engine can reproduce it on resume — see @dool2/approvals action.ts).
+    const consumed = this.#store.verifyAndConsume(
+      pending.envelope,
+      signature,
+      this.#devicePublicKeyPem,
+      now,
+      pending.createdAt,
+    )
     if (!consumed.ok) return { ok: false, reason: consumed.reason }
 
     const executed: ExecutedAction = {
@@ -277,16 +302,14 @@ export class Agentd {
 
   // --- internals ----------------------------------------------------------------------------------------------------
 
-  /** Mint an ActionEnvelope + PendingApproval for an `approvalNeeded` outcome and register it by hash. */
+  /**
+   * Register an `approvalNeeded` outcome as a pending, signable approval. The envelope + hash come straight from the
+   * engine (built with @dool2/approvals envelopeForAction), so the hash the phone signs and the hash the engine checks
+   * on resume are one and the same. Freshness is minted here on the real clock; the envelope's own createdAt is the
+   * canonical constant that keeps the timestamp out of the hash.
+   */
   #registerApproval(outcome: ApprovalOutcome): ApprovalCard {
-    const envelope: ActionEnvelope = {
-      tier: outcome.tier,
-      label: outcome.label,
-      ...(outcome.amountKrw !== undefined ? { amountKrw: outcome.amountKrw } : {}),
-      nonce: newNonce(),
-      createdAt: Date.now(),
-    }
-    const pending = pendingApproval(envelope, this.#approvalTtlMs)
+    const pending = pendingApproval(outcome.envelope, this.#approvalTtlMs, Date.now())
     this.#pending.set(pending.hash, pending)
     return { ...toCardFromPending(pending), reason: outcome.reason }
   }

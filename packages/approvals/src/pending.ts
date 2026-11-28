@@ -29,13 +29,22 @@ export interface PendingApproval {
   expiresAt: number
 }
 
-/** Build a pending record for an envelope, with expiry measured from the envelope's own `createdAt`. */
-export function pendingApproval(envelope: ActionEnvelope, ttlMs: number = DEFAULT_TTL_MS): PendingApproval {
+/**
+ * Build a pending record for an envelope, with expiry measured from `mintedAt`. `mintedAt` defaults to the envelope's
+ * own `createdAt`, so an envelope minted with a real timestamp behaves exactly as before. The daemon passes the real
+ * clock time explicitly when the envelope's `createdAt` is a canonical constant (see @dool2/approvals action.ts, where
+ * `createdAt` is pinned so it stays out of the hash): freshness then rides on the pending record, not on the hash.
+ */
+export function pendingApproval(
+  envelope: ActionEnvelope,
+  ttlMs: number = DEFAULT_TTL_MS,
+  mintedAt: number = envelope.createdAt,
+): PendingApproval {
   return {
     envelope,
     hash: envelopeHash(envelope),
-    createdAt: envelope.createdAt,
-    expiresAt: envelope.createdAt + ttlMs,
+    createdAt: mintedAt,
+    expiresAt: mintedAt + ttlMs,
   }
 }
 
@@ -77,18 +86,23 @@ export class ApprovalStore {
   /**
    * Verify a signed approval and, on success, spend its nonce. Returns ok only when the envelope is unexpired, its
    * nonce is unspent, and the signature verifies for this exact envelope. Idempotent on failure; single-use on success.
+   *
+   * `mintedAt` is when the approval was created on the real clock; expiry is measured from it. It defaults to the
+   * envelope's own `createdAt` (unchanged behaviour), but the daemon passes the pending record's real mint time when
+   * the envelope's `createdAt` is the canonical constant that keeps the timestamp out of the hash (action.ts).
    */
   verifyAndConsume(
     envelope: ActionEnvelope,
     signature: string,
     devicePublicKeyPem: string,
     now: number = Date.now(),
+    mintedAt: number = envelope.createdAt,
   ): ConsumeResult {
-    if (now > envelope.createdAt + this.#ttlMs) return { ok: false, reason: 'expired' }
+    if (now > mintedAt + this.#ttlMs) return { ok: false, reason: 'expired' }
     if (this.#spent.has(envelope.nonce)) return { ok: false, reason: 'nonce-reused' }
     if (!verifyApproval(envelope, signature, devicePublicKeyPem))
       return { ok: false, reason: 'bad-signature' }
-    this.#spent.set(envelope.nonce, envelope.createdAt + this.#ttlMs)
+    this.#spent.set(envelope.nonce, mintedAt + this.#ttlMs)
     return { ok: true }
   }
 

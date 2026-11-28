@@ -45,6 +45,11 @@ export function makeFakeBridges(): FakeBridges {
       async press(key: string): Promise<void> {
         rec(`page.press:${key}`)
       },
+      // The vault's secret fill path. The ref is recorded; the value is not, matching the real contract that a secret
+      // never surfaces (not even into the call log a test reads).
+      async fill(ref: string): Promise<void> {
+        rec(`page.fill:${ref}`)
+      },
     },
     vault: {
       async listItems(): Promise<VaultItemSummary[]> {
@@ -59,6 +64,9 @@ export function makeFakeBridges(): FakeBridges {
       },
       async fillTotp(id: string): Promise<void> {
         rec(`vault.fillTotp:${id}`)
+      },
+      async fillPaymentPin(id: string): Promise<void> {
+        rec(`vault.fillPaymentPin:${id}`)
       },
     },
     pc: {

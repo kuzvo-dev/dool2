@@ -10,6 +10,7 @@
 //   land later.
 
 import { CdpBrowserCaller } from '@dool2/browser'
+import type { AutonomyLevel } from '@dool2/core'
 import { createPageBridge } from '@dool2/page-bridge'
 import { type HostBridges, makeFakeBridges } from '@dool2/sandbox'
 import { InMemoryVault, makeVaultBridge } from './vault.js'
@@ -24,6 +25,11 @@ export interface BuildBridgesOptions {
   dataDir?: string
   /** The in-memory vault to back the `vault` bridge. Defaults to a fresh seeded one. */
   vault?: InMemoryVault
+  /**
+   * The current autonomy level, read when the vault fills a payment PIN (ADR 0047 gates that to full-auto). Defaults to
+   * () => 'ask'. The daemon passes a getter that reflects the live session level.
+   */
+  level?: () => AutonomyLevel
 }
 
 export interface BuiltBridges {
@@ -50,8 +56,9 @@ export function buildHostBridges(opts: BuildBridgesOptions = {}): BuiltBridges {
     page = createPageBridge(caller)
   }
 
+  const level = opts.level ?? ((): AutonomyLevel => 'ask')
   return {
-    bridges: { page, vault: makeVaultBridge(vault), pc: fake.pc, fs: fake.fs },
+    bridges: { page, vault: makeVaultBridge(vault, { page, level }), pc: fake.pc, fs: fake.fs },
     vault,
     async close() {
       if (caller) await caller.closeBrowser()

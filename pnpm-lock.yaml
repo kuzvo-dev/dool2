@@ -109,6 +109,9 @@ importers:
 
   packages/engine:
     dependencies:
+      '@dool2/approvals':
+        specifier: workspace:*
+        version: link:../approvals
       '@dool2/brains':
         specifier: workspace:*
         version: link:../brains

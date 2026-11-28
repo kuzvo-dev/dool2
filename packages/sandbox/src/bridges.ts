@@ -44,6 +44,14 @@ export interface PageBridge {
   click(ref: string): Promise<void>
   type(ref: string, text: string): Promise<void>
   press(key: string): Promise<void>
+  /**
+   * Type a value into a field WITHOUT that value ever being visible to the brain. This is the vault's path: the vault
+   * (host-side) reads a secret it holds and types it straight into the field, so a password/TOTP/PIN never crosses
+   * into the sandbox or the transcript. It is deliberately NOT in {@link BRIDGE_METHODS} (the brain-facing surface),
+   * so only host code — the vault bridge — can call it. Optional so existing in-memory page fakes stay valid; callers
+   * fall back to {@link type} when it is absent.
+   */
+  fill?(ref: string, value: string): Promise<void>
 }
 
 // --- vault --------------------------------------------------------------------------------------------------------
@@ -69,6 +77,12 @@ export interface VaultBridge {
   listItems(): Promise<VaultItemSummary[]>
   fillLogin(id: string): Promise<void>
   fillTotp(id: string): Promise<void>
+  /**
+   * Type the stored payment PIN into the site's secure keypad. Available only in full-auto (ADR 0047): the vault
+   * refuses at any other level, because the PIN is stored only there. Like the other fills, the value is typed
+   * host-side and never returned. Optional so existing fakes stay valid.
+   */
+  fillPaymentPin?(id: string): Promise<void>
 }
 
 // --- pc -----------------------------------------------------------------------------------------------------------
@@ -148,6 +162,9 @@ export const BRIDGE_METHODS: Record<BridgeName, Record<string, BridgeMethodMeta>
     listItems: { acting: false },
     fillLogin: { acting: true, classify: (a) => act(`fill login ${asString(a[0])}`) },
     fillTotp: { acting: true, classify: (a) => act(`fill TOTP ${asString(a[0])}`) },
+    // Labelled without pay-words on purpose: the PIN fill is a sub-step, gated as a plain `act`; whether it may run
+    // at all is the vault's full-auto guard (paymentPinAvailable, ADR 0047), not a per-action phone signature.
+    fillPaymentPin: { acting: true, classify: (a) => act(`fill secure keypad ${asString(a[0])}`) },
   },
   pc: {
     snapshot: { acting: false },
