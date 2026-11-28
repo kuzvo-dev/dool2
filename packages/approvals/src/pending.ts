@@ -106,6 +106,25 @@ export class ApprovalStore {
     return { ok: true }
   }
 
+  /**
+   * Consume an approval WITHOUT the device-key-over-hash signature check, for the v1-compat (legacy phone) path only.
+   * The shipped v1 phone app signs a free-text approval string (`approvalSignText`) with a P-256 secure-chip key — not
+   * the envelope hash with the Ed25519 device key — so the relay bridge verifies THAT signature itself (ADR 0043) and
+   * then calls this to spend the nonce. It keeps the same expiry + single-use guards as {@link verifyAndConsume}; it
+   * only moves the signature check to the caller. The v2 path (verifyAndConsume) is untouched and stays the only
+   * signature-checked consume, so a v2 phone can never reach the daemon through an unsigned path.
+   */
+  consume(
+    envelope: ActionEnvelope,
+    now: number = Date.now(),
+    mintedAt: number = envelope.createdAt,
+  ): ConsumeResult {
+    if (now > mintedAt + this.#ttlMs) return { ok: false, reason: 'expired' }
+    if (this.#spent.has(envelope.nonce)) return { ok: false, reason: 'nonce-reused' }
+    this.#spent.set(envelope.nonce, mintedAt + this.#ttlMs)
+    return { ok: true }
+  }
+
   /** Drop spent-nonce records whose window has passed, to keep the set from growing without bound. */
   prune(now: number = Date.now()): void {
     for (const [nonce, deadAt] of this.#spent) {

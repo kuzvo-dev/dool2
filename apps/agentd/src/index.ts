@@ -41,6 +41,7 @@ export {
   type RecorderSink,
   recordingHasContent,
 } from './learn.js'
+export { LegacyPhoneLink, type LegacyPhoneLinkOptions } from './legacy-phone.js'
 export { MerchantMemory, normalizeMerchant } from './merchants.js'
 export { type RelayBridge, type RelayBridgeOptions, startRelayBridge } from './relay-bridge.js'
 export {

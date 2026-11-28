@@ -16,8 +16,14 @@ contextBridge.exposeInMainWorld('dool2', {
   }> => ipcRenderer.invoke('dool2:config'),
   /** The pairing state: the QR the phone scans (encodes relay + room + daemon key + code; never the loopback token),
    *  the 6-digit code as a fallback, and whether a phone has paired (daemon pair state). */
-  pairing: (): Promise<{ code: string; paired: boolean; qrSvg?: string; offerUrl?: string }> =>
-    ipcRenderer.invoke('dool2:pairing'),
+  pairing: (): Promise<{
+    code: string
+    paired: boolean
+    qrSvg?: string
+    offerUrl?: string
+    /** The second QR, read by the already-installed phone app (v1-compat pairing). */
+    legacyQrSvg?: string
+  }> => ipcRenderer.invoke('dool2:pairing'),
   /** Send a user message. Resolves when the turn ends; events stream in through onEvent meanwhile. */
   send: (text: string): Promise<void> => ipcRenderer.invoke('dool2:send', text),
   /** Change the autonomy level (ADR 0047). */

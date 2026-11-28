@@ -125,6 +125,28 @@ function pairingOfferUrl(): string | undefined {
   return undefined
 }
 
+/** The bare base64url(JSON) v1 PairInvite the ALREADY-INSTALLED phone app scans: live from the relay bridge, or a
+ *  sample in smoke (so the screenshot shows the second QR offline), else none. No `#d2p=` wrapper — the shipped app's
+ *  `startPairing` reads the bare token. */
+function legacyInviteToken(): string | undefined {
+  if (relayBridge && RELAY_URL) return relayBridge.legacyInviteToken()
+  if (SMOKE) {
+    const invite = {
+      pc: 'SAMPLEroomSAMPLEr',
+      k: 'SAMPLEboxSAMPLEboxSAMPLEboxSAMPL',
+      s: 'SAMPLEsecretSAMPLEsecret',
+      n: 'Dool2 PC',
+      r: OFFICIAL_RELAY,
+    }
+    return Buffer.from(JSON.stringify(invite), 'utf8')
+      .toString('base64')
+      .replaceAll('+', '-')
+      .replaceAll('/', '_')
+      .replace(/=+$/, '')
+  }
+  return undefined
+}
+
 /** Render a URL as an inline SVG QR, cached per URL (the offer is stable for the life of the relay connection). */
 const qrCache = new Map<string, string>()
 async function qrSvgFor(url: string): Promise<string | undefined> {
@@ -166,11 +188,16 @@ function registerIpc(): void {
     const paired = relayBridge?.paired() ?? session?.agentd.hasDevice() ?? false
     const offerUrl = pairingOfferUrl()
     const qrSvg = offerUrl ? await qrSvgFor(offerUrl) : undefined
+    // The v1-compat QR for the ALREADY-INSTALLED phone app: the bare base64url(JSON) PairInvite its scanner reads (no
+    // #d2p= wrapper). Live from the relay bridge; a sample stands in during smoke so the screenshot shows it offline.
+    const legacyToken = legacyInviteToken()
+    const legacyQrSvg = legacyToken ? await qrSvgFor(legacyToken) : undefined
     return {
       code: PAIRING_CODE,
       paired,
       ...(offerUrl ? { offerUrl } : {}),
       ...(qrSvg ? { qrSvg } : {}),
+      ...(legacyQrSvg ? { legacyQrSvg } : {}),
     }
   })
 
@@ -180,6 +207,8 @@ function registerIpc(): void {
     await session.agentd.send(text, {
       level,
       onEvent: (event) => {
+        // Push each new approval card to a paired v1-compat phone too, so the already-installed app can sign it.
+        if (event.type === 'approvalNeeded') relayBridge?.announceLegacyApproval(event.card)
         if (!w.isDestroyed()) w.webContents.send('dool2:event', event)
       },
     })
