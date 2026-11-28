@@ -118,6 +118,61 @@ body {
   color: var(--accent);
 }
 
+#review-toggle {
+  font: inherit;
+  font-size: 13px;
+  padding: 7px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: var(--panel);
+  color: var(--ink);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+#review-toggle.on {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.badge {
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 9px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.badge[hidden] {
+  display: none;
+}
+
+.nudge {
+  margin: 0 20px 10px;
+  padding: 9px 13px;
+  border-radius: 10px;
+  border: 1px solid var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent);
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.nudge[hidden] {
+  display: none;
+}
+
 #main {
   flex: 1;
   display: flex;
@@ -312,4 +367,128 @@ body {
   max-width: 100%;
   border-radius: 8px;
   box-shadow: 0 6px 20px rgba(0, 0, 0, 0.4);
+}
+
+#review-pane {
+  width: 420px;
+  border-left: 1px solid var(--line);
+  background: var(--panel);
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+  padding: 16px 18px;
+  gap: 10px;
+}
+
+/* An ID selector beats the UA [hidden] rule, so restate display:none while hidden (same as the browser pane). */
+#review-pane[hidden] {
+  display: none;
+}
+
+#review-caption {
+  font-size: 15px;
+  font-weight: 600;
+}
+
+#review-intro {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+#review-coverage {
+  color: var(--accent);
+  font-size: 12px;
+  background: var(--accent-soft);
+  border-radius: 8px;
+  padding: 8px 10px;
+}
+
+#review-status {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+#review-status[hidden] {
+  display: none;
+}
+
+#review-empty {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+#review-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.draft {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 12px 14px;
+  background: var(--bg);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.draft-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.draft-name {
+  font-weight: 600;
+}
+
+.draft-marker {
+  font-size: 11px;
+  color: var(--warn);
+  background: var(--warn-soft);
+  border-radius: 999px;
+  padding: 2px 9px;
+  white-space: nowrap;
+}
+
+.draft-host {
+  font-size: 12px;
+  color: var(--muted);
+  word-break: break-all;
+}
+
+.draft-learned {
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.draft-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.draft-actions button {
+  font: inherit;
+  font-size: 13px;
+  padding: 7px 14px;
+  border-radius: 9px;
+  cursor: pointer;
+}
+
+.draft-actions .approve {
+  border: none;
+  background: var(--accent);
+  color: #fff;
+}
+
+.draft-actions .discard {
+  border: 1px solid var(--line);
+  background: var(--panel);
+  color: var(--muted);
 }
