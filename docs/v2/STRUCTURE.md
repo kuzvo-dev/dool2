@@ -26,7 +26,7 @@ apps/
   desktop/      the app: invisible browser + chat                                                     [rebuild]
   phone/        approvals signed by the phone's secure chip; remote screen                            [rebuild]
   hands-mac/    PC-app control helper (mac)                                                           [kept]
-  hands-win/    PC-app control helper (windows)                                                       [todo]
+  hands-win/    PC-app control helper (windows)                                                       [new]
   relay/        phone <-> PC relay                                                                     [kept]
 
 chromium/       pinned Chromium build + patch set (later: our own fork)                               [todo]
