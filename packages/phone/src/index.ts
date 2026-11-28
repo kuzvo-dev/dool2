@@ -34,6 +34,7 @@ export {
   type PairResult,
   pairDevice,
 } from './pairing.js'
+export { RelayPhoneClient, type RelayPhoneClientOptions } from './relay-client.js'
 export {
   type ApprovalTransport,
   approveCard,

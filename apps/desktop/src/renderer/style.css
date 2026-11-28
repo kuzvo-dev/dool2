@@ -393,6 +393,25 @@ body {
   border-radius: var(--radius-md);
   background: var(--surface);
 }
+.pair-qr {
+  align-self: center;
+  width: 180px;
+  height: 180px;
+  padding: 12px;
+  border-radius: var(--radius-md);
+  background: #fff;
+  border: 1px solid var(--line);
+}
+.pair-qr svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+.pair-scan {
+  text-align: center;
+  font: var(--text-caption);
+  color: var(--ink-muted);
+}
 .pair-code-row {
   display: flex;
   flex-direction: column;

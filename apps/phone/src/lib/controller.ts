@@ -12,10 +12,17 @@
 // A secret never reaches here: the card carries only public facts and masked display text. The controller holds a
 // DaemonHttpClient and a KeyStore; in demo/offline mode there is no client, and a seeded card drives the same screens.
 
-import type { KeyStore } from '@dool2/phone'
-import { DaemonHttpClient, pairDevice } from '@dool2/phone'
+import type { ApprovalNeeded, KeyStore, RespondResult } from '@dool2/phone'
+import { DaemonHttpClient, pairDevice, RelayPhoneClient } from '@dool2/phone'
+import type { PairingOffer } from '@dool2/protocol/pair-rpc'
 import type { PendingCard } from './card.js'
 import { signPending } from './card.js'
+
+/** The two reads/writes the controller needs from whichever transport it paired over (loopback HTTP or the relay). */
+interface PhoneTransport {
+  pending(): Promise<ApprovalNeeded[]>
+  approve(hash: string, signature: string): Promise<RespondResult>
+}
 
 /** What the user just did with a card, so the sheet can reflect "Approved" / "Declined" before it closes. */
 export type Outcome = 'approved' | 'rejected' | 'handed-off'
@@ -54,7 +61,7 @@ export class PhoneController {
   readonly #keystore: KeyStore
   readonly #fetch: typeof fetch | undefined
   #demoCard: PendingCard | undefined
-  #client: DaemonHttpClient | undefined
+  #client: PhoneTransport | undefined
   readonly #listeners = new Set<Listener>()
 
   constructor(deps: ControllerDeps) {
@@ -111,6 +118,32 @@ export class PhoneController {
     this.#client = client
     this.#set({ mode: 'live', connected: true, busy: false, deviceId: client.deviceId, card: undefined })
     return true
+  }
+
+  /**
+   * Pair with the PC OVER THE RELAY, using an offer scanned from the desktop QR (relay + room + daemon key + code).
+   * The phone joins the relay room, sends only its PUBLIC key with the pairing code, and is handed a scoped token.
+   * Nothing loopback is touched; this is the path a real phone on another network takes.
+   */
+  async connectRelay(offer: PairingOffer, label?: string): Promise<boolean> {
+    this.#set({ busy: true, error: undefined })
+    const client = new RelayPhoneClient({ offer, ...(label !== undefined ? { label } : {}) })
+    try {
+      const result = await pairDevice(client, this.#keystore, {
+        deviceId: client.deviceId,
+        ...(label !== undefined ? { label } : {}),
+      })
+      if (!result.response.ok) {
+        this.#set({ busy: false, connected: false, error: result.response.reason ?? 'pair-failed' })
+        return false
+      }
+      this.#client = client
+      this.#set({ mode: 'live', connected: true, busy: false, deviceId: client.deviceId, card: undefined })
+      return true
+    } catch (err) {
+      this.#set({ busy: false, connected: false, error: err instanceof Error ? err.message : 'pair-failed' })
+      return false
+    }
   }
 
   /** Poll GET /pending; the first card awaiting a signature becomes the sheet. No-op in demo mode. */

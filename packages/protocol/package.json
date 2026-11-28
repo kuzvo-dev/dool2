@@ -29,6 +29,10 @@
       "types": "./dist/link.d.ts",
       "default": "./dist/link.js"
     },
+    "./pair-rpc": {
+      "types": "./dist/pair-rpc.d.ts",
+      "default": "./dist/pair-rpc.js"
+    },
     "./rich": {
       "types": "./dist/rich.d.ts",
       "default": "./dist/rich.js"
