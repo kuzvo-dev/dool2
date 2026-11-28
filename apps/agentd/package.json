@@ -22,6 +22,10 @@
   },
   "dependencies": {
     "@dool2/approvals": "workspace:*",
+    "@dool2/brain-claude": "workspace:*",
+    "@dool2/brain-cli-util": "workspace:*",
+    "@dool2/brain-codex": "workspace:*",
+    "@dool2/brain-pi": "workspace:*",
     "@dool2/brains": "workspace:*",
     "@dool2/browser": "workspace:*",
     "@dool2/core": "workspace:*",
