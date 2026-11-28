@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="ko" data-theme="auto">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <!-- The phone connects to the user's own PC daemon over the LAN/loopback, so connect-src allows http/https; no
+         third-party origins otherwise. No inline script or style. -->
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self' http: https:"
+    />
+    <title>Dool2</title>
+    <link rel="stylesheet" href="fonts.css" />
+    <link rel="stylesheet" href="ui.css" />
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <!-- One phone-sized frame. renderer.ts fills #app with the pair screen, the home screen, or the home screen with
+         the approval bottom sheet over it. Classes and tokens come from @dool2/ui; style.css adds only the phone layout. -->
+    <div class="phone" id="app"></div>
+    <script type="module" src="renderer.js"></script>
+  </body>
+</html>

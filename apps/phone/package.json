@@ -1,0 +1,25 @@
+{
+  "name": "@dool2/phone-app",
+  "version": "0.0.0",
+  "private": true,
+  "license": "Apache-2.0",
+  "description": "Dool2 v2 phone app: pairs with the PC over the daemon's local HTTP and signs payment/send approvals with the device key (ADR 0047). A small web app that reuses the @dool2/ui design system.",
+  "type": "module",
+  "scripts": {
+    "build": "node scripts/build-renderer.mjs",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run --passWithNoTests",
+    "smoke": "node scripts/build-renderer.mjs && DOOL2_SMOKE=1 electron scripts/smoke.mjs"
+  },
+  "dependencies": {
+    "@dool2/approvals": "workspace:*",
+    "@dool2/core": "workspace:*",
+    "@dool2/i18n": "workspace:*",
+    "@dool2/phone": "workspace:*",
+    "@dool2/ui": "workspace:*"
+  },
+  "devDependencies": {
+    "electron": "^45.3.2",
+    "esbuild": "^0.28.2"
+  }
+}

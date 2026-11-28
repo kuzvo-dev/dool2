@@ -19,6 +19,14 @@ import { createSession, type Session } from './session.js'
 const here = dirname(fileURLToPath(import.meta.url))
 const SMOKE = process.env.DOOL2_SMOKE === '1'
 const BUILTIN_BROWSER = process.env.DOOL2_BUILTIN_BROWSER === '1'
+/** The tab the smoke run should capture (DOOL2_SMOKE_VIEW=me screenshots the phone-pairing screen). Empty = the chat. */
+const SMOKE_VIEW = process.env.DOOL2_SMOKE_VIEW ?? ''
+
+/** A short code the phone enters to pair, generated once per launch (not a secret on its own — the loopback token is
+ *  the actual authorization). Shown on the pairing screen so the phone and PC confirm they mean the same session. */
+const PAIRING_CODE = SMOKE
+  ? '428 155'
+  : String(Math.floor(100_000 + Math.random() * 900_000)).replace(/(\d{3})(\d{3})/, '$1 $2')
 
 function uiLang(): Lang {
   const first = app.getPreferredSystemLanguages()[0]?.toLowerCase() ?? ''
@@ -91,7 +99,14 @@ async function stopMirror(): Promise<void> {
 }
 
 function registerIpc(): void {
-  ipcMain.handle('dool2:config', () => ({ lang: uiLang(), level, smoke: SMOKE }))
+  ipcMain.handle('dool2:config', () => ({ lang: uiLang(), level, smoke: SMOKE, view: SMOKE_VIEW }))
+
+  // The pairing screen: the pairing code the phone enters, and whether a phone has already paired (a device key is
+  // registered). Same pair state the HTTP daemon exposes through POST /pair; here the in-process daemon is read directly.
+  ipcMain.handle('dool2:pairing', () => ({
+    code: PAIRING_CODE,
+    paired: session?.agentd.hasDevice() ?? false,
+  }))
 
   ipcMain.handle('dool2:send', async (_e, text: string) => {
     if (!session || !win) return
@@ -154,7 +169,8 @@ async function smoke(w: BrowserWindow): Promise<void> {
   const out = process.env.DOOL2_SMOKE_OUT ?? join(here, '..', 'out')
   await mkdir(out, { recursive: true })
   const img = await w.webContents.capturePage()
-  await writeFile(join(out, 'smoke.png'), img.toPNG())
+  const name = SMOKE_VIEW === 'me' ? 'smoke-pair.png' : 'smoke.png'
+  await writeFile(join(out, name), img.toPNG())
   console.log(`DOOL2_SMOKE ${ready}`)
   await session?.close()
   app.exit(ready === 'timeout' ? 1 : 0)

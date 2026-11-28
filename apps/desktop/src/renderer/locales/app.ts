@@ -64,6 +64,15 @@ export interface AppText {
   levels: Record<'ask' | 'auto' | 'full', { name: string; desc: string }>
   /** The review panel (folded under 나의 두리). */
   review: ReviewText
+  /** The "폰 연결" pairing screen (ADR 0047): pair a phone to approve payments/sends. */
+  pair: {
+    title: string
+    intro: string
+    codeLabel: string
+    waiting: string
+    connected: string
+    hint: string
+  }
   /** Approval card shown inline in the chat (phone-signed; this screen only shows what needs signing). */
   approvalTitle: string
   approvalHint: string
@@ -122,6 +131,14 @@ const KO: AppText = {
     clickFree: (pct) => `바로 통로 비율 ${pct}%`,
     approved: (name) => `'${name}' 초안을 승인했어요.`,
     discarded: (name) => `'${name}' 초안을 버렸어요.`,
+  },
+  pair: {
+    title: '폰 연결',
+    intro: '폰에서 결제와 보내기를 승인할 수 있어요. 폰 두리 앱에서 아래 코드를 넣어요.',
+    codeLabel: '연결 코드',
+    waiting: '폰 연결을 기다리고 있어요',
+    connected: '폰이 연결됐어요',
+    hint: '코드는 이 컴퓨터에서만 보여요. 폰은 공개 키만 보내고, 서명 키는 폰에만 남아요.',
   },
   approvalTitle: '폰에서 승인해 주세요',
   approvalHint: '돈 쓰는 일이라 폰에서 한 번 확인이 필요해요.',
@@ -187,6 +204,14 @@ const EN: AppText = {
     clickFree: (pct) => `Click-free ${pct}%`,
     approved: (name) => `Approved the '${name}' draft.`,
     discarded: (name) => `Discarded the '${name}' draft.`,
+  },
+  pair: {
+    title: 'Connect your phone',
+    intro: 'Approve payments and sends from your phone. Enter this code in the Dool2 app on your phone.',
+    codeLabel: 'Connect code',
+    waiting: 'Waiting for a phone to connect',
+    connected: 'A phone is connected',
+    hint: 'The code only shows on this computer. The phone sends just its public key; its signing key stays on the phone.',
   },
   approvalTitle: 'Please approve on your phone',
   approvalHint: 'This spends money, so it needs one confirmation on your phone.',

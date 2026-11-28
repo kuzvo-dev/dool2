@@ -119,6 +119,31 @@ importers:
 
   apps/hands-win: {}
 
+  apps/phone:
+    dependencies:
+      '@dool2/approvals':
+        specifier: workspace:*
+        version: link:../../packages/approvals
+      '@dool2/core':
+        specifier: workspace:*
+        version: link:../../packages/core
+      '@dool2/i18n':
+        specifier: workspace:*
+        version: link:../../packages/i18n
+      '@dool2/phone':
+        specifier: workspace:*
+        version: link:../../packages/phone
+      '@dool2/ui':
+        specifier: workspace:*
+        version: link:../../packages/ui
+    devDependencies:
+      electron:
+        specifier: ^45.3.2
+        version: 45.5.0
+      esbuild:
+        specifier: ^0.28.2
+        version: 0.28.2
+
   apps/relay:
     dependencies:
       '@dool2/protocol':
