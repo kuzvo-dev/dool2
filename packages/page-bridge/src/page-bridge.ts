@@ -128,10 +128,10 @@ export function createPageBridge(caller: BrowserCallerLike, opts: CreatePageBrid
 
     async fetch(url: string, fetchOpts?: FetchOptions): Promise<FetchResponse> {
       // The data path: a fetch issued inside the page under the user's live session (cookies), preferred over
-      // clicking through a UI. It maps to a `fetch` command on the caller. The merged CdpBrowserCaller does not
-      // implement that command yet (its SUPPORTED list stops before `fetch`), so today this surfaces the caller's
-      // own clear "cannot fetch yet" error — the seam is wired and ready for when the command lands. fetch reads,
-      // so it is never gated.
+      // clicking through a UI. It maps to the `fetch` command on the caller, which runs the site's own window.fetch
+      // in the page's main world with credentials:'include' (@dool2/browser CdpBrowserCaller). The caller returns a
+      // richer shape (ok/statusText/url/truncated/json); the sandbox FetchResponse contract exposes only status,
+      // headers and body, so we narrow to those here. fetch reads, so it is never gated.
       const id = requireTab('fetch')
       const r = (await call('fetch', {
         tabId: id,

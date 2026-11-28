@@ -26,6 +26,8 @@ interface PageOpts {
   screenshot?: string
   /** click/hover ref resolve result; set found:false to act as a stale ref */
   prep?: { found: boolean; x?: number; y?: number; w?: number; h?: number }
+  /** Runtime.evaluate (the data-path fetch) result: whatever the in-page fetch expression would resolve to */
+  fetchResult?: Record<string, unknown>
 }
 
 class FakePage implements CdpPageLike {
@@ -34,6 +36,8 @@ class FakePage implements CdpPageLike {
   closed = false
   readonly sent: { method: string; params?: Record<string, unknown> }[] = []
   readonly navigated: string[] = []
+  /** The last expression Runtime.evaluate was asked to run (the data-path fetch), for asserting how fetch runs */
+  lastEvalExpr = ''
   constructor(
     id: string,
     private readonly opts: PageOpts,
@@ -51,6 +55,11 @@ class FakePage implements CdpPageLike {
     if (method === 'Page.printToPDF') return { data: FAKE_PDF } as unknown as T
     if (method === 'Page.captureScreenshot')
       return { data: this.opts.screenshot ?? 'JPEGDATA' } as unknown as T
+    if (method === 'Runtime.evaluate') {
+      // The data-path fetch runs here (main world). Return the canned in-page shape; no real JS runs.
+      this.lastEvalExpr = String(params.expression ?? '')
+      return { result: { value: this.opts.fetchResult ?? {} } } as unknown as T
+    }
     if (method === 'Runtime.callFunctionOn') {
       const fn = String(params.functionDeclaration ?? '')
       if (fn.includes('maxChars')) return { result: { value: this.opts.snapshot ?? '' } } as unknown as T
@@ -328,6 +337,193 @@ describe('CdpBrowserCaller', () => {
     expect(again.dialogNotes).toBeUndefined()
   })
 
+  it('fetch runs window.fetch in the page with method/headers/body and credentials:include', async () => {
+    const { c, browser } = caller(
+      (i) =>
+        new FakePage(`T${i}`, {
+          url: 'https://shop.test/',
+          title: 'shop',
+          fetchResult: {
+            ok: true,
+            status: 200,
+            statusText: 'OK',
+            url: 'https://shop.test/api',
+            headers: {},
+            body: 'hi',
+          },
+        }),
+    )
+    const { tabId } = (await c.call('open', { url: 'https://shop.test/' })) as { tabId: number }
+    await c.call('fetch', {
+      tabId,
+      url: 'https://shop.test/api',
+      method: 'POST',
+      headers: { 'x-test': '1' },
+      body: '{"q":"hello"}',
+    })
+    const page = browser.pages[0] as FakePage
+    // It used Runtime.evaluate (the page's main world), not an isolated world
+    const methods = page.sent.map((s) => s.method)
+    expect(methods).toContain('Runtime.evaluate')
+    const evalCall = page.sent.find((s) => s.method === 'Runtime.evaluate')
+    expect(evalCall?.params).toMatchObject({ returnByValue: true, awaitPromise: true })
+    // The expression carries the request as the site's own fetch, with the session riding along
+    expect(page.lastEvalExpr).toContain('fetch(')
+    expect(page.lastEvalExpr).toContain('"credentials":"include"')
+    expect(page.lastEvalExpr).toContain('"method":"POST"')
+    expect(page.lastEvalExpr).toContain('"x-test":"1"')
+    expect(page.lastEvalExpr).toContain('{\\"q\\":\\"hello\\"}')
+    expect(page.lastEvalExpr).toContain('https://shop.test/api')
+  })
+
+  it('fetch returns ok/status/body from the page', async () => {
+    const { c } = caller(
+      (i) =>
+        new FakePage(`T${i}`, {
+          url: 'https://shop.test/',
+          title: 'shop',
+          fetchResult: {
+            ok: true,
+            status: 200,
+            statusText: 'OK',
+            url: 'https://shop.test/api',
+            headers: {},
+            body: 'plain text',
+          },
+        }),
+    )
+    const { tabId } = (await c.call('open', { url: 'https://shop.test/' })) as { tabId: number }
+    const r = (await c.call('fetch', { tabId, url: 'https://shop.test/api' })) as {
+      ok: boolean
+      status: number
+      body: string
+      truncated: boolean
+      json?: unknown
+    }
+    expect(r.ok).toBe(true)
+    expect(r.status).toBe(200)
+    expect(r.body).toBe('plain text')
+    expect(r.truncated).toBe(false)
+    expect(r.json).toBeUndefined()
+  })
+
+  it('fetch parses json when the content-type is JSON', async () => {
+    const { c } = caller(
+      (i) =>
+        new FakePage(`T${i}`, {
+          url: 'https://shop.test/',
+          title: 'shop',
+          fetchResult: {
+            ok: true,
+            status: 200,
+            statusText: 'OK',
+            url: 'https://shop.test/api/orders',
+            headers: { 'content-type': 'application/json; charset=utf-8' },
+            body: '{"orders":[1,2,3]}',
+          },
+        }),
+    )
+    const { tabId } = (await c.call('open', { url: 'https://shop.test/' })) as { tabId: number }
+    const r = (await c.call('fetch', { tabId, url: '/api/orders' })) as { json?: { orders: number[] } }
+    expect(r.json).toEqual({ orders: [1, 2, 3] })
+  })
+
+  it('fetch on a non-2xx returns ok:false with the status', async () => {
+    const { c } = caller(
+      (i) =>
+        new FakePage(`T${i}`, {
+          url: 'https://shop.test/',
+          title: 'shop',
+          // in-page res.ok is false for 500; the caller passes it through
+          fetchResult: {
+            ok: false,
+            status: 500,
+            statusText: 'Internal Server Error',
+            url: 'https://shop.test/api',
+            headers: {},
+            body: 'boom',
+          },
+        }),
+    )
+    const { tabId } = (await c.call('open', { url: 'https://shop.test/' })) as { tabId: number }
+    const r = (await c.call('fetch', { tabId, url: 'https://shop.test/api' })) as {
+      ok: boolean
+      status: number
+    }
+    expect(r.ok).toBe(false)
+    expect(r.status).toBe(500)
+  })
+
+  it('fetch caps a body over maxBytes and flags it truncated (and skips json on a cut body)', async () => {
+    const big = 'x'.repeat(5000)
+    const { c } = caller(
+      (i) =>
+        new FakePage(`T${i}`, {
+          url: 'https://shop.test/',
+          title: 'shop',
+          fetchResult: {
+            ok: true,
+            status: 200,
+            statusText: 'OK',
+            url: 'https://shop.test/api',
+            headers: { 'content-type': 'application/json' },
+            body: big,
+          },
+        }),
+    )
+    const { tabId } = (await c.call('open', { url: 'https://shop.test/' })) as { tabId: number }
+    const r = (await c.call('fetch', { tabId, url: 'https://shop.test/api', maxBytes: 100 })) as {
+      body: string
+      truncated: boolean
+      json?: unknown
+    }
+    expect(r.body.length).toBe(100)
+    expect(r.truncated).toBe(true)
+    expect(r.json).toBeUndefined()
+  })
+
+  it('fetch resolves a relative url against the page origin (window.fetch resolves it in the page)', async () => {
+    const { c, browser } = caller(
+      (i) =>
+        new FakePage(`T${i}`, {
+          url: 'https://shop.test/account',
+          title: 'shop',
+          // the page resolved /api/me against its origin; the caller reports whatever res.url the page returned
+          fetchResult: {
+            ok: true,
+            status: 200,
+            statusText: 'OK',
+            url: 'https://shop.test/api/me',
+            headers: {},
+            body: 'me',
+          },
+        }),
+    )
+    const { tabId } = (await c.call('open', { url: 'https://shop.test/account' })) as { tabId: number }
+    const r = (await c.call('fetch', { tabId, url: '/api/me' })) as { url: string }
+    // The raw relative url is handed to window.fetch, which resolves it against the document origin
+    expect((browser.pages[0] as FakePage).lastEvalExpr).toContain('"/api/me"')
+    expect(r.url).toBe('https://shop.test/api/me')
+  })
+
+  it('fetch on an unknown tab throws', async () => {
+    const { c } = caller((i) => new FakePage(`T${i}`, { url: 'https://shop.test/', title: 'shop' }))
+    await expect(c.call('fetch', { tabId: 999, url: 'https://shop.test/api' })).rejects.toThrow(/No tab/)
+  })
+
+  it('fetch surfaces an in-page failure as a clear error', async () => {
+    const { c } = caller(
+      (i) =>
+        new FakePage(`T${i}`, {
+          url: 'https://shop.test/',
+          title: 'shop',
+          fetchResult: { __fetchError: 'Failed to fetch' },
+        }),
+    )
+    const { tabId } = (await c.call('open', { url: 'https://shop.test/' })) as { tabId: number }
+    await expect(c.call('fetch', { tabId, url: 'https://shop.test/api' })).rejects.toThrow(/Failed to fetch/)
+  })
+
   it('throws a clear error naming an unsupported command', async () => {
     const { c } = caller((i) => new FakePage(`T${i}`, { url: 'https://u.test/', title: 'u' }))
     await expect(c.call('fill', { tabId: 1, ref: 'e1', value: 'x' })).rejects.toThrow(/fill/)
@@ -377,5 +573,20 @@ IT('CdpBrowserCaller integration (real Chromium)', () => {
     const pdf = (await c.call('pdf', { tabId })) as { data: string; pages: number }
     expect(Buffer.from(pdf.data, 'base64').subarray(0, 5).toString('latin1')).toBe('%PDF-')
     expect(pdf.pages).toBeGreaterThanOrEqual(1)
+  }, 120_000)
+
+  it('fetches a relative url from the page under the live session (the data path)', async () => {
+    c = new CdpBrowserCaller({ dataDir })
+    const { tabId } = (await c.call('open', { url: 'https://example.com/' }, 60_000)) as { tabId: number }
+    const r = (await c.call('fetch', { tabId, url: '/' }, 30_000)) as {
+      ok: boolean
+      status: number
+      url: string
+      body: string
+    }
+    expect(r.ok).toBe(true)
+    expect(r.status).toBe(200)
+    expect(r.url).toContain('example.com')
+    expect(r.body.toLowerCase()).toContain('example')
   }, 120_000)
 })
