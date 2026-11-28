@@ -4,9 +4,11 @@
 // (relay-bridge.ts) speaks the new `pair-rpc` protocol; this sits alongside it and speaks the v1 envelope kinds the
 // shipped app sends: `pair`, `approve-keys`, `decide`, plus the CONVERSATION subset (`hello`/`ping`, `conversation`,
 // `ask`, `cancel`/`conversation-cancel`, the `conversation-accept`/`continue`/`unqueue` queue controls, `use-agent`).
-// It is a reduced port of apps/daemon/src/link.ts (PhoneLink): pairing + approval + chat. Screens (`screen`/`remote`),
-// connections (`connect*`), `life`, vault/`login`/`profile`/`sms` and `push` are still out of scope (a later PR); a
-// tab that sends one of those stays empty for now.
+// It is a reduced port of apps/daemon/src/link.ts (PhoneLink): pairing + approval + chat, plus service CONNECTIONS,
+// phone-first LOGIN sheets and the VAULT (vault/profile) — the "Dool2 does it, the person only logs in" flow (ADR
+// 0011/0014/0041/0047). Secrets the user types on the phone go phone->vault only; the AI sees only masked summaries.
+// Still out of scope (a later PR): screens (`screen`/`remote`), `life`, `push` (FCM) and `sms`; a tab that sends one
+// of those stays empty for now.
 //
 // Chat core: a `conversation` request is answered with the current ConversationState (history + busy + queued), and an
 // `ask` runs one v2 engine turn (Agentd.send) whose events are mapped to the v1 `stream` shape the app renders so the
@@ -31,10 +33,13 @@
 import { timingSafeEqual } from 'node:crypto'
 import { hostname } from 'node:os'
 import type { ActionTier } from '@dool2/core'
+import type { Lang } from '@dool2/i18n'
 import type {
   ApprovalView,
   ConversationState,
   DaemonStreamEvent,
+  InfoRequestView,
+  LoginRequestView,
   PairInvite,
   PcHealth,
   PcToPhone,
@@ -42,6 +47,7 @@ import type {
   StepDetail,
   StoredMessage,
 } from '@dool2/protocol'
+import { type ConnectionItem, connectUrl } from '@dool2/protocol/connect'
 import {
   b64u,
   type DeviceKeys,
@@ -58,6 +64,8 @@ import {
 import { approvalSignText, approveKeysSignText } from '@dool2/protocol/link'
 import { codeHandLabel, workStatus } from '@dool2/protocol/rich'
 import type { Agentd, AgentdEvent, ApprovalCard } from './agentd.js'
+import { type PhoneCopy, phoneCopy } from './locales/phone.js'
+import type { InMemoryVault } from './vault.js'
 
 /** The thread id the shipped app's MAIN conversation runs under. Anything not in `state.threads` (we send none) and
  *  not the open side thread is treated as the main chat by the app (threads.ts isSideThread), so a stable constant is
@@ -83,6 +91,13 @@ const SPKI_RE = /^[\w-]{100,200}$/
 
 /** How long a signed v1 request (`approve-keys`) may be in the past/future before it is a stale replay. */
 const FRESH_MS = 120_000
+
+/** How long a mid-task login / info request the phone has not answered stays open before it is dropped as stale. */
+const REQUEST_TTL_MS = 5 * 60_000
+
+/** Cap on a phone-sent credential / field value (mirrors apps/daemon link.ts: 200 for id/value, 500 for password). */
+const USERNAME_MAX = 200
+const PASSWORD_MAX = 500
 
 /** The shared end-to-end key type, taken from linkKey so we never name a DOM/global CryptoKey directly. */
 type LinkKey = Awaited<ReturnType<typeof linkKey>>
@@ -126,6 +141,24 @@ export interface LegacyPhoneLinkOptions {
   pcName?: string
   /** Called after a valid `approve` decision is verified and recorded, so the host can resume the gated action. */
   onApproved?: (approval: { hash: string; choice?: string }) => void
+  /**
+   * The engine's vault (the SAME InMemoryVault that backs the code hand's vault bridge). When set, the link serves the
+   * phone-facing vault screen (vault-get/set/delete/reveal) over the relay WITHOUT ever leaking a secret, and wires the
+   * phone-first login seam: a mid-task `fillLogin` with no stored credential shows a login sheet on the phone, the
+   * phone's `login`/`connect-login` goes straight into this vault, and the running turn continues. Omitted => the
+   * vault/login messages degrade to an empty list / a clear note (the app does not break).
+   */
+  vault?: InMemoryVault
+  /**
+   * Lists the service connections the phone shows (connected + connectable, from the service cards, ADR 0014). Read at
+   * call time so a freshly downloaded card pack is seen. Omitted => an empty list (v2 ships no connect cards yet; the
+   * app still renders the screen, just with nothing to connect — see the PR note).
+   */
+  connections?: () => ConnectionItem[] | Promise<ConnectionItem[]>
+  /** How long an unanswered mid-task login/info request stays open. Defaults to {@link REQUEST_TTL_MS}. */
+  requestTtlMs?: number
+  /** The language for the short result messages the phone shows. Defaults to Korean (the reference copy). */
+  lang?: Lang
   /** Clock seam (unix ms). Defaults to Date.now. */
   now?: () => number
   /** One-line log sink. */
@@ -145,6 +178,10 @@ export class LegacyPhoneLink {
   readonly #send: (env: Envelope) => void
   readonly #pcName: string
   readonly #onApproved: ((approval: { hash: string; choice?: string }) => void) | undefined
+  readonly #vault: InMemoryVault | undefined
+  readonly #connections: (() => ConnectionItem[] | Promise<ConnectionItem[]>) | undefined
+  readonly #copy: PhoneCopy
+  readonly #requestTtlMs: number
   readonly #now: () => number
   readonly #log: (line: string) => void
 
@@ -175,6 +212,31 @@ export class LegacyPhoneLink {
   /** The turn answering now, if any. See {@link TurnState}. */
   #turn: TurnState | undefined
 
+  /** Service ids the user marked connected from the phone (merged into the connections list). In-memory this session. */
+  readonly #connected = new Set<string>()
+  /** The user's profile ("my info"): non-secret key→value. Returned masked; held here for the phone settings screen. */
+  readonly #profile = new Map<string, string>()
+  /** Open login requests awaiting the phone (a login sheet is showing), keyed by request id. */
+  readonly #pendingLogins = new Map<
+    string,
+    {
+      view: LoginRequestView
+      resolve: (id: string | undefined) => void
+      timer: ReturnType<typeof setTimeout>
+    }
+  >()
+  /** Open info requests awaiting the phone (otp / pick an account / a prompt), keyed by request id. */
+  readonly #pendingInfos = new Map<
+    string,
+    {
+      view: InfoRequestView
+      resolve: (value: string | undefined) => void
+      timer: ReturnType<typeof setTimeout>
+    }
+  >()
+  /** Monotonic counter for stable login/info request ids within the session. */
+  #reqSeq = 0
+
   constructor(opts: LegacyPhoneLinkOptions) {
     this.#keys = opts.keys
     this.#agentd = opts.agentd
@@ -183,8 +245,16 @@ export class LegacyPhoneLink {
     this.#send = opts.send
     this.#pcName = opts.pcName || hostname().replace(/\.local$/, '')
     this.#onApproved = opts.onApproved
+    this.#vault = opts.vault
+    this.#connections = opts.connections
+    this.#copy = phoneCopy(opts.lang)
+    this.#requestTtlMs = opts.requestTtlMs ?? REQUEST_TTL_MS
     this.#now = opts.now ?? Date.now
     this.#log = opts.log ?? (() => {})
+    // Wire the phone-first login seam: when the engine's vault bridge needs a login it does not hold, it asks the
+    // phone through this link (a login sheet), and the phone's reply goes straight into this same vault. Passing the
+    // vault is all it takes — no separate plumbing — because the vault bridge reads the requester off the vault.
+    this.#vault?.setLoginRequester((ctx) => this.requestLogin({ url: ctx.url }))
   }
 
   /** The v1 PairInvite the desktop encodes into a QR for the shipped app's `startPairing`. */
@@ -302,8 +372,43 @@ export class LegacyPhoneLink {
         // The v2 daemon runs the single brain it was constructed with; switching the AI is not wired yet. Acknowledge
         // with the current state (the app expects a `state` reply) so the picker does not hang. (A later PR.)
         return this.#sendState(phone)
-      // Screens, connections, life, vault/login/profile/sms and push are out of scope for THIS PR; ignore them quietly
-      // so the shipped app's reconnect fetches do not error. (Later PRs wire them.)
+      case 'connections':
+        return this.#send2(phone, { kind: 'connections', services: await this.#listConnections() })
+      case 'connect':
+        return this.#receiveConnect(phone, msg)
+      case 'connect-login':
+        return this.#receiveConnectLogin(phone, msg)
+      case 'connect-social':
+        // One-tap sign-in (Kakao/Naver…) needs the provider's own screen handed to the phone's remote view, which is
+        // out of scope for THIS PR (screen/remote). Degrade with a clear result instead of leaving the card spinning.
+        return this.#send2(phone, {
+          kind: 'connect-result',
+          id: String(msg.id),
+          ok: false,
+          message: this.#copy.socialNotReady,
+        })
+      case 'login':
+        return this.#receiveLogin(phone, msg)
+      case 'signup':
+      case 'forgot':
+        // "Sign me up" / "I don't know my account": close the login sheet being waited on so the turn can move past it
+        // (v2 has no auto signup / id-recovery yet; the turn continues with a clear note). Cancels by site/origin host.
+        return this.#cancelLoginForSite(typeof msg.site === 'string' ? msg.site : '')
+      case 'info-answer':
+        return this.#receiveInfoAnswer(msg)
+      case 'vault-get':
+        return this.#send2(phone, { kind: 'vault', entries: this.#vault?.phoneEntries() ?? [] })
+      case 'vault-set':
+      case 'vault-delete':
+        return this.#receiveVaultEdit(phone, msg)
+      case 'vault-reveal':
+        return this.#receiveVaultReveal(phone, msg)
+      case 'profile-get':
+      case 'profile-set':
+      case 'profile-clear':
+        return this.#receiveProfile(phone, msg)
+      // Screens (`screen`/`remote`), `push` (FCM) and `sms` stay out of scope for THIS PR; ignore them quietly so the
+      // shipped app's reconnect fetches do not error. (Later PRs wire them.)
       default:
         return
     }
@@ -524,7 +629,307 @@ export class LegacyPhoneLink {
     return message
   }
 
+  // --- connections ---------------------------------------------------------------------------------------------------
+
+  /** The connection list the phone shows: the provider's cards (connected + connectable), with this session's marks. */
+  async #listConnections(): Promise<ConnectionItem[]> {
+    const base = (await this.#connections?.()) ?? []
+    return base.map((item) =>
+      this.#connected.has(item.card.id) && !item.connectedAt
+        ? { ...item, connectedAt: new Date(this.#now()).toISOString() }
+        : item,
+    )
+  }
+
+  /** The service card for an id, from the connections provider (for the site to bind a stored login to). */
+  async #cardFor(id: string): Promise<ConnectionItem | undefined> {
+    return (await this.#listConnections()).find((c) => c.card.id === id)
+  }
+
+  /**
+   * A `connect` action from the phone. `mark`/`unmark` toggle this session's connected marks; `start` begins a
+   * phone-first connection (asks the phone for the id/password and stores it in the vault when it answers). `open`,
+   * `verify` and `chat` need PC Chrome / the remote screen, which is out of scope for THIS PR — they degrade quietly.
+   */
+  async #receiveConnect(phone: LegacyPhone, msg: Extract<PhoneToPc, { kind: 'connect' }>): Promise<void> {
+    const id = String(msg.id)
+    switch (msg.action) {
+      case 'mark':
+        this.#connected.add(id)
+        return this.#send2(phone, { kind: 'connections', services: await this.#listConnections() })
+      case 'unmark':
+        this.#connected.delete(id)
+        return this.#send2(phone, { kind: 'connections', services: await this.#listConnections() })
+      case 'start': {
+        // Phone-first (ADR 0041): ask the phone for the login and store it in the vault when it answers, then mark
+        // connected. Runs in the background (the login sheet is already on the phone); the connection list refreshes
+        // on its reply. A card without a site cannot be bound, so it degrades to a clear result.
+        const item = await this.#cardFor(id)
+        const origin = item?.card ? connectUrl(item.card) : undefined
+        if (!origin) {
+          return this.#send2(phone, {
+            kind: 'connect-result',
+            id,
+            ok: false,
+            message: this.#copy.connectCantStart,
+          })
+        }
+        void this.requestLogin({ url: origin, connect: true, serviceId: id }).then(async (newId) => {
+          if (newId) this.#connected.add(id)
+          await this.#broadcast({ kind: 'connections', services: await this.#listConnections() })
+        })
+        return
+      }
+      default:
+        // open / verify / chat: need PC Chrome or the remote screen (out of scope). Do not error the app.
+        return
+    }
+  }
+
+  /**
+   * `connect-login`: the id/password the user put in the connect sheet. The secret goes straight into the vault (bound
+   * to the service's site), NEVER to the AI, then the service is marked connected and any login request waiting on
+   * that site is resolved so a running turn continues. Mirrors apps/daemon link.ts `connectLogin`.
+   */
+  async #receiveConnectLogin(
+    phone: LegacyPhone,
+    msg: Extract<PhoneToPc, { kind: 'connect-login' }>,
+  ): Promise<void> {
+    const id = String(msg.id)
+    const username = String(msg.username ?? '').slice(0, USERNAME_MAX)
+    const password = String(msg.password ?? '').slice(0, PASSWORD_MAX)
+    const item = await this.#cardFor(id)
+    const site = item?.card.site
+    if (!this.#vault || !site) {
+      return this.#send2(phone, {
+        kind: 'connect-result',
+        id,
+        ok: false,
+        message: this.#copy.connectUnavailable,
+      })
+    }
+    this.#vault.upsertLogin({ site, username, password })
+    this.#connected.add(id)
+    // Resolve a login request waiting on this site (e.g. a mid-task fillLogin), so the running turn resumes.
+    this.#resolveLoginForSite(site)
+    this.#log(`v1 connect-login stored for ${id} (secret -> vault, never the AI)`)
+    await this.#send2(phone, { kind: 'connect-result', id, ok: true, message: this.#copy.connected })
+    await this.#broadcast({ kind: 'connections', services: await this.#listConnections() })
+  }
+
+  // --- login / info (mid-task phone-first, ADR 0011/0014/0041) -------------------------------------------------------
+
+  /**
+   * Ask the phone for a login mid-task: show a login sheet (`login-request`), and resolve once the phone sends
+   * `login`/`connect-login` with the credentials — which are stored in the vault (never the AI) — to the NEW item's
+   * id. This is the seam the engine's vault bridge calls (wired in the constructor) so Dool2 keeps going instead of
+   * giving up; a connector/skill can call it too. Resolves to undefined on cancel/timeout.
+   */
+  async requestLogin(ctx: {
+    url: string
+    connect?: boolean
+    serviceId?: string
+  }): Promise<string | undefined> {
+    const id = `lr${++this.#reqSeq}`
+    const now = this.#now()
+    const site = hostOf(ctx.url)
+    const view: LoginRequestView = {
+      id,
+      tabId: -1,
+      origin: ctx.url,
+      site,
+      status: 'pending',
+      ...(ctx.connect ? { connect: true } : {}),
+      createdAt: new Date(now).toISOString(),
+      expiresAt: new Date(now + this.#requestTtlMs).toISOString(),
+    }
+    return new Promise<string | undefined>((resolve) => {
+      const timer = setTimeout(() => {
+        if (this.#pendingLogins.delete(id)) {
+          resolve(undefined)
+          void this.#broadcastState()
+        }
+      }, this.#requestTtlMs)
+      if (typeof timer === 'object' && 'unref' in timer) timer.unref()
+      this.#pendingLogins.set(id, { view, resolve, timer })
+      void this.#broadcast({ kind: 'login-request', request: view })
+      void this.#broadcastState()
+    })
+  }
+
+  /**
+   * Ask the phone for one value mid-task (a verification code, a pick, a prompt) and resolve to what it sends through
+   * `info-answer` (undefined on cancel/timeout). Available for connectors/skills that need a person during a turn; the
+   * value goes into that field only and is not stored or shown to the AI. Mirrors v1 `info-request`/`info-answer`.
+   */
+  async requestInfo(req: Omit<InfoRequestView, 'id' | 'status' | 'expiresAt'>): Promise<string | undefined> {
+    const id = `ir${++this.#reqSeq}`
+    const view: InfoRequestView = {
+      ...req,
+      id,
+      status: 'pending',
+      expiresAt: new Date(this.#now() + this.#requestTtlMs).toISOString(),
+    }
+    return new Promise<string | undefined>((resolve) => {
+      const timer = setTimeout(() => {
+        if (this.#pendingInfos.delete(id)) {
+          resolve(undefined)
+          void this.#broadcastState()
+        }
+      }, this.#requestTtlMs)
+      if (typeof timer === 'object' && 'unref' in timer) timer.unref()
+      this.#pendingInfos.set(id, { view, resolve, timer })
+      void this.#broadcast({ kind: 'info-request', request: view })
+      void this.#broadcastState()
+    })
+  }
+
+  /** A `login` reply from the phone: store the id/password in the vault and resume the turn that asked for it. */
+  async #receiveLogin(phone: LegacyPhone, msg: Extract<PhoneToPc, { kind: 'login' }>): Promise<void> {
+    const reqId = String(msg.id)
+    const pending = this.#pendingLogins.get(reqId)
+    const username = String(msg.username ?? '').slice(0, USERNAME_MAX)
+    const password = String(msg.password ?? '').slice(0, PASSWORD_MAX)
+    if (!pending || !this.#vault) {
+      return this.#send2(phone, {
+        kind: 'login-done',
+        id: reqId,
+        ok: false,
+        message: this.#copy.loginExpired,
+      })
+    }
+    clearTimeout(pending.timer)
+    this.#pendingLogins.delete(reqId)
+    const newId = this.#vault.upsertLogin({ site: pending.view.site, username, password })
+    pending.resolve(newId)
+    this.#log(`v1 login stored (secret -> vault, never the AI); turn resumes`)
+    // Success is reflected in the refreshed state (the sheet closes); a login-done also tells the sheet it is saved.
+    await this.#broadcast({ kind: 'login-done', id: reqId, ok: true, message: this.#copy.loginSaved })
+    await this.#broadcastState()
+  }
+
+  /** An `info-answer` from the phone: feed the value back into the waiting request so the turn continues. */
+  async #receiveInfoAnswer(msg: Extract<PhoneToPc, { kind: 'info-answer' }>): Promise<void> {
+    const id = String(msg.id)
+    const pending = this.#pendingInfos.get(id)
+    if (!pending) return
+    clearTimeout(pending.timer)
+    this.#pendingInfos.delete(id)
+    pending.resolve(typeof msg.value === 'string' ? msg.value : undefined)
+    await this.#broadcast({ kind: 'info-done', id })
+    await this.#broadcastState()
+  }
+
+  /** Resolve a pending login request bound to `site` (host-matched) with its freshly stored item — the turn resumes. */
+  #resolveLoginForSite(site: string): void {
+    const host = hostOf(`https://${site}`)
+    for (const [id, pending] of this.#pendingLogins) {
+      if (hostOf(`https://${pending.view.site}`) !== host) continue
+      clearTimeout(pending.timer)
+      this.#pendingLogins.delete(id)
+      const item = this.#vault?.phoneEntries().find((e) => hostOf(e.origin) === host)
+      pending.resolve(item?.id)
+    }
+  }
+
+  /** Cancel any login request bound to `site` (the user chose sign-up / "I don't know my account"). Turn gets undefined. */
+  #cancelLoginForSite(site: string): void {
+    const host = hostOf(site.includes('://') ? site : `https://${site}`)
+    for (const [id, pending] of this.#pendingLogins) {
+      if (host && hostOf(`https://${pending.view.site}`) !== host) continue
+      clearTimeout(pending.timer)
+      this.#pendingLogins.delete(id)
+      pending.resolve(undefined)
+    }
+    void this.#broadcastState()
+  }
+
+  // --- vault + profile (ADR 0011/0026; secrets never cross to the AI, only masked views over the relay) -------------
+
+  /** `vault-set` (edit id/password) or `vault-delete`. Replies with the refreshed masked list and a short result. */
+  async #receiveVaultEdit(
+    phone: LegacyPhone,
+    msg: Extract<PhoneToPc, { kind: 'vault-set' | 'vault-delete' }>,
+  ): Promise<void> {
+    const id = String(msg.id).slice(0, 60)
+    const c = this.#copy
+    let message: string
+    if (!this.#vault) {
+      message = c.vaultUnavailable
+    } else if (msg.kind === 'vault-delete') {
+      message = this.#vault.delete(id) ? c.vaultDeleted : c.vaultNoItem
+    } else {
+      const str = (v: unknown): string | undefined =>
+        typeof v === 'string' && v ? v.slice(0, PASSWORD_MAX) : undefined
+      const ok = this.#vault.setLogin(id, {
+        ...(str(msg.username) ? { username: str(msg.username) } : {}),
+        ...(str(msg.password) ? { password: str(msg.password) } : {}),
+      })
+      message = ok ? c.vaultSaved : c.vaultNoItem
+    }
+    return this.#send2(phone, { kind: 'vault', entries: this.#vault?.phoneEntries() ?? [], message })
+  }
+
+  /**
+   * `vault-reveal`: show one password ON THE PHONE ONLY (never the AI). Gated on the vault being unlocked (ADR 0011);
+   * when locked, no secret is returned — only the list with a note. The secret crosses to the already-trusted paired
+   * phone over e2e, which is NOT the AI boundary.
+   */
+  async #receiveVaultReveal(
+    phone: LegacyPhone,
+    msg: Extract<PhoneToPc, { kind: 'vault-reveal' }>,
+  ): Promise<void> {
+    const id = String(msg.id).slice(0, 60)
+    if (!this.#vault) {
+      return this.#send2(phone, { kind: 'vault', entries: [], message: this.#copy.vaultUnavailable })
+    }
+    if (!this.#vault.isUnlocked()) {
+      return this.#send2(phone, {
+        kind: 'vault',
+        entries: this.#vault.phoneEntries(),
+        message: this.#copy.vaultLocked,
+      })
+    }
+    const secret = this.#vault.reveal(id)
+    if (!secret) {
+      return this.#send2(phone, {
+        kind: 'vault',
+        entries: this.#vault.phoneEntries(),
+        message: this.#copy.vaultNoItem,
+      })
+    }
+    return this.#send2(phone, {
+      kind: 'vault-secret',
+      id,
+      username: secret.username,
+      password: secret.password,
+    })
+  }
+
+  /** `profile-get/set/clear`: the user's "my info". Values are returned masked; nothing here is a password or card. */
+  async #receiveProfile(
+    phone: LegacyPhone,
+    msg: Extract<PhoneToPc, { kind: 'profile-get' | 'profile-set' | 'profile-clear' }>,
+  ): Promise<void> {
+    if (msg.kind === 'profile-clear') {
+      this.#profile.clear()
+    } else if (msg.kind === 'profile-set') {
+      const values = msg.values && typeof msg.values === 'object' ? msg.values : {}
+      for (const [k, v] of Object.entries(values).slice(0, 20)) {
+        if (typeof v === 'string') this.#profile.set(k.slice(0, 40), v.slice(0, 200))
+      }
+    }
+    const have: Record<string, string> = {}
+    for (const [k, v] of this.#profile) have[k] = maskValue(v)
+    return this.#send2(phone, { kind: 'profile', have, missing: [], payChoices: {} })
+  }
+
   // --- broadcasting --------------------------------------------------------------------------------------------------
+
+  /** Push the current state to every paired phone (so open login/info requests and marks show up everywhere). */
+  async #broadcastState(): Promise<void> {
+    await Promise.all([...this.#phones.values()].map((phone) => this.#sendState(phone)))
+  }
 
   /** Send one message to every paired phone (new approvals, streamed chat, status). No-op when none have paired. */
   async #broadcast(body: PcToPhone): Promise<void> {
@@ -659,6 +1064,8 @@ export class LegacyPhoneLink {
   async #sendState(phone: LegacyPhone): Promise<void> {
     // Surface every pending approval as a (memoized) view, so a phone that reconnects sees the current queue.
     const approvals = this.#agentd.pending().map((card) => this.#viewFor(card))
+    const logins = [...this.#pendingLogins.values()].map((p) => p.view)
+    const infos = [...this.#pendingInfos.values()].map((p) => p.view)
     const state: Extract<PcToPhone, { kind: 'state' }> = {
       kind: 'state',
       pcName: this.#pcName,
@@ -666,6 +1073,8 @@ export class LegacyPhoneLink {
       extension: false,
       threads: [],
       approvals,
+      ...(logins.length ? { logins } : {}),
+      ...(infos.length ? { infos } : {}),
       approveKeys: Boolean(phone.approveKeys),
       payKey: Boolean(phone.approveKeys?.pay),
       payConfirm: Boolean(phone.approveKeys?.pay && phone.payConfirm !== false),
@@ -708,6 +1117,25 @@ function tierToKind(tier: ActionTier): ApprovalView['kind'] {
     default:
       return 'irreversible'
   }
+}
+
+/** The lower-case host of an http(s) URL (for binding a login to a site), or '' when it is not parseable. */
+function hostOf(url: string): string {
+  try {
+    return new URL(url).hostname.toLowerCase()
+  } catch {
+    return ''
+  }
+}
+
+/** Mask a profile value so the phone can show it without echoing it in full (never a secret, but still the user's). */
+function maskValue(v: string): string {
+  if (v.length <= 2) return '••'
+  if (v.includes('@')) {
+    const [name, domain] = v.split('@')
+    return `${(name ?? '').slice(0, 1)}***@${domain ?? ''}`
+  }
+  return `${v.slice(0, 1)}${'•'.repeat(Math.min(6, Math.max(2, v.length - 2)))}${v.slice(-1)}`
 }
 
 /** The `code` string a `code`-hand tool call carries (`{ code: '…' }`), or undefined for any other tool. */

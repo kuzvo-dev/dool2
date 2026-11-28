@@ -56,6 +56,9 @@ importers:
       '@dool2/engine':
         specifier: workspace:*
         version: link:../../packages/engine
+      '@dool2/i18n':
+        specifier: workspace:*
+        version: link:../../packages/i18n
       '@dool2/org':
         specifier: workspace:*
         version: link:../../packages/org

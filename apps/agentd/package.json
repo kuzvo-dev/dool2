@@ -30,6 +30,7 @@
     "@dool2/browser": "workspace:*",
     "@dool2/core": "workspace:*",
     "@dool2/engine": "workspace:*",
+    "@dool2/i18n": "workspace:*",
     "@dool2/org": "workspace:*",
     "@dool2/page-bridge": "workspace:*",
     "@dool2/protocol": "workspace:*",

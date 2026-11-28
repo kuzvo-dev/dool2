@@ -57,6 +57,7 @@ export {
   defaultVaultItems,
   InMemoryVault,
   type InMemoryVaultOptions,
+  type LoginRequester,
   makeVaultBridge,
   type UnlockOptions,
   type VaultBridgeDeps,

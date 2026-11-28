@@ -5,7 +5,9 @@
 // sandbox or the model's transcript (ADR 0011/0023/0047, threat T15/T22). The fill reuses @dool2/vault's own
 // fillLogin/fillTotp/fillPaymentPin, so the secret-handling logic lives in one place.
 
+import { randomBytes } from 'node:crypto'
 import type { AutonomyLevel } from '@dool2/core'
+import type { VaultEntry } from '@dool2/protocol'
 import type { PageBridge, PageSnapshot, VaultBridge, VaultItemSummary } from '@dool2/sandbox'
 import type { LoginFieldHint, LoginHints, SkillMeta } from '@dool2/skill-sdk'
 import { resolveSkills } from '@dool2/skill-sdk'
@@ -42,6 +44,15 @@ export interface UnlockOptions {
    */
   agentTtlMs?: number
 }
+
+/**
+ * A seam that asks the user (phone-first) for a login the vault does not yet hold, stores it, and resolves to the new
+ * item's id. Set by the phone link (legacy-phone.ts) via {@link InMemoryVault.setLoginRequester}; read by the vault
+ * bridge's fillLogin so the engine can obtain a credential mid-task instead of giving up. The secret the user types on
+ * the phone goes phone->vault only — it never crosses to the AI. Resolves to undefined when nothing was provided
+ * (cancelled or the seam is unwired), so the fill falls back to a clear broad-hand error.
+ */
+export type LoginRequester = (ctx: { url: string }) => Promise<string | undefined>
 
 /**
  * One agent fill, recorded for the activity log (ADR 0047). No secret: only the opaque id, the kind, a masked
@@ -86,11 +97,118 @@ export class InMemoryVault {
   readonly fills: { id: string; kind: 'login' | 'totp' | 'payment-pin' }[] = []
   /** Append-only agent-fill audit log (no secret). Read with {@link auditLog}. */
   readonly #audit: VaultFillEvent[] = []
+  /** Non-secret per-item times for the phone list (createdAt / lastUsedAt). Keyed by item id. */
+  readonly #meta = new Map<string, { createdAt: number; lastUsedAt?: number }>()
+  /** The phone-first login seam (set by the phone link); undefined => the vault cannot ask for a missing login. */
+  #requester: LoginRequester | undefined
 
   constructor(items: VaultItem[] = defaultVaultItems(), opts: InMemoryVaultOptions = {}) {
     this.#items = items
     this.#now = opts.now ?? Date.now
     this.#accountPolicy = opts.accountPolicy ?? 'while-unlocked'
+    for (const item of items) this.#meta.set(item.id, { createdAt: this.#now() })
+  }
+
+  // --- phone-first login seam (ADR 0011/0014/0047) -----------------------------------------------------------------
+
+  /**
+   * Wire the seam the engine uses to obtain a login the vault does not hold yet: when `fillLogin` finds no stored
+   * credential bound to the page, it calls this to ask the user (the phone shows a login sheet), stores what the phone
+   * sends straight into the vault, and resolves to the new item's id so the fill can continue. The phone link
+   * (legacy-phone.ts) sets this. The secret goes phone->vault only; it never crosses to the AI.
+   */
+  setLoginRequester(fn: LoginRequester | undefined): void {
+    this.#requester = fn
+  }
+
+  /** Ask the user for a login the vault lacks (phone-first). Resolves to a new item id, or undefined when unwired/cancelled. */
+  async requestLogin(ctx: { url: string }): Promise<string | undefined> {
+    return this.#requester ? this.#requester(ctx) : undefined
+  }
+
+  // --- phone-facing credential ops (secret stays here; only masked views cross the relay) -------------------------
+
+  /**
+   * Add or replace a login the user entered on the phone. The password (and optional TOTP seed) stay here; nothing is
+   * echoed back. When a login for the same site + username already exists its secret is updated in place; otherwise a
+   * fresh item is minted. Returns the item id so the caller (the login seam) can continue a fill against it. A login
+   * the user just typed is marked `always` so the agent may use it at once for this task (the person authorized it by
+   * entering it); the account default still governs every pre-existing item.
+   */
+  upsertLogin(input: { site: string; username: string; password: string; totpSecret?: string }): string {
+    const existing = this.#items.find(
+      (i): i is Extract<VaultItem, { kind: 'login' }> =>
+        i.kind === 'login' && i.site === input.site && i.username === input.username,
+    )
+    if (existing) {
+      existing.secret = {
+        password: input.password,
+        ...(input.totpSecret ? { totpSecret: input.totpSecret } : {}),
+      }
+      const meta = this.#meta.get(existing.id)
+      if (meta) meta.lastUsedAt = this.#now()
+      return existing.id
+    }
+    const id = `vlt_${randomBytes(6).toString('hex')}`
+    this.#items.push({
+      id,
+      kind: 'login',
+      site: input.site,
+      username: input.username,
+      accessPolicy: 'always',
+      secret: { password: input.password, ...(input.totpSecret ? { totpSecret: input.totpSecret } : {}) },
+    })
+    this.#meta.set(id, { createdAt: this.#now() })
+    return id
+  }
+
+  /** Edit a login's id/password from the phone's vault screen. Returns false for an unknown or non-login item. */
+  setLogin(id: string, patch: { username?: string; password?: string }): boolean {
+    const item = this.#items.find((i) => i.id === id)
+    if (!item || item.kind !== 'login') return false
+    if (patch.username !== undefined) item.username = patch.username
+    if (patch.password !== undefined) item.secret = { ...item.secret, password: patch.password }
+    return true
+  }
+
+  /** Delete an item by id. Returns whether one was removed. */
+  delete(id: string): boolean {
+    const i = this.#items.findIndex((x) => x.id === id)
+    if (i < 0) return false
+    this.#items.splice(i, 1)
+    this.#meta.delete(id)
+    return true
+  }
+
+  /**
+   * Reveal one login's id + password FOR THE PHONE ONLY (never the AI). The gate (unlock check) lives at the caller
+   * (legacy-phone.ts): this returns the secret so the already-trusted, paired phone can show it briefly. Marks the
+   * item used. Returns undefined for an unknown or non-login item.
+   */
+  reveal(id: string): { username: string; password: string } | undefined {
+    const item = this.#items.find((i) => i.id === id)
+    if (!item || item.kind !== 'login') return undefined
+    const meta = this.#meta.get(id)
+    if (meta) meta.lastUsedAt = this.#now()
+    return { username: item.username ?? '', password: item.secret.password }
+  }
+
+  /** The masked vault list the phone shows (ADR 0026): id / origin / username / times — never a password. */
+  phoneEntries(): (VaultEntry & { name?: string })[] {
+    return this.#items
+      .filter((i) => i.kind === 'login')
+      .map((i) => {
+        const meta = this.#meta.get(i.id)
+        const createdAt = new Date(meta?.createdAt ?? this.#now()).toISOString()
+        return {
+          id: i.id,
+          origin: i.site ? `https://${i.site}` : '',
+          username: i.username ?? '',
+          createdAt,
+          ...(meta?.lastUsedAt ? { lastUsedAt: new Date(meta.lastUsedAt).toISOString() } : {}),
+          ...(i.label ? { name: i.label } : {}),
+        }
+      })
   }
 
   // --- lock model (the seam the desktop/phone drive) ---------------------------------------------------------------
@@ -326,6 +444,14 @@ export interface VaultBridgeDeps {
    * login/TOTP fill. Omitted -> nothing is reported.
    */
   onLoginFields?: (fields: { username?: string; password?: string; submit?: string; totp?: string }) => void
+  /**
+   * The phone-first login seam (ADR 0011/0014/0047): called by {@link VaultBridge.fillLogin} when the page has no
+   * stored login bound to it, to ask the user for one (the phone shows a login sheet), store it, and resolve to the
+   * new item's id so the fill can continue — so Dool2 keeps going instead of giving up. Defaults to the vault's own
+   * requester ({@link InMemoryVault.requestLogin}), which the phone link wires. Resolves to undefined when nothing was
+   * provided (cancelled / unwired); the fill then throws a clear, broad-hand error. The secret never crosses the AI.
+   */
+  requestLogin?: (ctx: { url: string }) => Promise<string | undefined>
 }
 
 /**
@@ -342,6 +468,10 @@ export function makeVaultBridge(vault: InMemoryVault, deps: VaultBridgeDeps): Va
   const accessPolicy = (): AgentAccessPolicy => deps.accessPolicy?.() ?? vault.accountPolicy()
   const unlocked = (): boolean => deps.unlocked?.() ?? vault.unlockedForAgent()
   const urlBinding = deps.urlBinding ?? {}
+  // Phone-first login: default to the vault's own requester, which the phone link wires. So just passing the same
+  // vault to the phone link is enough to make a mid-task login sheet appear and the turn continue once answered.
+  const requestLogin = (ctx: { url: string }): Promise<string | undefined> =>
+    deps.requestLogin ? deps.requestLogin(ctx) : vault.requestLogin(ctx)
 
   /**
    * The two gates every agent-triggered fill must pass, bound to the tab's REAL url (never one the AI claims):
@@ -370,12 +500,28 @@ export function makeVaultBridge(vault: InMemoryVault, deps: VaultBridgeDeps): Va
     },
 
     async fillLogin(id: string): Promise<void> {
-      const item = vault.find(id)
-      if (!item || item.kind !== 'login') throw new Error(`No login vault item ${id}`)
       const snapshot = await page.snapshot()
       // URL binding (ADR spec): the item must be among the login items this tab's REAL url allows — http(s) only,
       // equivalent-domains aware — so a page cannot coax out another site's login (threat T15/T22).
-      const allowed = findLoginItemsForUrl(snapshot.url, vault.all(), urlBinding)
+      let allowed = findLoginItemsForUrl(snapshot.url, vault.all(), urlBinding)
+      let item = vault.find(id)
+      // Phone-first fallback (ADR 0011/0014/0047): when nothing the vault holds is bound to this page (no saved login
+      // for the site, or the id the brain guessed does not match one), do not give up — ask the user for the login
+      // (the phone shows a sheet), store what the phone sends, and continue the fill against the new item. This is the
+      // "Dool2 works, the person only logs in" flow; the secret the user types goes phone->vault only, never the AI.
+      if (!item || item.kind !== 'login' || !allowed.some((i) => i.id === id)) {
+        const newId = await requestLogin({ url: snapshot.url })
+        if (newId) {
+          id = newId
+          item = vault.find(newId)
+          allowed = findLoginItemsForUrl(snapshot.url, vault.all(), urlBinding)
+        }
+      }
+      if (!item || item.kind !== 'login') {
+        throw new Error(
+          `No login for ${snapshot.url || 'this page'} — asked the person but none was provided. You can try another way in or come back once it is connected.`,
+        )
+      }
       if (!allowed.some((i) => i.id === id)) {
         throw new Error(
           `Vault item ${id} is not bound to ${snapshot.url || 'this page'} — a login fills only on its own site, over http(s).`,
