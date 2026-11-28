@@ -69,6 +69,7 @@ export interface AppText {
     title: string
     intro: string
     codeLabel: string
+    scanHint: string
     waiting: string
     connected: string
     hint: string
@@ -134,8 +135,9 @@ const KO: AppText = {
   },
   pair: {
     title: '폰 연결',
-    intro: '폰에서 결제와 보내기를 승인할 수 있어요. 폰 두리 앱에서 아래 코드를 넣어요.',
+    intro: '폰에서 결제와 보내기를 승인할 수 있어요. 폰 카메라로 QR을 찍어 연결해요.',
     codeLabel: '연결 코드',
+    scanHint: '폰 카메라로 QR을 찍으면 바로 연결돼요. 안 되면 아래 코드를 넣어요.',
     waiting: '폰 연결을 기다리고 있어요',
     connected: '폰이 연결됐어요',
     hint: '코드는 이 컴퓨터에서만 보여요. 폰은 공개 키만 보내고, 서명 키는 폰에만 남아요.',
@@ -207,8 +209,9 @@ const EN: AppText = {
   },
   pair: {
     title: 'Connect your phone',
-    intro: 'Approve payments and sends from your phone. Enter this code in the Dool2 app on your phone.',
+    intro: 'Approve payments and sends from your phone. Scan the QR with your phone camera to connect.',
     codeLabel: 'Connect code',
+    scanHint: 'Scan the QR with your phone camera to connect. If that fails, enter the code below.',
     waiting: 'Waiting for a phone to connect',
     connected: 'A phone is connected',
     hint: 'The code only shows on this computer. The phone sends just its public key; its signing key stays on the phone.',

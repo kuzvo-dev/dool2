@@ -21,10 +21,13 @@
     "@dool2/engine": "workspace:*",
     "@dool2/i18n": "workspace:*",
     "@dool2/page-bridge": "workspace:*",
+    "@dool2/protocol": "workspace:*",
     "@dool2/sandbox": "workspace:*",
-    "@dool2/ui": "workspace:*"
+    "@dool2/ui": "workspace:*",
+    "qrcode": "^1.5.4"
   },
   "devDependencies": {
+    "@types/qrcode": "^1.5.5",
     "electron": "^45.3.2",
     "esbuild": "^0.28.2"
   }

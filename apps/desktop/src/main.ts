@@ -8,9 +8,13 @@ import { mkdir, writeFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { type RelayBridge, startRelayBridge } from '@dool2/agentd'
 import type { AutonomyLevel } from '@dool2/core'
 import type { Lang } from '@dool2/i18n'
+import { OFFICIAL_RELAY } from '@dool2/protocol/link'
+import { PAIRING_OFFER_VERSION, pairingUrl } from '@dool2/protocol/pair-rpc'
 import { app, BrowserWindow, ipcMain, nativeTheme, shell } from 'electron'
+import * as QRCode from 'qrcode'
 import { demoBrain } from './demo.js'
 import { demoDraftsSnapshot } from './locales/drafts-demo.js'
 import { mainText } from './locales/main.js'
@@ -27,6 +31,11 @@ const SMOKE_VIEW = process.env.DOOL2_SMOKE_VIEW ?? ''
 const PAIRING_CODE = SMOKE
   ? '428 155'
   : String(Math.floor(100_000 + Math.random() * 900_000)).replace(/(\d{3})(\d{3})/, '$1 $2')
+/** The code without the display space — what the phone actually sends and the relay bridge checks. */
+const PAIRING_DIGITS = PAIRING_CODE.replace(/\D/g, '')
+/** The relay to reach phones through. Set DOOL2_RELAY to a reachable relay to turn the QR into a working one; without
+ *  it the screen shows the code and (in smoke) a sample QR, but no live relay connection is opened. */
+const RELAY_URL = process.env.DOOL2_RELAY ?? ''
 
 function uiLang(): Lang {
   const first = app.getPreferredSystemLanguages()[0]?.toLowerCase() ?? ''
@@ -39,6 +48,8 @@ function dataDir(): string {
 }
 
 let session: Session | undefined
+/** The outbound relay connection a phone pairs through, when a relay is configured (DOOL2_RELAY). */
+let relayBridge: RelayBridge | undefined
 let win: BrowserWindow | undefined
 /** Stops the live browser mirror (screencast or its screenshot fallback) while the pane is open; set only then. */
 let mirrorStop: (() => Promise<void>) | undefined
@@ -98,15 +109,70 @@ async function stopMirror(): Promise<void> {
   if (stop) await stop().catch(() => {})
 }
 
+/** The phone-app URL the QR encodes: the live relay offer when a relay is connected, else a sample offer in smoke
+ *  (so the screenshot shows a QR with no network), else none. */
+function pairingOfferUrl(): string | undefined {
+  if (relayBridge && RELAY_URL) return relayBridge.offerUrl(`${RELAY_URL}/app`)
+  if (SMOKE) {
+    return pairingUrl(`${OFFICIAL_RELAY}/app`, {
+      v: PAIRING_OFFER_VERSION,
+      relay: OFFICIAL_RELAY,
+      room: 'SAMPLEroomSAMPLEr',
+      boxPub: 'SAMPLEboxSAMPLEboxSAMPLEboxSAMPL',
+      code: PAIRING_DIGITS,
+    })
+  }
+  return undefined
+}
+
+/** Render a URL as an inline SVG QR, cached per URL (the offer is stable for the life of the relay connection). */
+const qrCache = new Map<string, string>()
+async function qrSvgFor(url: string): Promise<string | undefined> {
+  const hit = qrCache.get(url)
+  if (hit) return hit
+  try {
+    const svg = await QRCode.toString(url, { type: 'svg', margin: 1, errorCorrectionLevel: 'M' })
+    qrCache.set(url, svg)
+    return svg
+  } catch {
+    return undefined
+  }
+}
+
+/** Open the outbound relay connection so a real phone can pair + sign over the internet, when DOOL2_RELAY is set. */
+async function startRelayIfConfigured(): Promise<void> {
+  if (!RELAY_URL || SMOKE || !session) return
+  try {
+    relayBridge = await startRelayBridge({
+      agentd: session.agentd,
+      relayUrl: RELAY_URL,
+      pairingCode: PAIRING_DIGITS,
+      log: (l) => console.log(`[relay] ${l}`),
+    })
+    console.log(`[relay] joined ${RELAY_URL} room ${relayBridge.room.slice(0, 8)}…`)
+  } catch (err) {
+    console.error(`[relay] could not join ${RELAY_URL}:`, err instanceof Error ? err.message : err)
+  }
+}
+
 function registerIpc(): void {
   ipcMain.handle('dool2:config', () => ({ lang: uiLang(), level, smoke: SMOKE, view: SMOKE_VIEW }))
 
-  // The pairing screen: the pairing code the phone enters, and whether a phone has already paired (a device key is
-  // registered). Same pair state the HTTP daemon exposes through POST /pair; here the in-process daemon is read directly.
-  ipcMain.handle('dool2:pairing', () => ({
-    code: PAIRING_CODE,
-    paired: session?.agentd.hasDevice() ?? false,
-  }))
+  // The pairing screen: the QR the phone scans (relay + room + daemon key + code), the 6-digit code as a fallback, and
+  // whether a phone has already paired (a device key is registered via the relay). The QR encodes the phone-app URL
+  // with the offer in its fragment — never the daemon's loopback token. When a relay is configured the offer is live
+  // (from the outbound relay bridge); in the smoke run a sample offer stands in so the screenshot shows a QR offline.
+  ipcMain.handle('dool2:pairing', async () => {
+    const paired = relayBridge?.paired() ?? session?.agentd.hasDevice() ?? false
+    const offerUrl = pairingOfferUrl()
+    const qrSvg = offerUrl ? await qrSvgFor(offerUrl) : undefined
+    return {
+      code: PAIRING_CODE,
+      paired,
+      ...(offerUrl ? { offerUrl } : {}),
+      ...(qrSvg ? { qrSvg } : {}),
+    }
+  })
 
   ipcMain.handle('dool2:send', async (_e, text: string) => {
     if (!session || !win) return
@@ -191,10 +257,12 @@ app.whenReady().then(async () => {
     level,
   })
   registerIpc()
+  await startRelayIfConfigured()
   win = await createWindow()
   if (SMOKE) await smoke(win)
 })
 
 app.on('window-all-closed', () => {
+  relayBridge?.close()
   void stopMirror().finally(() => session?.close().finally(() => app.quit()))
 })

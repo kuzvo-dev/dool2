@@ -42,6 +42,7 @@ export {
   recordingHasContent,
 } from './learn.js'
 export { MerchantMemory, normalizeMerchant } from './merchants.js'
+export { type RelayBridge, type RelayBridgeOptions, startRelayBridge } from './relay-bridge.js'
 export {
   type CapPeriod,
   effectiveCapKrw,

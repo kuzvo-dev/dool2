@@ -35,7 +35,7 @@ interface PendingCard {
 
 interface Dool2Api {
   config(): Promise<{ lang: Lang; level: AutonomyLevel; smoke: boolean; view: string }>
-  pairing(): Promise<{ code: string; paired: boolean }>
+  pairing(): Promise<{ code: string; paired: boolean; qrSvg?: string; offerUrl?: string }>
   send(text: string): Promise<void>
   setLevel(level: AutonomyLevel): Promise<void>
   watchBrowser(on: boolean): Promise<void>
@@ -383,8 +383,17 @@ function renderMe(level?: AutonomyLevel): void {
 async function renderPairing(): Promise<void> {
   const host = document.querySelector('#pair-sec .pair-body')
   if (!host) return
-  const info = await api.pairing().catch(() => ({ code: '— — —', paired: false }))
+  const info = await api
+    .pairing()
+    .catch(() => ({ code: '— — —', paired: false }) as Awaited<ReturnType<typeof api.pairing>>)
   const card = el('div', 'pair-card')
+  // The QR the phone scans (relay + room + daemon key + code). Shown when a relay is configured; the code below is the
+  // fallback. The SVG comes from the main process already rendered, so the renderer only drops it in.
+  if (info.qrSvg) {
+    const qr = el('div', 'pair-qr')
+    qr.innerHTML = info.qrSvg
+    card.append(qr, el('div', 'pair-scan', t.pair.scanHint))
+  }
   const code = el('div', 'pair-code-row')
   code.append(el('div', 'pair-code-label', t.pair.codeLabel), el('div', 'pair-code mono', info.code))
   const status = el('div', `pair-status ${info.paired ? 'on' : ''}`.trim())

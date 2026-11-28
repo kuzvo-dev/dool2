@@ -14,6 +14,7 @@
 // signature and the bearer token ever cross the wire. No secret (card number, password) is ever in the card.
 
 import { type Lang, resolveLang } from '@dool2/i18n'
+import { offerFromHash } from '@dool2/protocol/pair-rpc'
 import type { CardView } from '../lib/card.js'
 import { cardView } from '../lib/card.js'
 import { PhoneController, type PhoneState } from '../lib/controller.js'
@@ -88,6 +89,17 @@ const controller = new PhoneController({ keystore: new LazyKeyStore() })
 controller.subscribe((state) => render(state))
 
 async function boot(): Promise<void> {
+  // Scanned the desktop QR? The offer (relay + room + daemon key + code) rides in the URL fragment. Join the relay and
+  // pair straight away, then poll for cards — no address or token to type. This is the real-phone path.
+  const offer = offerFromHash(location.hash)
+  if (offer) {
+    renderConnecting()
+    const ok = await controller.connectRelay(offer)
+    if (ok) await controller.refresh()
+    else renderRelayError()
+    signalReady('relay')
+    return
+  }
   if (startScreen === 'pair') {
     renderPair()
     return
@@ -232,6 +244,31 @@ function outcomeView(state: PhoneState): HTMLElement {
     close,
   )
   return wrap
+}
+
+// ── Relay connect (from a scanned QR) ─────────────────────────────────────────
+/** A brief "connecting over the relay…" screen while the QR offer is paired. */
+function renderConnecting(): void {
+  const wrap = el('div', 'pair')
+  wrap.append(
+    el('h1', 'title-2', t.pairTitle),
+    el('p', 'pair-intro', t.pairConnecting),
+    dooriImg('idle', 'ph-char', t.name),
+  )
+  app.replaceChildren(el('header', 'ph-head', spacer(), pairTitleId(), spacer()), wrap)
+}
+
+/** Relay pairing failed (bad/expired code, or the relay is unreachable): show why, with the manual pair as a fallback. */
+function renderRelayError(): void {
+  const wrap = el('div', 'pair')
+  const error = el('p', 'pair-error')
+  error.textContent = t.pairFailed(controller.state.error ?? 'unknown')
+  const manual = el('button', 'btn pair-connect')
+  manual.type = 'button'
+  manual.textContent = t.pairConnect
+  manual.addEventListener('click', () => renderPair())
+  wrap.append(el('h1', 'title-2', t.pairTitle), error, manual)
+  app.replaceChildren(el('header', 'ph-head', spacer(), pairTitleId(), spacer()), wrap)
 }
 
 // ── Pairing screen ──────────────────────────────────────────────────────────
