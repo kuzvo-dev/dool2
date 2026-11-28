@@ -1,0 +1,22 @@
+{
+  "name": "@dool2/vault",
+  "version": "0.0.0",
+  "private": true,
+  "license": "Apache-2.0",
+  "description": "Dool2 vault: the secret store whose core rule is that secrets never reach the AI. The AI sees masked summaries and opaque references; the vault fills values into the page or the secure keypad itself (ADR 0011, 0023, 0047).",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run --passWithNoTests"
+  },
+  "dependencies": {
+    "@dool2/core": "workspace:*"
+  }
+}
