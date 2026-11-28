@@ -1,0 +1,28 @@
+{
+  "name": "@dool2/phone",
+  "version": "0.0.0",
+  "private": true,
+  "license": "Apache-2.0",
+  "description": "Dool2 phone-side signing client: the human-in-the-loop half of the approval loop (ADR 0043, 0047). It holds the device keypair behind a secure-chip seam (iOS Secure Enclave / Android StrongBox in production), pairs its public key with the daemon, renders a phone approval card from an approvalNeeded payload, and signs the exact ActionEnvelope hash so the daemon can verify and press the one approved button. The private key never leaves the keystore seam and no secret ever reaches this package.",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run --passWithNoTests"
+  },
+  "dependencies": {
+    "@dool2/approvals": "workspace:*",
+    "@dool2/core": "workspace:*"
+  },
+  "devDependencies": {
+    "@dool2/agentd": "workspace:*",
+    "@dool2/brains": "workspace:*",
+    "@dool2/sandbox": "workspace:*"
+  }
+}
