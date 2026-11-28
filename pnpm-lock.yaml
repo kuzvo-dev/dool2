@@ -253,15 +253,30 @@ importers:
 
   packages/engine:
     dependencies:
+      '@dool2/brains':
+        specifier: workspace:*
+        version: link:../brains
+      '@dool2/core':
+        specifier: workspace:*
+        version: link:../core
       '@dool2/i18n':
         specifier: workspace:*
         version: link:../i18n
       '@dool2/protocol':
         specifier: workspace:*
         version: link:../protocol
+      '@dool2/sandbox':
+        specifier: workspace:*
+        version: link:../sandbox
+      '@dool2/skill-sdk':
+        specifier: workspace:*
+        version: link:../skill-sdk
       '@dool2/store':
         specifier: workspace:*
         version: link:../store
+      '@dool2/vault':
+        specifier: workspace:*
+        version: link:../vault
 
   packages/i18n: {}
 
