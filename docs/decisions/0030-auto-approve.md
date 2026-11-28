@@ -1,6 +1,7 @@
 # 0030. Auto-approve: everything except payments without a card
 
-- Status: accepted
+- Status: accepted (extended by [0047](0047-autonomy-levels.md): auto-approve becomes level 2 자동 of three
+  user-chosen autonomy levels; "payments always ask" is kept for levels 1–2 and lifted only in level 3 완전 자동)
 - Date: 2026-11-23
 
 ## Context
