@@ -1,0 +1,24 @@
+{
+  "name": "@dool2/org",
+  "version": "0.0.0",
+  "private": true,
+  "license": "Apache-2.0",
+  "description": "Dool2 enterprise foundations: the model and pure logic for organization policies (MDM-deliverable config), tamper-evident audit-log export, and SSO/SCIM identity + shared-vault seams. Model and pure logic only; real SSO providers and an admin console come later (master plan workstream H).",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run --passWithNoTests"
+  },
+  "dependencies": {
+    "@dool2/core": "workspace:*",
+    "@dool2/skill-sdk": "workspace:*",
+    "@dool2/vault": "workspace:*"
+  }
+}
